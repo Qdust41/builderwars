@@ -106,3 +106,29 @@ def test_device_command_flow(client: TestClient) -> None:
         headers=_as("alice"),
     )
     assert bad.status_code == 422
+
+
+def test_revoke_device_flow(client: TestClient) -> None:
+    pid = client.post("/projects", json={"name": "Rover"}, headers=_as("alice")).json()["id"]
+    did = client.post(
+        f"/projects/{pid}/devices", json={"display_name": "Bench"}, headers=_as("alice")
+    ).json()["id"]
+    assert client.get(f"/devices/{did}", headers=_as("alice")).json()["lifecycle"] == "active"
+
+    assert client.post(f"/devices/{did}/revoke", headers=_as("mallory")).status_code == 404
+    response = client.post(f"/devices/{did}/revoke", headers=_as("alice"))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["lifecycle"] == "revoked"
+    assert body["revoked_at"] is not None
+    assert body["connection_status"] == "offline"
+    # Idempotent.
+    again = client.post(f"/devices/{did}/revoke", headers=_as("alice")).json()
+    assert again["revoked_at"] == body["revoked_at"]
+
+    command = client.post(
+        f"/projects/{pid}/devices/{did}/commands",
+        json={"name": "ping"},
+        headers=_as("alice"),
+    )
+    assert command.status_code == 409

@@ -65,11 +65,14 @@ def test_device_policy_is_scoped_to_its_own_thing(stacks: dict[str, Template]) -
     assert not any("commands" in json.dumps(r) for r in publish["Resource"])
 
 
-def test_ingest_rule_excludes_command_topic(stacks: dict[str, Template]) -> None:
-    [rule] = stacks["iot"].find_resources("AWS::IoT::TopicRule").values()
-    sql = rule["Properties"]["TopicRulePayload"]["Sql"]
-    assert "commands" not in sql
-    assert "encode(*, 'base64') AS body_b64" in sql
+def test_ingest_rules_exclude_command_topic(stacks: dict[str, Template]) -> None:
+    rules = stacks["iot"].find_resources("AWS::IoT::TopicRule").values()
+    sqls = [rule["Properties"]["TopicRulePayload"]["Sql"] for rule in rules]
+    assert len(sqls) == 2
+    for sql in sqls:
+        assert "commands" not in sql
+        assert "encode(*, 'base64') AS body_b64" in sql
+    assert any("FROM '$aws/events/presence/+/+'" in sql for sql in sqls)
 
 
 def test_realtime_publish_is_backend_only(stacks: dict[str, Template]) -> None:

@@ -4,13 +4,20 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 
-from domain.common import new_id, utcnow
+from domain.common import InvalidStateTransitionError, new_id, utcnow
 
 
 class ConnectionStatus(StrEnum):
     UNKNOWN = "unknown"  # registered but never heard from
     ONLINE = "online"
     OFFLINE = "offline"
+
+
+class DeviceLifecycle(StrEnum):
+    """Whether the device may talk to the cloud at all (spec 03)."""
+
+    ACTIVE = "active"
+    REVOKED = "revoked"  # certificate revoked; its messages are quarantined; history is kept
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +37,23 @@ class Device:
     connection_status: ConnectionStatus = ConnectionStatus.UNKNOWN
     last_seen_at: datetime | None = None
     created_at: datetime = field(default_factory=utcnow)
+    lifecycle: DeviceLifecycle = DeviceLifecycle.ACTIVE
+    revoked_at: datetime | None = None
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.lifecycle is DeviceLifecycle.REVOKED
+
+    def revoke(self, at: datetime) -> Device:
+        """Return a revoked copy. Idempotent, so a retried revoke keeps the first timestamp."""
+        if self.is_revoked:
+            return self
+        return replace(
+            self,
+            lifecycle=DeviceLifecycle.REVOKED,
+            revoked_at=at,
+            connection_status=ConnectionStatus.OFFLINE,
+        )
 
     def observed(
         self,
@@ -43,6 +67,8 @@ class Device:
         Messages can arrive out of order, so an older observation never moves ``last_seen_at``
         backwards or overrides a newer status.
         """
+        if self.is_revoked:
+            raise InvalidStateTransitionError(f"device {self.id} is revoked")
         if self.last_seen_at is not None and at < self.last_seen_at:
             return self
         return replace(

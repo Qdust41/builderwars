@@ -39,6 +39,15 @@ def get_device(device_id: str, user: UserDep, service: DeviceServiceDep) -> Devi
     return DeviceOut.of(service.get_device(user_id=user.user_id, device_id=device_id))
 
 
+@router.post("/devices/{device_id}/revoke", response_model=DeviceOut)
+def revoke_device(device_id: str, user: UserDep, service: DeviceServiceDep) -> DeviceOut:
+    """Revoke the device's IoT certificate; its later messages are quarantined (owner/admin).
+
+    Idempotent. Stored telemetry is kept, and a revoked device cannot be commanded.
+    """
+    return DeviceOut.of(service.revoke_device(user_id=user.user_id, device_id=device_id))
+
+
 @router.get("/devices/{device_id}/status", response_model=DeviceStatusOut)
 def get_device_status(device_id: str, user: UserDep, service: DeviceServiceDep) -> DeviceStatusOut:
     device = service.get_device(user_id=user.user_id, device_id=device_id)

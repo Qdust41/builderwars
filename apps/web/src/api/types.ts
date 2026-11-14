@@ -1,6 +1,7 @@
 // Mirrors contracts/api/openapi.json. TODO: generate these types from the OpenAPI file
 // (e.g. openapi-typescript) instead of maintaining them by hand.
 export type ConnectionStatus = "unknown" | "online" | "offline";
+export type DeviceLifecycle = "active" | "revoked";
 export type JobType =
   | "ai_run"
   | "firmware_build"
@@ -28,6 +29,8 @@ export interface Device {
   connection_status: ConnectionStatus;
   last_seen_at: string | null;
   created_at: string;
+  lifecycle: DeviceLifecycle;
+  revoked_at: string | null;
 }
 
 export interface Session {

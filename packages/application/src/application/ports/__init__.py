@@ -10,6 +10,7 @@ from application.ports.messaging import (
     JobQueue,
     RealtimePublisher,
 )
+from application.ports.provisioning import DeviceIdentityProvisioner
 from application.ports.repositories import (
     DeviceCommandRepository,
     DeviceRepository,
@@ -27,6 +28,7 @@ __all__ = [
     "CommandQueue",
     "DeviceCommandPublisher",
     "DeviceCommandRepository",
+    "DeviceIdentityProvisioner",
     "DeviceRepository",
     "JobQueue",
     "JobRepository",

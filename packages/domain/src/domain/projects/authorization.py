@@ -19,6 +19,7 @@ class Permission(StrEnum):
     MANAGE_PROJECT = "project:manage"
     MANAGE_MEMBERS = "project:manage_members"
     REGISTER_DEVICE = "device:register"
+    REVOKE_DEVICE = "device:revoke"
     SEND_DEVICE_COMMAND = "device:command"
     JOIN_SESSION = "session:join"
     START_SESSION = "session:start"
@@ -33,6 +34,7 @@ _ADMIN: Final = _MEMBER | {
     Permission.MANAGE_PROJECT,
     Permission.MANAGE_MEMBERS,
     Permission.REGISTER_DEVICE,
+    Permission.REVOKE_DEVICE,
     Permission.SEND_DEVICE_COMMAND,
     Permission.APPROVE_FIRMWARE,
 }

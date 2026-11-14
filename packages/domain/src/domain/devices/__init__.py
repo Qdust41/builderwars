@@ -4,7 +4,7 @@ from domain.devices.commands import (
     CommandStatus,
     DeviceCommand,
 )
-from domain.devices.models import ConnectionStatus, Device
+from domain.devices.models import ConnectionStatus, Device, DeviceLifecycle
 
 __all__ = [
     "DEFAULT_COMMAND_TTL",
@@ -13,4 +13,5 @@ __all__ = [
     "ConnectionStatus",
     "Device",
     "DeviceCommand",
+    "DeviceLifecycle",
 ]

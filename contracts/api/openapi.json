@@ -224,6 +224,15 @@
         "title": "DeviceCreate",
         "type": "object"
       },
+      "DeviceLifecycle": {
+        "description": "Whether the device may talk to the cloud at all (spec 03).",
+        "enum": [
+          "active",
+          "revoked"
+        ],
+        "title": "DeviceLifecycle",
+        "type": "string"
+      },
       "DeviceOut": {
         "properties": {
           "connection_status": {
@@ -276,9 +285,24 @@
             ],
             "title": "Last Seen At"
           },
+          "lifecycle": {
+            "$ref": "#/components/schemas/DeviceLifecycle"
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
           }
         },
         "required": [
@@ -290,7 +314,9 @@
           "firmware_version",
           "connection_status",
           "last_seen_at",
-          "created_at"
+          "created_at",
+          "lifecycle",
+          "revoked_at"
         ],
         "title": "DeviceOut",
         "type": "object"
@@ -854,6 +880,65 @@
           }
         },
         "summary": "Get Device",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/revoke": {
+      "post": {
+        "description": "Revoke the device's IoT certificate; its later messages are quarantined (owner/admin).\n\nIdempotent. Stored telemetry is kept, and a revoked device cannot be commanded.",
+        "operationId": "revoke_device_devices__device_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Device",
         "tags": [
           "devices"
         ]

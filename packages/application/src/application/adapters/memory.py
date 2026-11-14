@@ -234,3 +234,24 @@ class RecordingCommandPublisher:
 
     def publish_command(self, envelope: DeviceEnvelope) -> None:
         self.commands.append(envelope)
+
+
+@dataclass
+class InMemoryDeviceIdentityProvisioner:
+    """Fake of the AWS IoT provisioning port. Certificates are opaque ids, never key material.
+
+    ``certificates`` maps thing name -> {certificate id: status}, mirroring IoT Core, where a
+    thing can have several certificates attached and each is ACTIVE or REVOKED.
+    """
+
+    certificates: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def attach_certificate(self, thing_name: str, certificate_id: str) -> None:
+        self.certificates.setdefault(thing_name, {})[certificate_id] = "ACTIVE"
+
+    def revoke(self, thing_name: str) -> None:
+        for certificate_id in self.certificates.get(thing_name, {}):
+            self.certificates[thing_name][certificate_id] = "REVOKED"
+
+    def can_connect(self, thing_name: str) -> bool:
+        return "ACTIVE" in self.certificates.get(thing_name, {}).values()

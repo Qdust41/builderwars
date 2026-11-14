@@ -27,6 +27,8 @@ class RejectionReason(StrEnum):
     INVALID_PAYLOAD = "invalid_payload"
     IDENTITY_MISMATCH = "identity_mismatch"
     WRONG_CHANNEL = "wrong_channel"
+    UNKNOWN_DEVICE = "unknown_device"  # the topic's device id is not registered
+    DEVICE_REVOKED = "device_revoked"  # the device was revoked; history is kept
 
 
 class MessageValidationError(ValueError):

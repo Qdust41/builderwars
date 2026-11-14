@@ -15,6 +15,7 @@ from application.services import (
     ProjectService,
     SessionService,
 )
+from domain.devices import Device
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "contracts" / "device" / "fixtures"
@@ -37,6 +38,7 @@ class World:
     commands_repo: memory.InMemoryDeviceCommandRepository
     command_queue: memory.InMemoryCommandQueue
     commands: CommandService
+    provisioner: memory.InMemoryDeviceIdentityProvisioner
 
 
 @pytest.fixture
@@ -51,6 +53,7 @@ def world() -> World:
     authorizer = Authorizer(memberships)
     commands_repo = memory.InMemoryDeviceCommandRepository()
     command_queue = memory.InMemoryCommandQueue()
+    provisioner = memory.InMemoryDeviceIdentityProvisioner()
     return World(
         projects_repo=projects_repo,
         memberships=memberships,
@@ -61,12 +64,13 @@ def world() -> World:
         realtime=realtime,
         authorizer=authorizer,
         projects=ProjectService(projects_repo, memberships, authorizer),
-        devices=DeviceService(devices_repo, authorizer),
+        devices=DeviceService(devices_repo, authorizer, provisioner),
         sessions=SessionService(sessions_repo, devices_repo, authorizer, realtime),
         jobs=JobService(jobs_repo, devices_repo, queue, authorizer),
         commands_repo=commands_repo,
         command_queue=command_queue,
         commands=CommandService(commands_repo, devices_repo, command_queue, authorizer),
+        provisioner=provisioner,
     )
 
 
@@ -79,9 +83,22 @@ class IngestWorld:
     commands: memory.InMemoryDeviceCommandRepository
 
 
+INGEST_DEVICE_IDS = ("dev-1", "dev-2")
+
+
 @pytest.fixture
 def ingest() -> IngestWorld:
+    """Ingest pipeline with ``dev-1`` and ``dev-2`` registered (ingest refuses unknown ids)."""
     devices = memory.InMemoryDeviceRepository()
+    for device_id in INGEST_DEVICE_IDS:
+        devices.add(
+            Device(
+                id=device_id,
+                project_id="prj_test",
+                display_name=device_id,
+                hardware_model="freewili-1-og",
+            )
+        )
     raw = memory.InMemoryRawMessageStore()
     telemetry = memory.InMemoryTelemetryRepository()
     commands = memory.InMemoryDeviceCommandRepository()

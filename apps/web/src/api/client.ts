@@ -81,6 +81,8 @@ export class ApiClient {
   getCommand = (id: string) =>
     this.request<DeviceCommand>("GET", `/commands/${encodeURIComponent(id)}`);
   getDevice = (id: string) => this.request<Device>("GET", `/devices/${encodeURIComponent(id)}`);
+  revokeDevice = (id: string) =>
+    this.request<Device>("POST", `/devices/${encodeURIComponent(id)}/revoke`);
   listSessions = (projectId: string) =>
     this.request<Session[]>("GET", `/projects/${encodeURIComponent(projectId)}/sessions`);
   startSession = (projectId: string, deviceId?: string) =>

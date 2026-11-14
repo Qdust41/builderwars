@@ -56,7 +56,8 @@ def build_container(settings: Settings) -> Container:
         settings=settings,
         authorizer=authorizer,
         projects=ProjectService(projects, memberships, authorizer),
-        devices=DeviceService(devices, authorizer),
+        # LOCAL ONLY: the in-memory fake stands in for AWS IoT (see api.adapters.iot).
+        devices=DeviceService(devices, authorizer, memory.InMemoryDeviceIdentityProvisioner()),
         sessions=SessionService(sessions, devices, authorizer, memory.RecordingRealtimePublisher()),
         jobs=JobService(jobs, devices, memory.InMemoryJobQueue(), authorizer),
         commands=CommandService(

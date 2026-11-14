@@ -8,19 +8,39 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable
 from typing import Any
 
 from application.adapters import memory
 from application.services import DeviceMessageIngestService
+from device_protocol import parse_topic
+from device_protocol.topics import InvalidTopicError
+from domain.devices import Device
 from workers.consumers import LocalHarness, process_sqs_batch, read_jsonl
 from workers.handlers import DeviceMessageHandler, IncomingDeviceMessage
 
 
-def build_local_device_handler() -> tuple[DeviceMessageHandler, memory.InMemoryTelemetryRepository]:
-    """IN-MEMORY wiring for local development only."""
+def build_local_device_handler(
+    device_ids: Iterable[str] = (),
+) -> tuple[DeviceMessageHandler, memory.InMemoryTelemetryRepository]:
+    """IN-MEMORY wiring for local development only.
+
+    Ingest rejects unregistered devices, so ``device_ids`` are registered up front (in a
+    throwaway local project) to stand in for devices registered through the API.
+    """
+    devices = memory.InMemoryDeviceRepository()
+    for device_id in device_ids:
+        devices.add(
+            Device(
+                id=device_id,
+                project_id="prj_local",
+                display_name=device_id,
+                hardware_model="freewili-1-og",
+            )
+        )
     telemetry = memory.InMemoryTelemetryRepository()
     ingest = DeviceMessageIngestService(
-        devices=memory.InMemoryDeviceRepository(),
+        devices=devices,
         processed=memory.InMemoryProcessedMessageStore(),
         raw_store=memory.InMemoryRawMessageStore(),
         telemetry=telemetry,
@@ -49,13 +69,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("input", nargs="?", help="JSON-lines file (default: stdin)")
     args = parser.parse_args(argv)
 
-    handler, telemetry = build_local_device_handler()
-    harness = LocalHarness(handler)
     if args.input:
         with open(args.input, encoding="utf-8") as fh:
-            counts = harness.run(read_jsonl(fh))
+            messages = list(read_jsonl(fh))
     else:
-        counts = harness.run(read_jsonl(sys.stdin))
+        messages = list(read_jsonl(sys.stdin))
+
+    # LOCAL ONLY: treat every device in the input as registered (see build_local_device_handler).
+    handler, telemetry = build_local_device_handler(_topic_device_ids(m.topic for m in messages))
+    harness = LocalHarness(handler)
+    counts = harness.run(messages)
 
     for result in harness.results:
         reason = f" ({result.reason.value}: {result.detail})" if result.reason else ""
@@ -66,6 +89,16 @@ def main(argv: list[str] | None = None) -> int:
         f"events={len(telemetry.events)}"
     )
     return 0
+
+
+def _topic_device_ids(topics: Iterable[str]) -> set[str]:
+    ids = set()
+    for topic in topics:
+        try:
+            ids.add(parse_topic(topic)[0])
+        except InvalidTopicError:
+            continue
+    return ids
 
 
 __all__ = [

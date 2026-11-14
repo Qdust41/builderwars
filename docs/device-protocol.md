@@ -66,7 +66,8 @@ Unknown envelope fields are rejected. `device_id` must match `^[A-Za-z0-9][A-Za-
   Ingest records a `sequence_gap` event and keeps processing; it never rejects on gaps.
 - **Limits.** Raw message ≤ 32 KiB, payload ≤ 16 KiB (IoT Core's hard limit is 128 KiB).
 - **Rejections are permanent** and typed: `too_large`, `malformed_json`, `unsupported_version`,
-  `invalid_envelope`, `invalid_payload`, `identity_mismatch`, `wrong_channel`. Rejected messages are
+  `invalid_envelope`, `invalid_payload`, `identity_mismatch`, `wrong_channel`, `unknown_device`,
+  `device_revoked`. Rejected messages are
   acknowledged (not retried) and quarantined with their reason (S3 `rejected/`), never silently
   dropped. (TODO: CloudWatch metric.)
 - **Raw vs normalised.** Raw bodies are retained separately (S3 `raw/`) from normalised records.

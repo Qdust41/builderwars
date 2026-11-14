@@ -7,7 +7,13 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from application.realtime import RealtimeEventType
-from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
+from domain.devices import (
+    CommandStatus,
+    ConnectionStatus,
+    Device,
+    DeviceCommand,
+    DeviceLifecycle,
+)
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project
 from domain.sessions import Session, SessionStatus
@@ -54,6 +60,8 @@ class DeviceOut(_Out):
     connection_status: ConnectionStatus
     last_seen_at: datetime | None
     created_at: datetime
+    lifecycle: DeviceLifecycle
+    revoked_at: datetime | None
 
     @field_validator("extensions", mode="before")
     @classmethod

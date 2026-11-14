@@ -1,6 +1,6 @@
-"""AWS IoT Core: per-device policy and the rule that forwards device messages to SQS.
+"""AWS IoT Core: per-device policy and the rules that forward device messages to SQS.
 
-Provisioning approach (NOT implemented, no certificates are created here; spec 03):
+Provisioning approach (spec 03; no certificates are ever created by CDK):
 * A device is one host PC + FREE-WILi pair (decision #2): one IoT thing, thing name == device id
   used in topics. The host connects directly to IoT Core; no Greengrass or local gateway.
 * One X.509 certificate per board, created by a privileged provisioning flow (e.g. fleet
@@ -8,6 +8,10 @@ Provisioning approach (NOT implemented, no certificates are created here; spec 0
   to the thing and to ``DevicePolicy``. Private keys never touch our database or git.
 * The policy uses ``${iot:Connection.Thing.ThingName}`` so each board can only use its own
   client id and topics — this is what makes the topic a trustworthy identity.
+* Revoking a device (``DeviceService.revoke_device``) revokes its certificates and detaches them
+  from the thing, so it is refused at the IoT Core layer; ingest also quarantines its messages.
+* Online/offline status comes from IoT presence lifecycle events, forwarded to the same ingest
+  queue in the same shape as device messages (``PRESENCE_RULE_SQL``).
 """
 
 from __future__ import annotations
@@ -28,6 +32,12 @@ DEVICE_TO_CLOUD = ("telemetry", "logs", "status", "events", "responses")
 INGEST_RULE_SQL = (
     "SELECT topic() AS topic, timestamp() AS received_at_ms, encode(*, 'base64') AS body_b64 "
     "FROM 'devices/+/+' WHERE topic(3) IN ['telemetry', 'logs', 'status', 'events', 'responses']"
+)
+
+# Lifecycle events: $aws/events/presence/{connected|disconnected}/{client id == thing name}.
+PRESENCE_RULE_SQL = (
+    "SELECT topic() AS topic, timestamp() AS received_at_ms, encode(*, 'base64') AS body_b64 "
+    "FROM '$aws/events/presence/+/+'"
 )
 
 
@@ -90,24 +100,24 @@ class IotStack(Stack):
         )
         ingest_queue.grant_send_messages(rule_role)
 
-        iot.CfnTopicRule(
-            self,
-            "IngestRule",
-            topic_rule_payload=iot.CfnTopicRule.TopicRulePayloadProperty(
-                sql=INGEST_RULE_SQL,
-                aws_iot_sql_version="2016-03-23",
-                rule_disabled=False,
-                actions=[
-                    iot.CfnTopicRule.ActionProperty(
-                        sqs=iot.CfnTopicRule.SqsActionProperty(
-                            queue_url=ingest_queue.queue_url,
-                            role_arn=rule_role.role_arn,
-                            use_base64=False,
+        for rule_id, sql in (("IngestRule", INGEST_RULE_SQL), ("PresenceRule", PRESENCE_RULE_SQL)):
+            iot.CfnTopicRule(
+                self,
+                rule_id,
+                topic_rule_payload=iot.CfnTopicRule.TopicRulePayloadProperty(
+                    sql=sql,
+                    aws_iot_sql_version="2016-03-23",
+                    rule_disabled=False,
+                    actions=[
+                        iot.CfnTopicRule.ActionProperty(
+                            sqs=iot.CfnTopicRule.SqsActionProperty(
+                                queue_url=ingest_queue.queue_url,
+                                role_arn=rule_role.role_arn,
+                                use_base64=False,
+                            )
                         )
-                    )
-                ],
-                # TODO: error_action -> S3/CloudWatch Logs so rule failures are visible.
-            ),
-        )
-        # TODO: lifecycle events ($aws/events/presence/+/+) -> ingest, for online/offline status.
+                    ],
+                    # TODO: error_action -> S3/CloudWatch Logs so rule failures are visible.
+                ),
+            )
         CfnOutput(self, "DevicePolicyName", value=policy.ref)

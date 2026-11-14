@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from application.ports import CommandQueue, DeviceCommandRepository, DeviceRepository
 from application.services.authorization import Authorizer
-from domain.common import DomainError, NotFoundError
+from domain.common import DomainError, InvalidStateTransitionError, NotFoundError
 from domain.devices import MAX_PENDING_COMMANDS_PER_DEVICE, DeviceCommand
 from domain.projects import Permission
 
@@ -44,6 +44,8 @@ class CommandService:
         device = self._devices.get(device_id)
         if device is None or device.project_id != project_id:
             raise NotFoundError("device", device_id)
+        if device.is_revoked:
+            raise InvalidStateTransitionError(f"device {device_id} is revoked")
         if self._commands.count_pending(device_id) >= MAX_PENDING_COMMANDS_PER_DEVICE:
             raise CommandQueueFullError(
                 f"device {device_id} already has {MAX_PENDING_COMMANDS_PER_DEVICE} pending commands"

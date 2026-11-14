@@ -21,7 +21,7 @@ def test_simulated_messages_are_ingested_and_replays_are_deduplicated() -> None:
     simulate(device_id="sim-e2e", count=4, seed=7, out=out)
     lines = out.getvalue()
 
-    handler, telemetry = build_local_device_handler()
+    handler, telemetry = build_local_device_handler(["sim-e2e"])
     harness = LocalHarness(handler)
     first = harness.run(read_jsonl(io.StringIO(lines)))
     replay = harness.run(read_jsonl(io.StringIO(lines)))

@@ -121,7 +121,17 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
   stores cert in `~/.builderwars/credentials/`.
 - Thing groups: one per project; per-project IoT policy scoping topics to that project's
   device ids.
-- Decommission: revoke cert, mark device `revoked` in DB, keep historical data.
+- Decommission (implemented): `POST /devices/{id}/revoke` (owner/admin, idempotent) marks the
+  device `revoked` first, then revokes every certificate attached to its thing and detaches it
+  (`DeviceIdentityProvisioner`; AWS adapter `api.adapters.iot`). The thing and certificates are
+  kept as an audit trail, and stored telemetry is kept. A revoked device cannot be commanded.
+- Ingest (implemented): messages from unregistered (`unknown_device`) or revoked
+  (`device_revoked`) devices are rejected and quarantined before the dedupe claim.
+- Online/offline (implemented): an IoT rule forwards `$aws/events/presence/+/+` to the ingest
+  queue. `connected` sets online, `disconnected` sets offline, except a `DUPLICATE_CLIENTID`
+  disconnect (the old session of a reconnect), which is ignored; older events never win.
+- Open (owner): CSR from the host vs AWS-generated key; who may register/revoke (today
+  owner/admin); device naming; cancel pending commands on revoke.
 - Acceptance: a new host can be provisioned end-to-end with the CLI + owner credentials;
   a revoked device is rejected at the IoT Core layer, not just the API.
 
