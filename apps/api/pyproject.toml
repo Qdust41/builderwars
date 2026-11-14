@@ -1,0 +1,24 @@
+[project]
+name = "bw-api"
+version = "0.1.0"
+description = "FastAPI application"
+requires-python = ">=3.12"
+dependencies = [
+    "bw-application",
+    "bw-domain",
+    "fastapi>=0.115",
+    "mangum>=0.19",
+    "pydantic-settings>=2.6",
+    "uvicorn>=0.32",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/api"]
+
+[tool.uv.sources]
+bw-application = { workspace = true }
+bw-domain = { workspace = true }

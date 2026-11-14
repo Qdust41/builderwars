@@ -1,0 +1,4 @@
+# CDK app dependencies (kept out of the app workspace so the API/worker images stay small).
+aws-cdk-lib==2.270.0
+constructs>=10.4,<11
+pytest>=8.3

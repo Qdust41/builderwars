@@ -1,0 +1,166 @@
+"""IN-MEMORY ADAPTERS — LOCAL DEVELOPMENT AND TESTS ONLY.
+
+State is per-process and lost on restart. The API refuses to start with these adapters unless
+``APP_ENV`` is ``local`` or ``test`` (see ``api.dependencies``), so they can never be silently
+used in a deployed environment.
+"""
+
+from __future__ import annotations
+
+import threading
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from application.realtime import RealtimeEvent
+from device_protocol import DeviceEnvelope
+from domain.devices import Device
+from domain.jobs import Job
+from domain.projects import Project, ProjectMembership
+from domain.sessions import Session
+
+
+class InMemoryProjectRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, Project] = {}
+
+    def add(self, project: Project) -> None:
+        self._items[project.id] = project
+
+    def get(self, project_id: str) -> Project | None:
+        return self._items.get(project_id)
+
+    def list_by_ids(self, project_ids: Sequence[str]) -> list[Project]:
+        return [self._items[i] for i in project_ids if i in self._items]
+
+
+class InMemoryMembershipRepository:
+    def __init__(self) -> None:
+        self._items: dict[tuple[str, str], ProjectMembership] = {}
+
+    def add(self, membership: ProjectMembership) -> None:
+        self._items[(membership.project_id, membership.user_id)] = membership
+
+    def get(self, project_id: str, user_id: str) -> ProjectMembership | None:
+        return self._items.get((project_id, user_id))
+
+    def list_for_user(self, user_id: str) -> list[ProjectMembership]:
+        return [m for m in self._items.values() if m.user_id == user_id]
+
+
+class InMemoryDeviceRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, Device] = {}
+
+    def add(self, device: Device) -> None:
+        self._items[device.id] = device
+
+    def save(self, device: Device) -> None:
+        self._items[device.id] = device
+
+    def get(self, device_id: str) -> Device | None:
+        return self._items.get(device_id)
+
+    def list_for_project(self, project_id: str) -> list[Device]:
+        return [d for d in self._items.values() if d.project_id == project_id]
+
+
+class InMemorySessionRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, Session] = {}
+
+    def add(self, session: Session) -> None:
+        self._items[session.id] = session
+
+    def get(self, session_id: str) -> Session | None:
+        return self._items.get(session_id)
+
+    def list_for_project(self, project_id: str) -> list[Session]:
+        return [s for s in self._items.values() if s.project_id == project_id]
+
+
+class InMemoryJobRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, Job] = {}
+
+    def add(self, job: Job) -> None:
+        self._items[job.id] = job
+
+    def save(self, job: Job) -> None:
+        self._items[job.id] = job
+
+    def get(self, job_id: str) -> Job | None:
+        return self._items.get(job_id)
+
+
+class InMemoryProcessedMessageStore:
+    def __init__(self) -> None:
+        self._keys: set[str] = set()
+        self._lock = threading.Lock()
+
+    def mark_processed(self, key: str) -> bool:
+        with self._lock:
+            if key in self._keys:
+                return False
+            self._keys.add(key)
+            return True
+
+
+@dataclass
+class InMemoryRawMessageStore:
+    items: list[tuple[str, str, datetime, bytes]] = field(default_factory=list)
+
+    def put(self, *, device_id: str, message_id: str, received_at: datetime, body: bytes) -> None:
+        self.items.append((device_id, message_id, received_at, body))
+
+
+@dataclass
+class InMemoryTelemetryRepository:
+    telemetry: list[dict[str, object]] = field(default_factory=list)
+    logs: list[dict[str, object]] = field(default_factory=list)
+
+    def add_telemetry(
+        self, *, device_id: str, message_id: str, at: datetime, metrics: dict[str, object]
+    ) -> None:
+        self.telemetry.append(
+            {"device_id": device_id, "message_id": message_id, "at": at, "metrics": metrics}
+        )
+
+    def add_log(
+        self, *, device_id: str, message_id: str, at: datetime, level: str, message: str
+    ) -> None:
+        self.logs.append(
+            {
+                "device_id": device_id,
+                "message_id": message_id,
+                "at": at,
+                "level": level,
+                "message": message,
+            }
+        )
+
+
+@dataclass
+class InMemoryJobQueue:
+    job_ids: list[str] = field(default_factory=list)
+
+    def enqueue(self, job_id: str) -> None:
+        self.job_ids.append(job_id)
+
+
+@dataclass
+class RecordingRealtimePublisher:
+    """Collects events instead of publishing them; lets tests and local dev inspect them."""
+
+    events: list[RealtimeEvent] = field(default_factory=list)
+
+    def publish(self, event: RealtimeEvent) -> None:
+        self.events.append(event)
+
+
+@dataclass
+class RecordingCommandPublisher:
+    commands: list[DeviceEnvelope] = field(default_factory=list)
+
+    def publish_command(self, envelope: DeviceEnvelope) -> None:
+        self.commands.append(envelope)

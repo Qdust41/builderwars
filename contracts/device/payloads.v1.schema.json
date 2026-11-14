@@ -1,0 +1,261 @@
+{
+  "description": "Payload schema per message_type. Provisional until hardware is chosen.",
+  "payloads": {
+    "command": {
+      "additionalProperties": false,
+      "description": "Cloud -> device. Commands are named operations from an allowlist on the board.\n\nThere is deliberately no \"run arbitrary shell\" command.",
+      "properties": {
+        "args": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "name"
+      ],
+      "title": "CommandPayload",
+      "type": "object"
+    },
+    "command_result": {
+      "$defs": {
+        "CommandResultStatus": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "rejected"
+          ],
+          "title": "CommandResultStatus",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "output": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "title": "Output",
+          "type": "object"
+        },
+        "status": {
+          "$ref": "#/$defs/CommandResultStatus"
+        }
+      },
+      "required": [
+        "command_id",
+        "status"
+      ],
+      "title": "CommandResultPayload",
+      "type": "object"
+    },
+    "heartbeat": {
+      "additionalProperties": false,
+      "properties": {
+        "uptime_s": {
+          "minimum": 0,
+          "title": "Uptime S",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "uptime_s"
+      ],
+      "title": "HeartbeatPayload",
+      "type": "object"
+    },
+    "log": {
+      "$defs": {
+        "LogLevel": {
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "critical"
+          ],
+          "title": "LogLevel",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/LogLevel"
+        },
+        "logger": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logger"
+        },
+        "message": {
+          "maxLength": 4096,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "level",
+        "message"
+      ],
+      "title": "LogPayload",
+      "type": "object"
+    },
+    "status": {
+      "$defs": {
+        "DeviceState": {
+          "enum": [
+            "booting",
+            "online",
+            "busy",
+            "error",
+            "shutting_down"
+          ],
+          "title": "DeviceState",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "state": {
+          "$ref": "#/$defs/DeviceState"
+        },
+        "uptime_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uptime S"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "StatusPayload",
+      "type": "object"
+    },
+    "telemetry": {
+      "additionalProperties": {
+        "type": [
+          "number",
+          "integer",
+          "boolean",
+          "string"
+        ]
+      },
+      "minProperties": 1,
+      "title": "TelemetryPayload",
+      "type": "object"
+    }
+  },
+  "title": "Device message payloads (schema_version 1)",
+  "topics": {
+    "channel_for_message_type": {
+      "command": "commands",
+      "command_result": "responses",
+      "heartbeat": "status",
+      "log": "logs",
+      "status": "status",
+      "telemetry": "telemetry"
+    },
+    "device_id_pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+    "pattern": "devices/{device_id}/{channel}"
+  }
+}
