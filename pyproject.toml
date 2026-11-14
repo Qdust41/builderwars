@@ -12,6 +12,7 @@ dependencies = [
     "bw-api",
     "bw-workers",
     "bw-board-runtime",
+    "freewili>=0.0.51",
 ]
 
 [dependency-groups]
