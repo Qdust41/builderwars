@@ -37,7 +37,7 @@ The two identity systems are separate: a user can never act as a device and vice
 - No account ids, credentials or certificates are hard-coded in CDK (a synth test checks for
   12-digit account ids). RDS credentials are generated into Secrets Manager; Lambdas get the
   secret's ARN and read it at cold start, never the password in an environment variable.
-- **Database exposure (ADR 0006):** prod RDS is publicly reachable so the Lambdas can run
+- **Database exposure (ADR 0007):** prod RDS is publicly reachable so the Lambdas can run
   outside a VPC. The server enforces TLS (`rds.force_ssl=1`) and the security group opens only
   TCP 5432. Move to VPC endpoints or IAM database auth before real users.
 - Never store device private keys in database rows.

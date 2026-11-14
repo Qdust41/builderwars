@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     database_pool_max_size: int = 5
     # AWS only (set by infrastructure/stacks/api.py). DATABASE_SECRET_ARN is the RDS-generated
-    # secret, resolved into DATABASE_URL at cold start when DATABASE_URL is not set (ADR 0006).
+    # secret, resolved into DATABASE_URL at cold start when DATABASE_URL is not set (ADR 0007).
     database_secret_arn: str | None = None
     jobs_queue_url: str | None = None
     commands_queue_url: str | None = None

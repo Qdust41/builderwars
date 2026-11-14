@@ -1,7 +1,7 @@
 """PostgreSQL on RDS (``enable_rds``: prod only, decision #12). db.t4g.micro is free-tier
 eligible for 12 months; after that it INCURS ONGOING COST.
 
-Network (ADR 0006, owner decision 2026-11-14): the instance is PUBLICLY REACHABLE so that the
+Network (ADR 0007, owner decision 2026-11-14): the instance is PUBLICLY REACHABLE so that the
 API and worker Lambdas can run outside a VPC and reach SQS, S3, IoT and AppSync without a NAT
 gateway (~$32/month) or VPC endpoints (~$20-30/month). This reverses the scaffold's earlier
 "no publicly accessible database" rule. What protects it instead:
@@ -48,7 +48,7 @@ class DatabaseStack(Stack):
             self,
             "PostgresAccess",
             vpc=self.vpc,
-            description="PostgreSQL over TLS from Lambda (no fixed source IPs; ADR 0006)",
+            description="PostgreSQL over TLS from Lambda (no fixed source IPs; ADR 0007)",
             allow_all_outbound=False,
         )
         self.security_group.add_ingress_rule(
@@ -69,7 +69,7 @@ class DatabaseStack(Stack):
             vpc=self.vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             security_groups=[self.security_group],
-            publicly_accessible=True,  # ADR 0006
+            publicly_accessible=True,  # ADR 0007
             parameter_group=parameters,
             storage_encrypted=True,
             allocated_storage=20,  # free tier: 20 GB; no storage autoscaling (decision #11)
@@ -80,15 +80,15 @@ class DatabaseStack(Stack):
             removal_policy=config.removal_policy,
             iam_authentication=True,
         )
-        # Both are deliberate (ADR 0006); acknowledged so synth reports stay readable.
+        # Both are deliberate (ADR 0007); acknowledged so synth reports stay readable.
         Validations.of(self).acknowledge(
             Acknowledgment(
                 id="CloudFormation-Validate::W2508",
-                reason="Lambda has no fixed source IPs; TLS is enforced (ADR 0006)",
+                reason="Lambda has no fixed source IPs; TLS is enforced (ADR 0007)",
             ),
             Acknowledgment(
                 id="CloudFormation-Validate::W9011",
-                reason="Publicly reachable over TLS by owner decision (ADR 0006)",
+                reason="Publicly reachable over TLS by owner decision (ADR 0007)",
             ),
         )
         assert self.instance.secret is not None  # from_generated_secret always creates one

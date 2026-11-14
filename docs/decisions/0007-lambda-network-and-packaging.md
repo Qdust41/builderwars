@@ -1,4 +1,4 @@
-# 0006 — Lambdas outside the VPC, public RDS over TLS; bundled Lambda assets
+# 0007 — Lambdas outside the VPC, public RDS over TLS; bundled Lambda assets
 
 Status: accepted (2026-11-14, workstream C; network choice made by the owner)
 
@@ -26,7 +26,7 @@ those services without paid networking. Options put to the owner:
 - **Connections:** each container holds one (workers) or up to two (API) connections; each
   SQS event source is capped at 2 concurrent invocations.
 - **Migrations:** a `Migrate` Lambda (`workers.main.migrate_lambda_handler`) applies pending
-  migrations when invoked by hand after a deploy. Services never migrate on their own (ADR 0005).
+  migrations when invoked by hand after a deploy. Services never migrate on their own (ADR 0006).
 - **Packaging:** Lambda assets are bundled at synth time by `infrastructure/lambda_bundle.py`:
   `uv export --frozen` (versions from `uv.lock`) installed for Python 3.12 /
   `aarch64-manylinux_2_28`, plus the source of each workspace package the app uses. CDK runs it

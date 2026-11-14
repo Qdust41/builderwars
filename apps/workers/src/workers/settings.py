@@ -24,7 +24,7 @@ class WorkerSettings(BaseSettings):
     database_url: SecretStr | None = None
     database_pool_max_size: int = 1  # one message at a time per process / Lambda container
     # AWS only. The RDS-generated secret; resolved into DATABASE_URL at cold start when
-    # DATABASE_URL itself is not set (ADR 0006).
+    # DATABASE_URL itself is not set (ADR 0007).
     database_secret_arn: str | None = None
     device_data_bucket: str | None = None  # S3 raw/rejected store for the ingest worker
     iot_data_endpoint: str | None = None  # account ATS data endpoint, for the command dispatcher

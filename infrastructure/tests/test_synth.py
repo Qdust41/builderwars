@@ -107,7 +107,7 @@ def test_api_routes_require_jwt_except_health(stacks: dict[str, Template]) -> No
 
 
 def test_database_is_tls_only_encrypted_and_only_opens_postgres() -> None:
-    # Publicly reachable by owner decision (ADR 0006); TLS is what protects it.
+    # Publicly reachable by owner decision (ADR 0007); TLS is what protects it.
     template = Template.from_stack(build(new_app(), get_config("prod"))["database"])
     template.has_resource_properties(
         "AWS::RDS::DBInstance",

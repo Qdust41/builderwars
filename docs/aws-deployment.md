@@ -6,9 +6,8 @@ Nothing in this repository deploys automatically. CI only synthesises templates.
 
 1. Region (us-east-1), budget (free tier) and volumes are decided (#6, #11). Still open:
    alarm recipients (#13, out of MVP scope). There is no staging (#12): deploy `-c env=prod`.
-2. Implement Cognito JWT verification in the API (workstream B). Everything else the deployed
-   API and workers need is in place: PostgreSQL (ADR 0005), SQS/S3/IoT/AppSync adapters and
-   bundled Lambda assets (ADR 0006).
+2. The deployed API and workers have what they need: Cognito sign-in (ADR 0005), PostgreSQL
+   (ADR 0006), SQS/S3/IoT/AppSync adapters and bundled Lambda assets (ADR 0007).
 3. Add alarm actions (SNS topic) and restrict CORS.
 
 `cdk synth`/`deploy` bundle the Lambda code from `uv.lock`, so they need `uv` on PATH (or
@@ -30,7 +29,7 @@ aws lambda list-functions --query "Functions[?contains(FunctionName, 'MigrateFun
 aws lambda invoke --function-name <that name> /dev/stdout
 ```
 
-The prod database is publicly reachable over TLS (ADR 0006): its endpoint is in the RDS
+The prod database is publicly reachable over TLS (ADR 0007): its endpoint is in the RDS
 console, and the password is in the Secrets Manager secret `DatabaseStack` created. Connect
 with `sslmode=require`.
 
@@ -45,7 +44,7 @@ with `sslmode=require`.
 | S3 | Storage + requests; lifecycle rules limit raw data growth. |
 | CloudWatch | Log ingestion/storage (retention set per env), alarms per month. |
 | Secrets Manager | Per secret per month (RDS credentials), plus API calls at Lambda cold starts. |
-| Networking | None: no NAT gateway or VPC endpoints; the Lambdas run outside the VPC (ADR 0006). Public IPv4 address on the RDS instance is billed hourly (~$3.60/month). |
+| Networking | None: no NAT gateway or VPC endpoints; the Lambdas run outside the VPC (ADR 0007). Public IPv4 address on the RDS instance is billed hourly (~$3.60/month). |
 | Cognito | Free tier, then per MAU. |
 
 ## Testing a real board / simulator against a dev IoT endpoint

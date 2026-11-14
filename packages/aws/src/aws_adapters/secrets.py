@@ -2,7 +2,7 @@
 
 The secret RDS generates is JSON with ``username``, ``password``, ``host``, ``port`` and
 ``dbname``. The URL always asks for TLS (``sslmode=require``); the prod database enforces it
-too (``rds.force_ssl``, ADR 0006).
+too (``rds.force_ssl``, ADR 0007).
 """
 
 from __future__ import annotations
