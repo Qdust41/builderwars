@@ -11,18 +11,23 @@ from aws_cdk.assertions import Match, Template
 from config import get_config
 
 
+def new_app() -> cdk.App:
+    """An app that skips asset bundling (no uv/pip/network in template assertions)."""
+    return cdk.App(context={"aws:cdk:bundling-stacks": []})
+
+
 @pytest.fixture(scope="module", params=["dev", "prod"])
 def stacks(request: pytest.FixtureRequest) -> dict[str, Template]:
-    app = cdk.App()
+    app = new_app()
     built = build(app, get_config(request.param))
     return {name: Template.from_stack(stack) for name, stack in built.items()}
 
 
 def test_rds_only_when_enabled() -> None:
-    assert "database" not in build(cdk.App(), get_config("dev"))
+    assert "database" not in build(new_app(), get_config("dev"))
     with pytest.raises(ValueError, match="unknown env"):
         get_config("staging")  # no deployed staging for the MVP (decision #12)
-    assert "database" in build(cdk.App(), get_config("prod"))
+    assert "database" in build(new_app(), get_config("prod"))
 
 
 def test_buckets_are_private_encrypted_and_tls_only(stacks: dict[str, Template]) -> None:
@@ -101,12 +106,110 @@ def test_api_routes_require_jwt_except_health(stacks: dict[str, Template]) -> No
     )
 
 
-def test_database_is_private_and_encrypted() -> None:
-    template = Template.from_stack(build(cdk.App(), get_config("prod"))["database"])
+def test_database_is_tls_only_encrypted_and_only_opens_postgres() -> None:
+    # Publicly reachable by owner decision (ADR 0006); TLS is what protects it.
+    template = Template.from_stack(build(new_app(), get_config("prod"))["database"])
     template.has_resource_properties(
         "AWS::RDS::DBInstance",
-        {"PubliclyAccessible": False, "StorageEncrypted": True, "DeletionProtection": True},
+        {"PubliclyAccessible": True, "StorageEncrypted": True, "DeletionProtection": True},
     )
+    template.has_resource_properties(
+        "AWS::RDS::DBParameterGroup", {"Parameters": {"rds.force_ssl": "1"}}
+    )
+    [group] = template.find_resources("AWS::EC2::SecurityGroup").values()
+    ingress = group["Properties"]["SecurityGroupIngress"]
+    assert [(r["FromPort"], r["ToPort"], r["IpProtocol"]) for r in ingress] == [(5432, 5432, "tcp")]
+    template.resource_count_is("AWS::EC2::NatGateway", 0)
+
+
+def _functions(template: Template) -> dict[str, dict]:
+    return {
+        props["Properties"]["Handler"]: props["Properties"]
+        for props in template.find_resources("AWS::Lambda::Function").values()
+        if props["Properties"].get("Runtime", "").startswith("python")
+    }
+
+
+def test_lambdas_run_outside_any_vpc(stacks: dict[str, Template]) -> None:
+    for name in ("api", "workers"):
+        for handler, props in _functions(stacks[name]).items():
+            assert "VpcConfig" not in props, handler
+
+
+def test_prod_lambdas_read_the_database_secret() -> None:
+    built = build(new_app(), get_config("prod"))
+    api = _functions(Template.from_stack(built["api"]))
+    workers = _functions(Template.from_stack(built["workers"]))
+    assert set(workers) == {
+        "workers.main.device_message_lambda_handler",
+        "workers.main.command_dispatch_lambda_handler",
+        "workers.main.job_lambda_handler",
+        "workers.main.migrate_lambda_handler",
+    }
+    for handler, props in {**api, **workers}.items():
+        env = props["Environment"]["Variables"]
+        assert "DATABASE_SECRET_ARN" in env, handler
+        assert env.get("REPOSITORY_BACKEND") == "postgres", handler
+        assert "DATABASE_URL" not in env, handler  # never a password in plain env vars
+    policies = json.dumps(Template.from_stack(built["workers"]).find_resources("AWS::IAM::Policy"))
+    assert "secretsmanager:GetSecretValue" in policies
+
+
+def test_dev_has_no_database_and_no_migrate_function() -> None:
+    built = build(new_app(), get_config("dev"))
+    workers = _functions(Template.from_stack(built["workers"]))
+    assert "workers.main.migrate_lambda_handler" not in workers
+    for props in workers.values():
+        assert "DATABASE_SECRET_ARN" not in props["Environment"]["Variables"]
+
+
+def test_workers_get_their_aws_settings(stacks: dict[str, Template]) -> None:
+    workers = _functions(stacks["workers"])
+    ingest = workers["workers.main.device_message_lambda_handler"]["Environment"]["Variables"]
+    assert "DEVICE_DATA_BUCKET" in ingest
+    commands = workers["workers.main.command_dispatch_lambda_handler"]["Environment"]["Variables"]
+    assert "IOT_DATA_ENDPOINT" in commands
+    policies = json.dumps(stacks["workers"].find_resources("AWS::IAM::Policy"))
+    assert "/raw/*" in policies
+    assert "/rejected/*" in policies
+
+
+def test_iot_data_endpoint_is_looked_up_not_hardcoded(stacks: dict[str, Template]) -> None:
+    iot = stacks["iot"]
+    iot.has_resource_properties(
+        "Custom::AWS",
+        {"Create": Match.serialized_json(Match.object_like({"action": "describeEndpoint"}))},
+    )
+    assert "iot:DescribeEndpoint" in json.dumps(iot.find_resources("AWS::IAM::Policy"))
+
+
+def test_worker_concurrency_is_capped_for_the_database(stacks: dict[str, Template]) -> None:
+    mappings = stacks["workers"].find_resources("AWS::Lambda::EventSourceMapping")
+    assert len(mappings) == 3
+    for mapping in mappings.values():
+        assert mapping["Properties"]["ScalingConfig"] == {"MaximumConcurrency": 2}
+        assert mapping["Properties"]["FunctionResponseTypes"] == ["ReportBatchItemFailures"]
+
+
+def test_api_publishes_session_events_and_enqueues(stacks: dict[str, Template]) -> None:
+    [api] = _functions(stacks["api"]).values()
+    env = api["Environment"]["Variables"]
+    for name in ("JOBS_QUEUE_URL", "COMMANDS_QUEUE_URL", "EVENTS_HTTP_DNS"):
+        assert name in env
+    policies = json.dumps(stacks["api"].find_resources("AWS::IAM::Policy"))
+    assert "appsync:EventPublish" in policies
+    assert "iot:Publish" not in policies
+
+
+def test_raw_and_rejected_device_data_expire(stacks: dict[str, Template]) -> None:
+    buckets = stacks["storage"].find_resources("AWS::S3::Bucket")
+    prefixes = {
+        rule.get("Prefix")
+        for bucket in buckets.values()
+        for rule in bucket["Properties"]["LifecycleConfiguration"]["Rules"]
+        if "ExpirationInDays" in rule
+    }
+    assert {"raw/", "rejected/"} <= prefixes
 
 
 def test_no_hardcoded_account_ids(stacks: dict[str, Template]) -> None:
@@ -126,7 +229,7 @@ def test_command_dispatcher_can_only_publish_to_command_topics(
 
 
 def test_rds_stays_in_free_tier_shape() -> None:
-    template = Template.from_stack(build(cdk.App(), get_config("prod"))["database"])
+    template = Template.from_stack(build(new_app(), get_config("prod"))["database"])
     template.has_resource_properties(
         "AWS::RDS::DBInstance",
         {
