@@ -29,6 +29,20 @@ jobs:
       - name: Tests
         run: uv run pytest
 
+  host-python310:
+    # The host runtime and the shared protocol must run on CPython 3.10 (decision #1).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install ./packages/device_protocol ./device pytest
+      - name: Protocol + host runtime tests on 3.10
+        run: python -m pytest -p no:cacheprovider packages/device_protocol/tests device/tests
+      - name: Simulator smoke run
+        run: python -m board_runtime.simulator --count 3
+
   web:
     runs-on: ubuntu-latest
     defaults:

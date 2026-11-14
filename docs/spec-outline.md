@@ -7,7 +7,7 @@ authoritative inputs; where a spec would contradict a decision, the decision win
 new ADR supersedes it.
 
 System in one paragraph (from the decisions): a host PC running CPython ≥ 3.10 sits next to
-a FREE-WILi 1-OG board (dual RP2040, `_main.uf2` apps, USB serial via the `onewili` Python
+a FREE-WILi 1-OG board (dual RP2040, `_main.uf2` apps, USB serial via the `freewili` Python
 package) with a Bottlenose WiFi Orca (ESP32-C6) for connectivity. The host is the platform's
 "device": it publishes telemetry/logs over MQTT/TLS to AWS IoT Core, receives commands, and
 performs UF2 firmware updates. Users work together in browser sessions (shared view +
@@ -54,43 +54,56 @@ each spec should be reviewable on its own.
 
 Extends `docs/device-protocol.md` from provisional to normative.
 
-- Envelope: versioned JSON, `device_id`, `session_id` (host process), `seq`, `ts`, topic
-  types (telemetry, log, status, event, command_result).
-- Topics: `devices/{device_id}/telemetry|logs|status|events` (device→cloud),
-  `devices/{device_id}/commands` (cloud→device). QoS 1 both ways; cloud dedupes on
-  `(device_id, seq)` (device) / `(command_id)` (cloud).
-- **Batched telemetry (decision #6):** the telemetry envelope carries `samples: [{ts,
-  readings}, ...]` — up to 32 samples or a 5 s window, whichever first; the host assigns
-  `seq` per flushed batch, not per sample. Limits apply to the whole batch.
+- Envelope (as implemented in `device_protocol`): `message_id` (UUID), `schema_version`,
+  `device_id`, `timestamp`, `message_type`, `sequence_number`, `firmware_version`,
+  `hardware_model`, `payload`. Message types: telemetry, log, status, heartbeat, event,
+  command, command_result. *(Review note: the earlier `session_id`/`seq`/`ts` names were
+  aligned to the scaffold's field names; a separate host `session_id` is not needed because
+  `sequence_number` persists across reboots (#14), and the name would collide with
+  collaboration sessions.)*
+- Topics: `devices/{device_id}/telemetry|logs|status|events|responses` (device→cloud),
+  `devices/{device_id}/commands` (cloud→device). QoS 1 both ways. The cloud dedupes on
+  `(device_id, message_id)`; `sequence_number` is for gap detection only (dedupe on `seq`
+  would wrongly drop messages if a host's sequence file were ever reset). Commands dedupe
+  on `command_id`.
+- **Batched telemetry (decision #6, implemented):** the telemetry payload is
+  `{"samples": [{"ts", "readings"}, ...]}` — 1 to 32 samples, ordered by `ts`, flushed every
+  5 s window or at 32 samples; one `sequence_number` per flushed batch. Limits apply to the
+  whole message.
 - Limits: ≤32 KiB message, ≤16 KiB payload (`envelopes.py:18-19`); per-board ingress rate
-  limit 10 msg/s sustained, 60/min burst (safety net in ingest, not the normal ~0.2 msg/s).
-- Gap detection: `seq` strictly increasing per device, persisted across host reboots
-  (decision #14); gaps log a warning event, do not reject the stream.
-- Versioning: `protocol_version` field; server accepts N and N-1; unknown versions →
-  `status` response + DLQ, never silent drop.
+  limit: burst up to 10 msg/s, sustained ceiling 60 msg/min (safety net in ingest; normal is ~0.2 msg/s).
+- Gap detection: `sequence_number` strictly increasing per device, persisted across host
+  reboots (decision #14); gaps record a `sequence_gap` event, never reject the stream.
+- Versioning: `schema_version` field; server accepts N and N-1; unknown versions are
+  rejected as `unsupported_version`.
+- Invalid messages (any rejection reason) are **quarantined** (raw body kept under S3
+  `rejected/` + metric), never silently dropped. The DLQ is reserved for messages whose
+  *processing* keeps failing (e.g. DB down), since retrying an invalid message can't help.
 - Acceptance: contract fixtures (valid + invalid) pass in CI; a malformed message is
-  observable end-to-end (DLQ + alarm) without crashing ingest.
+  observable end-to-end (quarantine + metric) without crashing ingest.
 
 ## 02 — Board runtime & board I/O
 
 The CPython runtime that runs on the host PC (decision #1, #2, #14).
 
-- `board_io` adapter: wraps the `onewili` Python package (USB serial, `pyfwfinder`
-  auto-discovery, `dev` API) behind the existing `SensorReader` protocol in
-  `device/src/board_runtime/hardware/sensors.py`; pin the package version; all USB access
-  isolated in this module (no other module touches serial).
+- Board adapter (`device/src/board_runtime/hardware/freewili.py`, `FreeWiliSensors`): wraps
+  the vendor `freewili` Python package (USB serial, `pyfwfinder` auto-discovery; `onewili`
+  is not on PyPI) behind the `SensorReader` protocol; pinned `freewili==0.0.51`; all USB
+  access isolated in this module (no other module touches serial). This spec decides which
+  readings matter (the scaffold reads GPIO levels and buttons as placeholders).
 - Connectivity: `awsiotsdk` v2 over MQTT/TLS, X.509 per-device identity, client id = IoT
   thing name; exponential backoff + jitter on reconnect; `OfflineBuffer` drains in order
   after reconnect (existing scaffold modules).
-- Sequence counter persisted per device to `~/.builderwars/seq/<device_id>` (atomic write
-  at batch flush).
+- Sequence counter persisted per device to `~/.builderwars/seq/<device_id>` (implemented:
+  atomic write before each number is used, so a crash can skip but never reuse a number).
 - **Telemetry batching (decision #6):** accumulate readings in memory; flush to the
   telemetry topic every 5 s or when the buffer reaches 32 samples, whichever first; each
   sample keeps its own timestamp; the batch goes through the same `OfflineBuffer` as
   everything else (so offline batches replay in order).
-- Command dispatch: subscribe `devices/{device_id}/commands`; dispatch by `command_type`
-  to registered handlers; every command produces a `command_result` (ok/err + detail).
-  Unknown command type → `err` result, not silence.
+- Command dispatch: subscribe `devices/{device_id}/commands`; dispatch by command `name` to
+  an allowlist of registered handlers; every command produces a `command_result`
+  (`succeeded`/`failed`/`rejected` + detail). Unknown or expired command → `rejected`, not
+  silence.
 - Logging: discrete `log` messages over MQTT (decision #7); log level threshold from
   config; never log credentials/cert material.
 - Graceful degradation: board disconnected → runtime keeps publishing `status: degraded`,
@@ -114,7 +127,7 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 
 ## 04 — Cloud ingest pipeline
 
-- IoT Core rules per topic family → SQS (telemetry/logs/status/events) with DLQ per queue.
+- IoT Core rule(s) → SQS (telemetry/logs/status/events/responses) with a DLQ per queue. The scaffold uses one rule and one ingest queue; split per family only if volumes differ a lot.
 - Ingest worker (SQS-triggered Lambda): validate against `device_protocol` schema,
   dedupe `(device_id, seq)`, write normalized row to RDS, raw envelope to S3
   `raw/{device_id}/{yyyy}/{mm}/{dd}/`; ack only after both writes (or outbox pattern —
@@ -125,18 +138,22 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
   retention defined in spec (recommend: status/log 90 days, telemetry 365 days, commands
   permanent).
 - Acceptance: 10 boards × 1 batched msg/5 s (each batch ≤32 samples) sustained for 24 h
-  in staging with zero unexplained gaps; poison message lands in DLQ (alarm firing
-  deferred with #13).
+  (load test against prod before real users, or a local replay of recorded traffic; no
+  staging, decision #12) with zero unexplained gaps; an invalid message is quarantined and a message
+  whose processing keeps failing lands in the DLQ (alarm firing deferred with #13).
 
 ## 05 — Users, projects & authorization
 
 - Cognito user pool (email), no self sign-up in deployed envs (decision #10); owner adds
   members by email.
-- Per-project roles owner/admin/member/viewer; role → permission matrix:
-  `project:read`, `project:manage_members`, `device:command` (owner/admin), `firmware:manage`
-  (owner/admin), `ai:run` (owner/admin/member), `session:join` (all project roles).
+- Per-project roles owner/admin/member/viewer; role → permission matrix (names as in
+  `domain/projects/authorization.py`): `project:view` and `session:join` (all roles);
+  `session:start`, `job:create`, `ai:run` (member+); `project:manage`,
+  `project:manage_members`, `device:register`, `device:command`, `firmware:approve`
+  (owner/admin).
 - Projects own: devices, code, firmware artifacts, AI runs, sessions. All data access is
-  project-scoped; cross-project access is a hard 403.
+  project-scoped. A **non-member** gets 404 (so project/device ids can't be probed); a
+  **member lacking a permission** gets 403.
 - API: FastAPI on Lambda (Mangum) behind API Gateway; Cognito authorizer (dev env:
   `dev-header` auth mode from `apps/api/src/api/settings.py`).
 - Acceptance: role matrix table in spec maps 1:1 to policy tests in `tests/contract`.
@@ -160,8 +177,9 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
   publishes to IoT Core topic `devices/{device_id}/commands` (QoS 1) → result arrives via
   the ingest path → broadcast to the project session.
 - Per-board command queue: FIFO semantics (decision #5); max queue depth per board (e.g.
-  32); commands carry `command_id` (ULID) and expire if unacknowledged within 30 s →
-  `timeout` result.
+  32); commands carry `command_id` (UUID, matching the protocol's `CommandPayload`) and
+  expire if unacknowledged within 30 s → `timed_out`. Implemented in the scaffold except the
+  AWS adapters, the timeout sweeper and the session broadcast.
 - Idempotency: `command_id` deduped; replay of a delivered command is not re-published.
 - Acceptance: command sent from browser is observable on a real board (integration test)
   and its result appears in both the API and the session view.
@@ -194,8 +212,10 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 
 - Artifact = `_main.uf2` (wilibsp dual-CPU build) + metadata (`FirmwareArtifact` in
   `packages/domain/src/domain/firmware/models.py`): version, sha256, S3 location,
-  compatible hardware (board model + orca set), state machine built → approved → deployed
-  → (rolled_back | revoked).
+  compatible hardware (board model + `required_extensions`, the Orca set), artifact states
+  built → approved (or rejected) → revoked. "Deployed" and "rolled back" are per-device
+  facts, not artifact states: they are `firmware_deploy` / `firmware_rollback` jobs and the
+  device's reported `firmware_version`.
 - Build: worker job runs the wilibsp toolchain (Lambda; Fargate if > 15 min); build
   inputs = project code + toolchain version, pinned; output uploaded to S3
   `firmware/{project_id}/{version}/`.
@@ -205,7 +225,7 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 - Rollback: deploy previous approved version; N-1 always retained.
 - Precondition: host online (IoT `status: online`) and board USB-connected; deploy to an
   offline host queues with a deadline.
-- Acceptance: build → approve → deploy → verify → rollback all exercised in staging with a
+- Acceptance: build → approve → deploy → verify → rollback all exercised in prod against a dedicated test device with a
   real board; a corrupt artifact (bad sha256) is refused by the host before flashing.
 
 ## 10 — Jobs & background work
@@ -234,7 +254,7 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 - On-call: single email (owner to supply when alarms are in scope).
 - Runbook section: DLQ replay, cert revocation, device decommission, stuck deploy.
 - Acceptance: each DLQ has a documented replay procedure; a chaos test (poison message)
-  lands the message in the DLQ (alarm firing deferred with #13).
+  is quarantined, and a handler that keeps failing lands its message in the DLQ (alarm firing deferred with #13).
 
 ## 12 — Security & threat model
 
@@ -256,16 +276,17 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 ## 13 — Environments & deployment
 
 - Regions: us-east-1 only (decision #11); region always from `CDK_DEFAULT_REGION`.
-- Envs: dev (local, in-memory adapters, `dev-header` auth), staging (AWS, in-memory or
-  shared-RDS schema per decision #12), prod (AWS, RDS free tier `db.t4g.micro`).
+- Envs: dev (local, in-memory adapters, `dev-header` auth) and prod (AWS, RDS free tier
+  `db.t4g.micro`). **No deployed staging for the MVP** (decision #12): changes go local →
+  prod.
 - Free-tier budget plan: IoT Core 1M msg/mo, API GW 1M req, Lambda 400k GB-s, S3
   (negligible), AppSync Events free tier, RDS 750 h/mo t4g.micro. Expected usage at MVP
   scale with 5 s telemetry batching (decision #6): 10 boards × 12 msg/min ≈ **518k
   IoT msg/mo — inside the 1M free tier**; all other services fit free tier with wide
   margin. Budget alarm at $25/mo as the safety net (normal spend ≈ $0).
-- CI/CD: GitHub Actions — unit + contract tests on PR; deploy staging on merge to main;
+- CI/CD: GitHub Actions — unit + contract tests on PR;
   prod deploy manual gate.
-- Acceptance: `cdk deploy` from a clean checkout produces the full staging environment;
+- Acceptance: `cdk deploy -c env=prod` from a clean checkout produces the full prod environment;
   monthly cost at MVP scale < $10 (tracked by a budget alarm at $25).
 
 ---

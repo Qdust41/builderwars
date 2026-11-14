@@ -1,27 +1,52 @@
-# Board runtime (`board_runtime`)
+# Host runtime (`board_runtime`)
 
-Python runtime intended to run on the development board, plus a local simulator.
+Runs on the **host PC wired to a FREE-WILi 1-OG** over USB (decision #1, ADR 0004). The host is
+the platform's "device": it samples the board, batches telemetry, and talks to AWS IoT Core.
+Requires **CPython 3.10+** (CI runs these tests on 3.10).
+
+## Local development (no board, no AWS)
 
 ```bash
-# Simulator: emits a burst of valid messages as JSON lines (not an authenticated IoT device)
-uv run python -m board_runtime.simulator --device-id sim-001 --count 5
+# Simulator: emits valid messages as JSON lines (not an authenticated IoT device)
+uv run python -m board_runtime.simulator --device-id sim-001 --count 40
 
-# Runtime loop with the stdout transport
-DEVICE_ID=dev-local-001 DEVICE_TELEMETRY_INTERVAL_S=1 uv run python -m board_runtime.main --iterations 3
+# Runtime loop with simulated sensors and the stdout transport
+DEVICE_ID=dev-local-001 BUILDERWARS_STATE_DIR=/tmp/bw-state \
+  uv run python -m board_runtime.main --samples 12
 ```
+
+## On a real host (not yet exercised end to end)
+
+```bash
+python3 -m venv ~/.builderwars/venv && . ~/.builderwars/venv/bin/activate
+pip install "./packages/device_protocol" "./device[mqtt]" freewili==0.0.51
+export DEVICE_ID=<thing-name> DEVICE_SENSORS=freewili DEVICE_TRANSPORT=mqtt \
+       IOT_ENDPOINT=<ats-endpoint> IOT_CERT_PATH=~/.builderwars/credentials/device.pem.crt \
+       IOT_KEY_PATH=~/.builderwars/credentials/private.pem.key \
+       IOT_CA_PATH=~/.builderwars/credentials/AmazonRootCA1.pem
+builderwars-host
+```
+
+`freewili` is installed separately on purpose: it pins `typing-extensions` exactly, which
+would force older pydantic on the whole workspace if it were locked as an extra. (The
+decisions doc mentions `onewili`; that isn't on PyPI, and `freewili` is the vendor's published
+library.)
+
+## Modules
 
 | Module | Purpose | State |
 | --- | --- | --- |
 | `config.py` | Env-based config; cert/key **paths** only | done |
 | `messages.py` | Builds validated, sequenced envelopes | done |
+| `sequence.py` | Sequence numbers persisted in `~/.builderwars/seq/<device_id>` (decision #14) | done |
+| `batching.py` | Telemetry batches: flush every 5 s or at 32 samples (decision #6) | done |
 | `connectivity/transport.py` | `Transport` protocol, stdout + recording transports | done |
-| `connectivity/mqtt_client.py` | AWS IoT Core MQTT/TLS transport | **stub** |
-| `connectivity/backoff.py` | Exponential backoff with jitter | done, not yet wired to a reconnect loop |
+| `connectivity/mqtt_client.py` | AWS IoT Core MQTT/TLS via `awsiotsdk` (`mqtt` extra) | done, untested against real IoT |
+| `connectivity/backoff.py` | Exponential backoff with jitter | available; the SDK reconnects itself |
 | `connectivity/buffer.py` | Offline buffer (bounded, RAM, drop-oldest) | done; persistence TODO |
-| `hardware/` | `SensorReader` interface, simulated sensors | real drivers TODO (board TBD) |
-| `logging/` | `logging.Handler` → protocol `log` messages | done |
+| `hardware/freewili.py` | FREE-WILi over USB via `freewili`; unplug -> `BoardUnavailableError` | done, untested on hardware; readings are placeholders |
+| `hardware/sensors.py` | `SensorReader` protocol, simulated sensors | done |
+| `logging/` | `logging.Handler` -> protocol `log` messages | done |
 | `commands/` | Allowlisted command dispatcher (`ping`, `get_uptime`) | done; no shell command, ever |
-| `main.py` | Runtime loop | done (single-threaded placeholder) |
-
-Assumes CPython ≥ 3.12 on the board (open decision #1). Credentials are configured via
-environment variables pointing at files kept outside the repository.
+| `firmware.py` | sha256 verification before flashing; UF2 flasher | verify done; flashing stub (spec 09) |
+| `main.py` | Runtime loop; `status: degraded` + events while the board is unplugged | done |

@@ -1,0 +1,13 @@
+{
+  "message_id": "00000000-0000-4000-8000-000000000050",
+  "schema_version": 1,
+  "device_id": "device-001",
+  "timestamp": "2026-11-14T18:30:00Z",
+  "sequence_number": 1042,
+  "firmware_version": "0.1.0",
+  "hardware_model": "devboard-x",
+  "message_type": "event",
+  "payload": {
+    "name": "Board Gone"
+  }
+}

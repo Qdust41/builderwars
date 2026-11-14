@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, status
 
-from api.dependencies import DeviceServiceDep, UserDep
-from api.schemas import DeviceCreate, DeviceOut, DeviceStatusOut
+from api.dependencies import CommandServiceDep, DeviceServiceDep, UserDep
+from api.schemas import CommandCreate, CommandOut, DeviceCreate, DeviceOut, DeviceStatusOut
 
 router = APIRouter(tags=["devices"])
 
@@ -29,6 +29,7 @@ def register_device(
         project_id=project_id,
         display_name=body.display_name,
         hardware_model=body.hardware_model,
+        extensions=frozenset(body.extensions),
     )
     return DeviceOut.of(device)
 
@@ -49,5 +50,33 @@ def get_device_status(device_id: str, user: UserDep, service: DeviceServiceDep) 
     )
 
 
-# TODO: POST /devices/{device_id}/commands — authorise SEND_DEVICE_COMMAND, validate against the
-# board's command allowlist, publish via DeviceCommandPublisher (IoT Core), audit-log it.
+@router.post(
+    "/projects/{project_id}/devices/{device_id}/commands",
+    response_model=CommandOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def send_command(
+    project_id: str,
+    device_id: str,
+    body: CommandCreate,
+    user: UserDep,
+    service: CommandServiceDep,
+) -> CommandOut:
+    """Queue a command for the device (role-based, no lock; FIFO per device, max 32 pending).
+
+    The dispatcher worker publishes it; the result arrives asynchronously. Poll
+    ``GET /commands/{id}`` (session broadcast of results: TODO).
+    """
+    command = service.request_command(
+        user_id=user.user_id,
+        project_id=project_id,
+        device_id=device_id,
+        name=body.name,
+        args=body.args,
+    )
+    return CommandOut.of(command)
+
+
+@router.get("/commands/{command_id}", response_model=CommandOut)
+def get_command(command_id: str, user: UserDep, service: CommandServiceDep) -> CommandOut:
+    return CommandOut.of(service.get_command(user_id=user.user_id, command_id=command_id))

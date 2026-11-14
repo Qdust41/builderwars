@@ -11,6 +11,8 @@ from domain.common import InvalidStateTransitionError, new_id, utcnow
 class JobType(StrEnum):
     AI_RUN = "ai_run"
     FIRMWARE_BUILD = "firmware_build"
+    FIRMWARE_DEPLOY = "firmware_deploy"  # host downloads, verifies sha256, writes UF2 over USB
+    FIRMWARE_ROLLBACK = "firmware_rollback"  # redeploy the previous approved version (N-1)
     TEST_RUN = "test_run"
     DATA_ANALYSIS = "data_analysis"
 

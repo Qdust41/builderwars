@@ -14,8 +14,7 @@ export function ProjectPage() {
   async function register(e: FormEvent) {
     e.preventDefault();
     if (!deviceName.trim()) return;
-    // TODO: hardware model picker once supported boards are decided.
-    await api.registerDevice(projectId, deviceName.trim(), "unknown");
+    await api.registerDevice(projectId, deviceName.trim());
     setDeviceName("");
     devices.reload();
   }

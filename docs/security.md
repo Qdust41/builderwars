@@ -8,8 +8,8 @@ here is production-ready.
 | Who | Mechanism | State |
 | --- | --- | --- |
 | Humans | Cognito user pool; API Gateway JWT authoriser + in-app verification | Pool/authoriser in CDK; in-app verification TODO. Local uses `X-Dev-User` header. |
-| Devices | One X.509 certificate per board, attached to an IoT thing + `DevicePolicy` | Policy in CDK; provisioning TODO. |
-| Backend | IAM roles per function, least privilege | API: send to jobs queue, read artifacts. Ingest: put `raw/*`. Jobs: artifacts r/w. |
+| Devices | One X.509 certificate per host+board pair, attached to an IoT thing + `DevicePolicy`; files in `~/.builderwars/credentials/` (0600) on the host | Policy in CDK; provisioning TODO (spec 03). |
+| Backend | IAM roles per function, least privilege | API: send to jobs/commands queues, read artifacts. Ingest: put `raw/*`. Command dispatcher: `iot:Publish` on `devices/*/commands` only. Jobs: artifacts r/w. |
 
 The two identity systems are separate: a user can never act as a device and vice versa.
 
@@ -22,7 +22,12 @@ The two identity systems are separate: a user can never act as a device and vice
 - Device messages: identity from topic, strict schema, size limits, idempotency.
 - Realtime events reject secret-looking keys and `command` fields, and are size-limited. Only the
   backend (IAM) may publish to AppSync Events.
-- Board commands are an allowlist of named functions; unknown or expired commands are rejected.
+- Board commands are an allowlist of named functions on the host; unknown or expired commands are
+  rejected. Commands need `device:command` (owner/admin), are bounded at 32 pending per device,
+  expire after 30 s, and a command result is only accepted from the device it was sent to.
+- Invalid device messages are quarantined with their rejection reason, not dropped.
+- Firmware: the host verifies the UF2's sha256 against the cloud artifact record before
+  flashing (`board_runtime.firmware.verify_sha256`); the checksum never comes from the host.
 
 ## Secrets
 
@@ -43,14 +48,16 @@ The two identity systems are separate: a user can never act as a device and vice
 - Every gate decision is audit-logged; `AiRun` records inputs/outputs by reference, tool calls and
   approvals.
 - `redact()` strips secret-looking keys, PEM blocks and AWS key ids from context (defence in
-  depth). Whether project data may go to an external model provider is open decision #8.
+  depth). External providers are allowed (decision #8): either an OpenAI-compatible endpoint
+with an API key held in Secrets Manager, or Bedrock with IAM/SigV4 (data stays in AWS).
+Redaction must run before anything leaves.
 - Generated firmware is never flashed or deployed automatically.
 
 ## Firmware
 
-Model only. Before any deployment exists: signed artifacts, checksum + signature verification
-on the board, hardware compatibility checks, staged rollout, failure reporting and rollback
-(open decision #9).
+Decision #9: sha256 verification is mandatory (host side, before writing the UF2), signatures
+optional for MVP, rollback = redeploy N-1, hardware + Orca compatibility checked against the
+artifact. Building, flashing and deployment jobs are not implemented yet.
 
 ## Known gaps (must close before real users)
 
@@ -61,4 +68,6 @@ on the board, hardware compatibility checks, staged rollout, failure reporting a
 5. Rate limiting (API Gateway throttling, per-device message quotas).
 6. Audit log persistence and retention policy.
 7. CORS restricted to the deployed web origin.
-8. Alarm actions (SNS → on-call).
+8. Alarm actions (SNS → on-call) — out of MVP scope (decision #13).
+9. Ingest rate limiting per device (burst 10 msg/s, sustained 60 msg/min).
+10. Timeout sweeper for commands that were sent but never answered.

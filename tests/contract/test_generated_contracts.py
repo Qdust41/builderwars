@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
 
 import pytest
 
-from tests.conftest import ROOT
-
 pytestmark = pytest.mark.contract
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_committed_contracts_match_source_models() -> None:
@@ -41,6 +42,8 @@ def test_openapi_exposes_planned_routes() -> None:
         ("/sessions/{session_id}", "get"),
         ("/projects/{project_id}/jobs", "post"),
         ("/jobs/{job_id}", "get"),
+        ("/projects/{project_id}/devices/{device_id}/commands", "post"),
+        ("/commands/{command_id}", "get"),
     }
     actual = {(path, method) for path, methods in paths.items() for method in methods}
     assert expected <= actual

@@ -24,6 +24,7 @@ def build_local_device_handler() -> tuple[DeviceMessageHandler, memory.InMemoryT
         processed=memory.InMemoryProcessedMessageStore(),
         raw_store=memory.InMemoryRawMessageStore(),
         telemetry=telemetry,
+        sequences=memory.InMemorySequenceTracker(),
     )
     return DeviceMessageHandler(ingest), telemetry
 
@@ -36,6 +37,11 @@ def device_message_lambda_handler(event: dict[str, Any], context: object) -> dic
 
 def job_lambda_handler(event: dict[str, Any], context: object) -> dict[str, Any]:
     raise NotImplementedError("AWS adapters for the job worker are not implemented")
+
+
+def command_dispatch_lambda_handler(event: dict[str, Any], context: object) -> dict[str, Any]:
+    # TODO: PostgreSQL command repository + IoT data-plane publisher (iot-data Publish).
+    raise NotImplementedError("AWS adapters for the command dispatcher are not implemented")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,13 +61,17 @@ def main(argv: list[str] | None = None) -> int:
         reason = f" ({result.reason.value}: {result.detail})" if result.reason else ""
         print(f"{result.outcome.value:<9} {result.device_id} {result.message_id}{reason}")
     summary = ", ".join(f"{k.value}={v}" for k, v in sorted(counts.items()))
-    print(f"summary: {summary}; telemetry records={len(telemetry.telemetry)}")
+    print(
+        f"summary: {summary}; telemetry samples={len(telemetry.telemetry)}; "
+        f"events={len(telemetry.events)}"
+    )
     return 0
 
 
 __all__ = [
     "IncomingDeviceMessage",
     "build_local_device_handler",
+    "command_dispatch_lambda_handler",
     "device_message_lambda_handler",
     "job_lambda_handler",
     "main",

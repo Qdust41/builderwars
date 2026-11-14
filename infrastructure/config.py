@@ -1,7 +1,10 @@
 """Per-environment settings. Nothing here is a secret or an account id.
 
-Select with ``-c env=dev|staging|prod``. Account/region come from the standard
-``CDK_DEFAULT_ACCOUNT`` / ``CDK_DEFAULT_REGION`` variables at deploy time (never hard-coded).
+Select with ``-c env=dev|prod``. There is no staging environment for the MVP (decision #12):
+changes go local -> prod. ``dev`` is for synth checks and personal sandboxes only; it has no
+database, so the deployed API refuses to start there until a persistent store exists.
+Account/region come from the standard ``CDK_DEFAULT_ACCOUNT`` / ``CDK_DEFAULT_REGION``
+variables at deploy time (never hard-coded).
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ class EnvConfig:
     retain_data: bool
     log_retention: logs.RetentionDays
     raw_data_expiry_days: int
+    # Placeholder only: alarm actions are out of MVP scope (decision #13). Not wired to SNS.
+    ops_alert_email: str = "ops-alerts@example.com"
 
     @property
     def removal_policy(self) -> RemovalPolicy:
@@ -28,11 +33,10 @@ class EnvConfig:
         return f"builderwars-{self.name}-{suffix}"
 
 
-# RDS is off by default in dev to avoid its ongoing cost (see docs/aws-deployment.md); retention
-# periods are placeholders until open decision #6 (volumes/retention) is settled.
+# Decisions #11/#12: us-east-1 (via CDK_DEFAULT_REGION), free tier. RDS (db.t4g.micro) in prod
+# only; no staging. Raw-data retention 30 (dev) / 365 (prod) days (decision #6).
 ENVIRONMENTS: dict[str, EnvConfig] = {
     "dev": EnvConfig("dev", False, False, logs.RetentionDays.TWO_WEEKS, 30),
-    "staging": EnvConfig("staging", True, True, logs.RetentionDays.ONE_MONTH, 90),
     "prod": EnvConfig("prod", True, True, logs.RetentionDays.THREE_MONTHS, 365),
 }
 

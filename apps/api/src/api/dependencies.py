@@ -14,6 +14,7 @@ from api.settings import AuthMode, RepositoryBackend, Settings, validate_setting
 from application.adapters import memory
 from application.services import (
     Authorizer,
+    CommandService,
     DeviceService,
     JobService,
     ProjectService,
@@ -34,6 +35,7 @@ class Container:
     devices: DeviceService
     sessions: SessionService
     jobs: JobService
+    commands: CommandService
 
 
 def build_container(settings: Settings) -> Container:
@@ -57,6 +59,12 @@ def build_container(settings: Settings) -> Container:
         devices=DeviceService(devices, authorizer),
         sessions=SessionService(sessions, devices, authorizer, memory.RecordingRealtimePublisher()),
         jobs=JobService(jobs, devices, memory.InMemoryJobQueue(), authorizer),
+        commands=CommandService(
+            memory.InMemoryDeviceCommandRepository(),
+            devices,
+            memory.InMemoryCommandQueue(),
+            authorizer,
+        ),
     )
 
 
@@ -102,7 +110,12 @@ def get_job_service(container: ContainerDep) -> JobService:
     return container.jobs
 
 
+def get_command_service(container: ContainerDep) -> CommandService:
+    return container.commands
+
+
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 DeviceServiceDep = Annotated[DeviceService, Depends(get_device_service)]
 SessionServiceDep = Annotated[SessionService, Depends(get_session_service)]
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]
+CommandServiceDep = Annotated[CommandService, Depends(get_command_service)]

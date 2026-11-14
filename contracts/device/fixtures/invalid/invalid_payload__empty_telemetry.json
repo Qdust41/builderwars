@@ -7,5 +7,7 @@
   "firmware_version": "0.1.0",
   "hardware_model": "devboard-x",
   "message_type": "telemetry",
-  "payload": {}
+  "payload": {
+    "samples": []
+  }
 }

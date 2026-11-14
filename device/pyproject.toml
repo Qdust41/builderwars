@@ -1,11 +1,21 @@
 [project]
 name = "bw-board-runtime"
 version = "0.1.0"
-description = "Python runtime for the development board, plus a local simulator"
-requires-python = ">=3.12"
+description = "Host-PC runtime for a FREE-WILi board (CPython 3.10+), plus a local simulator"
+requires-python = ">=3.10"
 dependencies = [
     "bw-device-protocol",
 ]
+
+[project.optional-dependencies]
+# Real AWS IoT Core connection (MQTT/TLS, X.509).
+mqtt = ["awsiotsdk>=1.22,<2"]
+# The FREE-WILi vendor package (freewili==0.0.51) is NOT an extra on purpose: it pins
+# typing-extensions exactly, which would drag pydantic down across the whole workspace lock.
+# Install it on the host only: pip install freewili==0.0.51 (see device/README.md).
+
+[project.scripts]
+builderwars-host = "board_runtime.main:main"
 
 [build-system]
 requires = ["hatchling>=1.25"]

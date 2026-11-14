@@ -135,3 +135,37 @@ def test_redaction_strips_secret_keys_and_values() -> None:
     assert "PRIVATE KEY" not in out["nested"][0]["note"]
     assert "AKIA" not in out["log"]
     assert out["temperature_c"] == 42
+
+
+def test_provider_config_modes() -> None:
+    from ai_platform.providers import ProviderConfig, ProviderConfigError, ProviderMode
+
+    bedrock = ProviderConfig.from_env({"AI_PROVIDER": "bedrock", "AI_MODEL": "some-model"})
+    assert bedrock.mode is ProviderMode.BEDROCK
+    assert bedrock.endpoint.startswith("https://bedrock-runtime.us-east-1.amazonaws.com")
+
+    compatible = ProviderConfig.from_env(
+        {"AI_MODEL": "m", "AI_BASE_URL": "http://localhost:11434/v1/", "AI_API_KEY_SECRET_ID": "s"}
+    )
+    assert compatible.endpoint == "http://localhost:11434/v1"
+
+    with pytest.raises(ProviderConfigError, match="AI_MODEL"):
+        ProviderConfig.from_env({"AI_PROVIDER": "bedrock"})
+    with pytest.raises(ProviderConfigError, match="base_url"):
+        ProviderConfig.from_env({"AI_MODEL": "m"})
+    with pytest.raises(ProviderConfigError, match="IAM"):
+        ProviderConfig.from_env(
+            {"AI_PROVIDER": "bedrock", "AI_MODEL": "m", "AI_API_KEY_SECRET_ID": "s"}
+        )
+
+
+def test_viewer_cannot_run_ai_write_tools(gate_and_audit) -> None:
+    gate, _ = gate_and_audit
+    result = gate.evaluate(
+        _run("viewer"),
+        ToolCallRequest(
+            tool_name="propose_patch",
+            arguments={"project_id": "p", "summary": "x", "unified_diff": "x"},
+        ),
+    )
+    assert result.decision is GateDecision.DENIED

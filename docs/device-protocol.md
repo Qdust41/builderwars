@@ -5,7 +5,9 @@ Source of truth: `packages/device_protocol`. Generated JSON Schemas:
 Example messages: `contracts/device/fixtures/valid/`, rejected examples in `.../invalid/`
 (file names start with the expected rejection reason).
 
-**Payload schemas are provisional** until the board and its sensors are chosen.
+The device is a **host PC + FREE-WILi pair** (docs/decisions/0004-host-pc-device.md): the
+host runtime speaks this protocol; the board itself never talks to the cloud. Reading names
+inside telemetry stay free-form until spec 02 fixes the sensor set.
 
 ## Envelope
 
@@ -14,12 +16,12 @@ Example messages: `contracts/device/fixtures/valid/`, rejected examples in `.../
   "message_id": "uuid",               // required, unique per message (idempotency)
   "schema_version": 1,                // required, must be supported
   "device_id": "device-001",          // required, informational only — NOT identity
-  "timestamp": "2026-11-14T18:30:00Z",// required, ISO 8601 with timezone
-  "message_type": "telemetry",        // telemetry|log|status|command|command_result|heartbeat
-  "sequence_number": 1042,            // optional, >= 0, per-boot counter
+  "timestamp": "2026-11-14T18:30:05Z",// required, ISO 8601 with timezone (send/flush time)
+  "message_type": "telemetry",        // telemetry|log|status|heartbeat|event|command|command_result
+  "sequence_number": 1042,            // optional, >= 0, persisted across host reboots
   "firmware_version": "0.1.0",        // optional
-  "hardware_model": "devboard-x",     // optional
-  "payload": { "temperature_c": 42.5 }
+  "hardware_model": "freewili-1-og",  // optional
+  "payload": {"samples": [{"ts": "2026-11-14T18:30:01Z", "readings": {"temperature_c": 42.5}}]}
 }
 ```
 
@@ -30,10 +32,11 @@ Unknown envelope fields are rejected. `device_id` must match `^[A-Za-z0-9][A-Za-
 
 | message_type | payload |
 | --- | --- |
-| `telemetry` | flat object, ≥1 metric, values are number/bool/string (no nesting) |
+| `telemetry` | `samples`: 1–32 items ordered by `ts`; each `{ts, readings}`, readings ≥1, names `^[a-z][a-z0-9_]{0,63}$`, values number/bool/string (no nesting). Host batches per 5 s window or at 32 samples (decision #6). |
 | `log` | `level` (debug…critical), `message` (≤4096), `logger?` |
-| `status` | `state` (booting/online/busy/error/shutting_down), `uptime_s?`, `detail?` |
+| `status` | `state` (booting/online/busy/degraded/error/shutting_down), `uptime_s?`, `detail?`. `degraded` = host online, board unreachable over USB. |
 | `heartbeat` | `uptime_s` |
+| `event` | `name` (`^[a-z][a-z0-9_]{0,63}$`), `severity` (info/warning/error), `detail?`, `data` (scalars) |
 | `command` | `command_id`, `name` (`^[a-z][a-z0-9_]{0,63}$`), `args` (scalars), `expires_at?` |
 | `command_result` | `command_id`, `status` (succeeded/failed/rejected), `detail?`, `output` |
 
@@ -46,6 +49,7 @@ Unknown envelope fields are rejected. `device_id` must match `^[A-Za-z0-9][A-Za-
 | `telemetry` | device → cloud | telemetry |
 | `logs` | device → cloud | log |
 | `status` | device → cloud | status, heartbeat |
+| `events` | device → cloud | event |
 | `responses` | device → cloud | command_result |
 | `commands` | cloud → device | command |
 
@@ -57,12 +61,19 @@ Unknown envelope fields are rejected. `device_id` must match `^[A-Za-z0-9][A-Za-
 - **Delivery is at-least-once.** Consumers deduplicate on `(device_id, message_id)`. The key is
   claimed only after validation succeeds.
 - **Ordering is not guaranteed.** Older observations never move `last_seen_at` backwards.
+- **Gap detection.** `sequence_number` is one per published message (a telemetry batch is one
+  message) and persists across host reboots (decision #14), so a jump means lost messages.
+  Ingest records a `sequence_gap` event and keeps processing; it never rejects on gaps.
 - **Limits.** Raw message ≤ 32 KiB, payload ≤ 16 KiB (IoT Core's hard limit is 128 KiB).
 - **Rejections are permanent** and typed: `too_large`, `malformed_json`, `unsupported_version`,
   `invalid_envelope`, `invalid_payload`, `identity_mismatch`, `wrong_channel`. Rejected messages are
-  acknowledged and logged, not retried. (TODO: quarantine store + metric.)
+  acknowledged (not retried) and quarantined with their reason (S3 `rejected/`), never silently
+  dropped. (TODO: CloudWatch metric.)
 - **Raw vs normalised.** Raw bodies are retained separately (S3 `raw/`) from normalised records.
-- **Commands** are named and allowlisted on the board. There is no shell/exec command.
+- **Commands** are named and allowlisted on the host. There is no shell/exec command. They expire
+  30 s after creation; a device can only complete its own commands.
+- **Python 3.10.** This package runs on the host (CPython 3.10+), so no 3.11+ features; use
+  `device_protocol.compat` for `StrEnum`/`UTC`. CI runs its tests on 3.10.
 
 ## Versioning
 

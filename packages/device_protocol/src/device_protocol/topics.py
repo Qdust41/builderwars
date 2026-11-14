@@ -10,9 +10,9 @@ the device id from the *topic* (which the broker authorised), never from the pay
 from __future__ import annotations
 
 import re
-from enum import StrEnum
 from typing import Final
 
+from device_protocol.compat import StrEnum
 from device_protocol.envelopes import MessageType
 
 TOPIC_ROOT: Final[str] = "devices"
@@ -26,12 +26,19 @@ class TopicChannel(StrEnum):
     TELEMETRY = "telemetry"
     LOGS = "logs"
     STATUS = "status"
+    EVENTS = "events"
     COMMANDS = "commands"  # cloud -> device
     RESPONSES = "responses"  # device -> cloud (command results)
 
 
 DEVICE_TO_CLOUD_CHANNELS: Final[frozenset[TopicChannel]] = frozenset(
-    {TopicChannel.TELEMETRY, TopicChannel.LOGS, TopicChannel.STATUS, TopicChannel.RESPONSES}
+    {
+        TopicChannel.TELEMETRY,
+        TopicChannel.LOGS,
+        TopicChannel.STATUS,
+        TopicChannel.EVENTS,
+        TopicChannel.RESPONSES,
+    }
 )
 
 CHANNEL_FOR_MESSAGE_TYPE: Final[dict[MessageType, TopicChannel]] = {
@@ -39,6 +46,7 @@ CHANNEL_FOR_MESSAGE_TYPE: Final[dict[MessageType, TopicChannel]] = {
     MessageType.LOG: TopicChannel.LOGS,
     MessageType.STATUS: TopicChannel.STATUS,
     MessageType.HEARTBEAT: TopicChannel.STATUS,
+    MessageType.EVENT: TopicChannel.EVENTS,
     MessageType.COMMAND: TopicChannel.COMMANDS,
     MessageType.COMMAND_RESULT: TopicChannel.RESPONSES,
 }

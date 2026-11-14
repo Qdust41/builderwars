@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime
 from typing import Annotated, Any, Final
 from uuid import UUID, uuid4
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+from device_protocol.compat import UTC, StrEnum
 from device_protocol.versioning import CURRENT_SCHEMA_VERSION, ensure_supported
 
 # Provisional limits. AWS IoT Core caps MQTT payloads at 128 KiB; we stay well below that so
@@ -29,6 +29,7 @@ class MessageType(StrEnum):
     COMMAND = "command"
     COMMAND_RESULT = "command_result"
     HEARTBEAT = "heartbeat"
+    EVENT = "event"  # discrete notable occurrences (board unplugged, buffer overflow, ...)
 
 
 class DeviceEnvelope(BaseModel):

@@ -12,6 +12,7 @@ contract test and a CI step fail if they are stale. Fixtures under `contracts/de
 are exercised by contract tests.
 
 ## Consequences
-- Python on both sides shares the same code today.
-- If the board can't run pydantic (e.g. MicroPython), generate a light validator from the JSON
-  Schemas rather than hand-writing one.
+- Python on both sides shares the same code: the host PC (CPython 3.10+, ADR 0004) and the
+  cloud (3.12). The package must stay 3.10-compatible.
+- If a future board runs the protocol on-device without pydantic (e.g. MicroPython), generate
+  a light validator from the JSON Schemas rather than hand-writing one.

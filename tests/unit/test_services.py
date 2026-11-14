@@ -77,3 +77,50 @@ def test_device_lookup_hides_devices_of_other_projects(world) -> None:
     )
     with pytest.raises(NotFoundError, match="device"):
         world.devices.get_device(user_id="mallory", device_id=device.id)
+
+
+def _project_with_device(world):
+    project = world.projects.create_project(user_id="alice", name="Bench")
+    device = world.devices.register_device(
+        user_id="alice", project_id=project.id, display_name="b", hardware_model="freewili-1-og"
+    )
+    return project, device
+
+
+def test_admin_command_is_persisted_then_queued(world) -> None:
+    project, device = _project_with_device(world)
+    _add(world, project.id, "ada", ProjectRole.ADMIN)
+    command = world.commands.request_command(
+        user_id="ada", project_id=project.id, device_id=device.id, name="ping", args={}
+    )
+    assert world.commands_repo.get(command.id) == command
+    assert world.command_queue.command_ids == [command.id]
+    assert world.commands.get_command(user_id="ada", command_id=command.id) == command
+
+
+def test_members_and_viewers_cannot_command_devices(world) -> None:
+    project, device = _project_with_device(world)
+    _add(world, project.id, "mia", ProjectRole.MEMBER)
+    with pytest.raises(PermissionDeniedError):
+        world.commands.request_command(
+            user_id="mia", project_id=project.id, device_id=device.id, name="ping", args={}
+        )
+    with pytest.raises(NotFoundError):
+        world.commands.request_command(
+            user_id="mallory", project_id=project.id, device_id=device.id, name="ping", args={}
+        )
+
+
+def test_per_device_command_queue_is_bounded(world) -> None:
+    from application.services import CommandQueueFullError
+    from domain.devices import MAX_PENDING_COMMANDS_PER_DEVICE
+
+    project, device = _project_with_device(world)
+    for _ in range(MAX_PENDING_COMMANDS_PER_DEVICE):
+        world.commands.request_command(
+            user_id="alice", project_id=project.id, device_id=device.id, name="ping", args={}
+        )
+    with pytest.raises(CommandQueueFullError):
+        world.commands.request_command(
+            user_id="alice", project_id=project.id, device_id=device.id, name="ping", args={}
+        )

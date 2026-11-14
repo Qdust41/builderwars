@@ -1,4 +1,4 @@
-"""Device configuration, read from the environment. Credentials are never hard-coded.
+"""Host runtime configuration, read from the environment. Credentials are never hard-coded.
 
 Certificates/keys are referenced by file path only; this module never reads their contents.
 """
@@ -7,27 +7,42 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
+
+from device_protocol.compat import StrEnum
+from device_protocol.schemas import TELEMETRY_BATCH_WINDOW_S, TELEMETRY_MAX_SAMPLES
 
 
 class TransportKind(StrEnum):
     STDOUT = "stdout"  # local development: print JSON lines
-    MQTT = "mqtt"  # AWS IoT Core over MQTT/TLS (stub, not implemented)
+    MQTT = "mqtt"  # AWS IoT Core over MQTT/TLS (awsiotsdk, optional extra "mqtt")
+
+
+class SensorKind(StrEnum):
+    SIMULATED = "simulated"
+    FREEWILI = "freewili"  # real FREE-WILi over USB serial (optional extra "freewili")
 
 
 class ConfigError(ValueError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+def default_state_dir() -> Path:
+    return Path.home() / ".builderwars"
+
+
+@dataclass(frozen=True)
 class DeviceConfig:
     device_id: str
     hardware_model: str
     firmware_version: str
     transport: TransportKind
-    telemetry_interval_s: float = 5.0
+    sensors: SensorKind = SensorKind.SIMULATED
+    sample_interval_s: float = 1.0
+    batch_window_s: float = TELEMETRY_BATCH_WINDOW_S
+    batch_max_samples: int = TELEMETRY_MAX_SAMPLES
     heartbeat_interval_s: float = 30.0
+    state_dir: Path | None = None  # None -> sequence numbers are not persisted (tests/sim)
     mqtt_endpoint: str | None = None
     mqtt_port: int = 8883
     cert_path: Path | None = None
@@ -44,21 +59,30 @@ class DeviceConfig:
             raise ConfigError("DEVICE_ID is required") from None
         cfg = cls(
             device_id=device_id,
-            hardware_model=e.get("DEVICE_HARDWARE_MODEL", "unknown"),
+            hardware_model=e.get("DEVICE_HARDWARE_MODEL", "freewili-1-og"),
             firmware_version=e.get("DEVICE_FIRMWARE_VERSION", "0.0.0-dev"),
             transport=TransportKind(e.get("DEVICE_TRANSPORT", TransportKind.STDOUT)),
-            telemetry_interval_s=float(e.get("DEVICE_TELEMETRY_INTERVAL_S", "5")),
+            sensors=SensorKind(e.get("DEVICE_SENSORS", SensorKind.SIMULATED)),
+            sample_interval_s=float(e.get("DEVICE_SAMPLE_INTERVAL_S", "1")),
+            batch_window_s=float(e.get("DEVICE_BATCH_WINDOW_S", str(TELEMETRY_BATCH_WINDOW_S))),
             heartbeat_interval_s=float(e.get("DEVICE_HEARTBEAT_INTERVAL_S", "30")),
+            state_dir=Path(e["BUILDERWARS_STATE_DIR"]).expanduser()
+            if e.get("BUILDERWARS_STATE_DIR")
+            else default_state_dir(),
             mqtt_endpoint=e.get("IOT_ENDPOINT") or None,
             mqtt_port=int(e.get("IOT_PORT", "8883")),
-            cert_path=Path(e["IOT_CERT_PATH"]) if e.get("IOT_CERT_PATH") else None,
-            key_path=Path(e["IOT_KEY_PATH"]) if e.get("IOT_KEY_PATH") else None,
-            ca_path=Path(e["IOT_CA_PATH"]) if e.get("IOT_CA_PATH") else None,
+            cert_path=Path(e["IOT_CERT_PATH"]).expanduser() if e.get("IOT_CERT_PATH") else None,
+            key_path=Path(e["IOT_KEY_PATH"]).expanduser() if e.get("IOT_KEY_PATH") else None,
+            ca_path=Path(e["IOT_CA_PATH"]).expanduser() if e.get("IOT_CA_PATH") else None,
         )
         cfg.validate()
         return cfg
 
     def validate(self) -> None:
+        if not 1 <= self.batch_max_samples <= TELEMETRY_MAX_SAMPLES:
+            raise ConfigError(f"batch_max_samples must be 1..{TELEMETRY_MAX_SAMPLES}")
+        if self.batch_window_s <= 0 or self.sample_interval_s <= 0:
+            raise ConfigError("intervals must be positive")
         if self.transport is TransportKind.MQTT:
             missing = [
                 name

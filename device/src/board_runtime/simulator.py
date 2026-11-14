@@ -1,6 +1,6 @@
 """Board simulator: emits a burst of valid sample messages as JSON lines.
 
-    uv run python -m board_runtime.simulator --device-id sim-001 --count 5 > /tmp/messages.jsonl
+    uv run python -m board_runtime.simulator --device-id sim-001 --count 40 > /tmp/messages.jsonl
     uv run python -m workers.main /tmp/messages.jsonl
 
 This is a LOCAL simulation. It does not connect to AWS IoT Core and is not an authenticated
@@ -40,7 +40,7 @@ def simulate(
         runtime.start()
         app_log.info("simulator started")
         for _ in range(count):
-            runtime.tick()
+            runtime.sample()
         runtime.heartbeat()
         runtime.stop()
     finally:
@@ -50,7 +50,7 @@ def simulate(
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--device-id", default="sim-001")
-    parser.add_argument("--count", type=int, default=5, help="number of telemetry messages")
+    parser.add_argument("--count", type=int, default=5, help="number of sensor samples")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args(argv)
     simulate(device_id=args.device_id, count=args.count, seed=args.seed)

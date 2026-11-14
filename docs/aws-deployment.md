@@ -4,7 +4,8 @@ Nothing in this repository deploys automatically. CI only synthesises templates.
 
 ## Before the first deploy
 
-1. Answer open decisions #11 (region, budget, environments) and #6 (volumes, retention).
+1. Region (us-east-1), budget (free tier) and volumes are decided (#6, #11). Still open:
+   alarm recipients (#13, out of MVP scope). There is no staging (#12): deploy `-c env=prod`.
 2. Implement the TODOs that make the deployed API start: Cognito auth mode, PostgreSQL
    repositories (or decide on another store via an ADR), SQS/AppSync/IoT adapters.
 3. Bundle Lambda dependencies (`uv export --package bw-api` → `pip install --target`, or switch
@@ -14,20 +15,20 @@ Nothing in this repository deploys automatically. CI only synthesises templates.
 ## Deploying (manual, deliberate)
 
 ```bash
-export AWS_PROFILE=<your-dev-profile>
-export CDK_DEFAULT_ACCOUNT=<account-id> CDK_DEFAULT_REGION=<region>
+export AWS_PROFILE=<your-prod-profile>
+export CDK_DEFAULT_ACCOUNT=<account-id> CDK_DEFAULT_REGION=us-east-1
 cd infrastructure
 npx aws-cdk@2 bootstrap                 # once per account/region
-npx aws-cdk@2 diff -c env=dev
-npx aws-cdk@2 deploy -c env=dev --all   # review the IAM/security-change prompt carefully
+npx aws-cdk@2 diff -c env=prod
+npx aws-cdk@2 deploy -c env=prod --all   # review the IAM/security-change prompt carefully
 ```
 
 ## Resources with ongoing cost
 
 | Resource | Notes |
 | --- | --- |
-| RDS PostgreSQL (staging/prod) | Hourly instance + storage + backups. Off in `dev`. |
-| AWS IoT Core | Per connection-minute and per message; rules per action. |
+| RDS PostgreSQL (prod only) | `db.t4g.micro`, 20 GB: free tier for 12 months (750 h/mo), then hourly. |
+| AWS IoT Core | ~518k messages/month at 10 devices × 1 msg/5 s, inside the 1M free tier. Connection minutes and rule actions also count. |
 | AppSync Events | Per connection-minute and per event. |
 | SQS, Lambda, API Gateway | Per request; near zero at idle. |
 | S3 | Storage + requests; lifecycle rules limit raw data growth. |

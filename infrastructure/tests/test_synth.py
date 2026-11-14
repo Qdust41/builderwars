@@ -20,6 +20,8 @@ def stacks(request: pytest.FixtureRequest) -> dict[str, Template]:
 
 def test_rds_only_when_enabled() -> None:
     assert "database" not in build(cdk.App(), get_config("dev"))
+    with pytest.raises(ValueError, match="unknown env"):
+        get_config("staging")  # no deployed staging for the MVP (decision #12)
     assert "database" in build(cdk.App(), get_config("prod"))
 
 
@@ -45,11 +47,11 @@ def test_buckets_are_private_encrypted_and_tls_only(stacks: dict[str, Template])
 
 def test_every_queue_has_a_dlq_and_alarm(stacks: dict[str, Template]) -> None:
     messaging = stacks["messaging"]
-    messaging.resource_count_is("AWS::SQS::Queue", 4)
+    messaging.resource_count_is("AWS::SQS::Queue", 6)
     messaging.resource_properties_count_is(
-        "AWS::SQS::Queue", {"RedrivePolicy": Match.object_like({"maxReceiveCount": 5})}, 2
+        "AWS::SQS::Queue", {"RedrivePolicy": Match.object_like({"maxReceiveCount": 5})}, 3
     )
-    messaging.resource_count_is("AWS::CloudWatch::Alarm", 2)
+    messaging.resource_count_is("AWS::CloudWatch::Alarm", 3)
 
 
 def test_device_policy_is_scoped_to_its_own_thing(stacks: dict[str, Template]) -> None:
@@ -112,3 +114,24 @@ def test_no_hardcoded_account_ids(stacks: dict[str, Template]) -> None:
 
     for template in stacks.values():
         assert not re.search(r"\b\d{12}\b", json.dumps(template.to_json()))
+
+
+def test_command_dispatcher_can_only_publish_to_command_topics(
+    stacks: dict[str, Template],
+) -> None:
+    policies = json.dumps(stacks["workers"].find_resources("AWS::IAM::Policy"))
+    assert "topic/devices/*/commands" in policies
+    for channel in ("telemetry", "logs", "status", "events", "responses"):
+        assert f"topic/devices/*/{channel}" not in policies
+
+
+def test_rds_stays_in_free_tier_shape() -> None:
+    template = Template.from_stack(build(cdk.App(), get_config("prod"))["database"])
+    template.has_resource_properties(
+        "AWS::RDS::DBInstance",
+        {
+            "DBInstanceClass": "db.t4g.micro",
+            "AllocatedStorage": "20",
+            "MaxAllocatedStorage": Match.absent(),
+        },
+    )

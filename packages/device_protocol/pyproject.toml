@@ -2,7 +2,7 @@
 name = "bw-device-protocol"
 version = "0.1.0"
 description = "Versioned device<->cloud message contracts shared by the board runtime and the cloud"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.9",
 ]

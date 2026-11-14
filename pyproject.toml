@@ -47,8 +47,8 @@ bw-workers = { workspace = true }
 bw-board-runtime = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+testpaths = ["tests", "packages/device_protocol/tests", "device/tests"]
+addopts = "-ra --strict-markers --import-mode=importlib"
 markers = [
     "contract: device/API/realtime contract tests",
     "integration: tests that wire several packages together (no AWS)",
@@ -69,6 +69,11 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "PT011"]
 "infrastructure/tests/**" = ["S"]
+"*/tests/**" = ["S", "PT011"]
+"device/tests/**" = ["S", "PT011"]
+# The protocol and host runtime must run on Python 3.10 (decision #1).
+"packages/device_protocol/**" = ["UP017", "UP036", "UP042"]
+"device/**" = ["UP017", "UP036", "UP042"]
 
 [tool.ruff.lint.isort]
 known-first-party = [
@@ -101,5 +106,5 @@ files = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["mangum.*"]
+module = ["mangum.*", "awsiot.*", "awscrt.*", "freewili.*"]
 ignore_missing_imports = true

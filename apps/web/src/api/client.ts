@@ -1,4 +1,13 @@
-import type { Device, Job, JobType, Project, Session, SessionChannel } from "./types";
+import type {
+  CommandArg,
+  Device,
+  DeviceCommand,
+  Job,
+  JobType,
+  Project,
+  Session,
+  SessionChannel,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -52,11 +61,25 @@ export class ApiClient {
   getProject = (id: string) => this.request<Project>("GET", `/projects/${encodeURIComponent(id)}`);
   listDevices = (projectId: string) =>
     this.request<Device[]>("GET", `/projects/${encodeURIComponent(projectId)}/devices`);
-  registerDevice = (projectId: string, displayName: string, hardwareModel: string) =>
+  /** Defaults to a FREE-WILi 1-OG with a Bottlenose WiFi Orca (server-side defaults). */
+  registerDevice = (projectId: string, displayName: string) =>
     this.request<Device>("POST", `/projects/${encodeURIComponent(projectId)}/devices`, {
       display_name: displayName,
-      hardware_model: hardwareModel,
     });
+  /** Queues a command (role-based, FIFO per device); the result arrives asynchronously. */
+  sendCommand = (
+    projectId: string,
+    deviceId: string,
+    name: string,
+    args: Record<string, CommandArg> = {},
+  ) =>
+    this.request<DeviceCommand>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/devices/${encodeURIComponent(deviceId)}/commands`,
+      { name, args },
+    );
+  getCommand = (id: string) =>
+    this.request<DeviceCommand>("GET", `/commands/${encodeURIComponent(id)}`);
   getDevice = (id: string) => this.request<Device>("GET", `/devices/${encodeURIComponent(id)}`);
   listSessions = (projectId: string) =>
     this.request<Session[]>("GET", `/projects/${encodeURIComponent(projectId)}/sessions`);

@@ -8,7 +8,14 @@
   "hardware_model": "devboard-x",
   "message_type": "telemetry",
   "payload": {
-    "temperature_c": 1.0
+    "samples": [
+      {
+        "ts": "2026-11-14T18:30:00Z",
+        "readings": {
+          "temperature_c": 1.0
+        }
+      }
+    ]
   },
   "unexpected": "x"
 }

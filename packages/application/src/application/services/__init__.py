@@ -1,4 +1,5 @@
 from application.services.authorization import Authorizer
+from application.services.commands import CommandQueueFullError, CommandService
 from application.services.device_ingest import (
     DeviceMessageIngestService,
     IngestOutcome,
@@ -11,6 +12,8 @@ from application.services.sessions import SessionService
 
 __all__ = [
     "Authorizer",
+    "CommandQueueFullError",
+    "CommandService",
     "DeviceMessageIngestService",
     "DeviceService",
     "IngestOutcome",
