@@ -1,1 +1,5 @@
-"""Adapters for ports. Only in-memory (local/test) adapters exist so far."""
+"""Adapters for ports.
+
+- ``memory``: in-process fakes, LOCAL/TEST ONLY.
+- ``postgres``: PostgreSQL repositories (RDS in prod, docker compose locally).
+"""

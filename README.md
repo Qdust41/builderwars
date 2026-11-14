@@ -21,7 +21,7 @@ apps/
 packages/
   device_protocol/  versioned device<->cloud message contract -> bw-device-protocol
   domain/           framework-free domain models and rules    -> bw-domain
-  application/      services + ports (+ in-memory adapters)   -> bw-application
+  application/      services + ports (+ in-memory and PostgreSQL adapters) -> bw-application
   ai/               controlled AI tool boundary (stubs)       -> bw-ai-platform, `ai_platform`
 device/         host-PC runtime for the FREE-WILi + simulator -> bw-board-runtime, `board_runtime`
 infrastructure/ AWS CDK (Python) — synth only
@@ -55,6 +55,12 @@ uv run uvicorn api.main:app --reload
 curl localhost:8000/health
 curl -X POST localhost:8000/projects -H 'X-Dev-User: alice' -H 'Content-Type: application/json' -d '{"name":"Rover"}'
 
+# Optional: the same API on PostgreSQL (Docker; or point DATABASE_URL at any Postgres 16)
+docker compose --profile postgres up -d db
+export DATABASE_URL=postgresql://builderwars:builderwars-local@localhost:5432/builderwars
+uv run python -m application.adapters.postgres            # apply migrations
+REPOSITORY_BACKEND=postgres uv run uvicorn api.main:app --reload
+
 # Board simulator -> local worker harness (validates, deduplicates, records)
 uv run python -m board_runtime.simulator --count 40 > /tmp/messages.jsonl
 uv run python -m workers.main /tmp/messages.jsonl
@@ -75,6 +81,8 @@ frontend sends `VITE_DEV_USER` (see `apps/web/.env.example`).
 uv run ruff check . && uv run ruff format --check .   # lint + format
 uv run mypy                                            # strict type checking of all packages
 uv run pytest                                          # unit, contract, integration, e2e
+# ...and the same suite against PostgreSQL (needs the compose db; tables get truncated):
+TEST_DATABASE_URL=postgresql://builderwars:builderwars-local@localhost:5432/builderwars_test uv run pytest
 uv run python scripts/export_contracts.py --check      # generated contracts are current
 
 cd apps/web && npm run typecheck && npm test && npm run build
@@ -118,7 +126,7 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 
 | Area | State |
 | --- | --- |
-| Persistence | In-memory only (local/test). PostgreSQL repositories: TODO. |
+| Persistence | PostgreSQL repositories for every port (`REPOSITORY_BACKEND=postgres`, ADR 0005), or in-memory for local/test. Migrations run by hand: `uv run python -m application.adapters.postgres`. Not yet wired to RDS (workstream C). |
 | User auth | `X-Dev-User` header locally. Cognito JWT verification: TODO; API refuses non-local envs until done. |
 | Device connectivity | MQTT/TLS via `awsiotsdk` implemented but not yet run against a real IoT endpoint (SDK handles reconnects). Offline buffer: RAM only. |
 | Board I/O | `FreeWiliSensors` (vendor `freewili` package) reads GPIO + buttons as placeholder readings; not yet run on a real board. Sensor set: spec 02. |

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +20,7 @@ class AuthMode(StrEnum):
 
 class RepositoryBackend(StrEnum):
     MEMORY = "memory"  # in-process fakes. LOCAL/TEST ONLY.
-    POSTGRES = "postgres"  # TODO: not implemented yet
+    POSTGRES = "postgres"  # needs DATABASE_URL and a migrated schema
 
 
 LOCAL_ONLY_ENVS = frozenset({AppEnv.LOCAL, AppEnv.TEST})
@@ -32,6 +33,9 @@ class Settings(BaseSettings):
     auth_mode: AuthMode = AuthMode.DEV_HEADER
     repository_backend: RepositoryBackend = RepositoryBackend.MEMORY
     cors_allow_origins: list[str] = ["http://localhost:5173"]
+    # postgresql://user:password@host:5432/db. Required when REPOSITORY_BACKEND=postgres.
+    database_url: SecretStr | None = None
+    database_pool_max_size: int = 5
 
 
 class UnsafeConfigurationError(RuntimeError):
@@ -49,4 +53,6 @@ def validate_settings(settings: Settings) -> Settings:
             raise UnsafeConfigurationError(
                 f"REPOSITORY_BACKEND=memory is not allowed when APP_ENV={settings.app_env.value}"
             )
+    if settings.repository_backend is RepositoryBackend.POSTGRES and settings.database_url is None:
+        raise UnsafeConfigurationError("REPOSITORY_BACKEND=postgres needs DATABASE_URL")
     return settings
