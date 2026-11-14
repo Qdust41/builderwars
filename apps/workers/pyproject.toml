@@ -1,0 +1,22 @@
+[project]
+name = "bw-workers"
+version = "0.1.0"
+description = "Background workers: device message ingest and job processing"
+requires-python = ">=3.12"
+dependencies = [
+    "bw-application",
+    "bw-device-protocol",
+    "bw-domain",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workers"]
+
+[tool.uv.sources]
+bw-application = { workspace = true }
+bw-device-protocol = { workspace = true }
+bw-domain = { workspace = true }

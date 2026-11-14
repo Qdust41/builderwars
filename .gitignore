@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Node
+node_modules/
+apps/web/dist/
+
+# CDK
+infrastructure/cdk.out/
+infrastructure/.venv/
+cdk.context.json
+
+# Local configuration and secrets — never commit these
+.env
+.env.*
+!.env.example
+apps/web/.env
+apps/web/.env.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+certs/
+secrets/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

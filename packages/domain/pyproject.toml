@@ -1,0 +1,14 @@
+[project]
+name = "bw-domain"
+version = "0.1.0"
+description = "Framework-free domain models and rules"
+requires-python = ">=3.12"
+dependencies = [
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/domain"]

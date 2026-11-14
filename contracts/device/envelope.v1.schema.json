@@ -1,0 +1,98 @@
+{
+  "$defs": {
+    "MessageType": {
+      "enum": [
+        "telemetry",
+        "log",
+        "status",
+        "command",
+        "command_result",
+        "heartbeat"
+      ],
+      "title": "MessageType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Envelope shared by board and cloud.\n\n``device_id`` here is informational. It is NOT proof of identity: consumers must compare it\nwith the device id derived from the authorised MQTT topic and reject mismatches.",
+  "properties": {
+    "device_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+      "title": "Device Id",
+      "type": "string"
+    },
+    "firmware_version": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Firmware Version"
+    },
+    "hardware_model": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hardware Model"
+    },
+    "message_id": {
+      "format": "uuid",
+      "title": "Message Id",
+      "type": "string"
+    },
+    "message_type": {
+      "$ref": "#/$defs/MessageType"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "schema_version": {
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "sequence_number": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sequence Number"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id",
+    "schema_version",
+    "device_id",
+    "timestamp",
+    "message_type",
+    "payload"
+  ],
+  "title": "DeviceEnvelope",
+  "type": "object"
+}
