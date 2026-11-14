@@ -7,7 +7,7 @@ from application.services.device_ingest import (
 )
 from application.services.devices import DeviceService
 from application.services.jobs import JobService
-from application.services.projects import ProjectService
+from application.services.projects import ProjectMember, ProjectService
 from application.services.sessions import SessionService
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "IngestOutcome",
     "IngestResult",
     "JobService",
+    "ProjectMember",
     "ProjectService",
     "SessionService",
 ]

@@ -1,4 +1,12 @@
-"""Human identities (Cognito). Device identities are separate: X.509 certs in AWS IoT."""
+"""Human identities (Cognito). Device identities are separate: X.509 certs in AWS IoT.
+
+Owner decisions (2026-11-14, #10 and ADR 0005): email + password only, open self sign-up with
+an emailed verification code, MFA off for the MVP. A new account sees nothing until a project
+owner or admin adds it to a project by email through the API. Accounts can also be created
+from the console, which emails a temporary password.
+
+Cognito's built-in email sender allows about 50 emails a day; switch to SES before real users.
+"""
 
 from __future__ import annotations
 
@@ -17,17 +25,36 @@ class IdentityStack(Stack):
             self,
             "UserPool",
             user_pool_name=config.resource_name("users"),
-            self_sign_up_enabled=False,  # TODO: sign-up/invite flow (open decision #10)
+            self_sign_up_enabled=True,
+            user_verification=cognito.UserVerificationConfig(
+                email_subject="Your Builderwars verification code",
+                email_body="Your Builderwars verification code is {####}.",
+                email_style=cognito.VerificationEmailStyle.CODE,
+            ),
             sign_in_aliases=cognito.SignInAliases(email=True),
+            sign_in_case_sensitive=False,
+            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            keep_original=cognito.KeepOriginalAttrs(email=True),  # until the new one is verified
+            user_invitation=cognito.UserInvitationConfig(
+                email_subject="Your Builderwars account",
+                email_body=(
+                    "An account was created for {username}. Your temporary password is "
+                    "{####}. You will be asked to choose a new one when you first sign in."
+                ),
+            ),
             standard_attributes=cognito.StandardAttributes(
                 email=cognito.StandardAttribute(required=True, mutable=True)
             ),
             password_policy=cognito.PasswordPolicy(
-                min_length=12, require_digits=True, require_lowercase=True, require_uppercase=True
+                min_length=12,
+                require_digits=True,
+                require_lowercase=True,
+                require_uppercase=True,
+                temp_password_validity=Duration.days(7),
             ),
-            mfa=cognito.Mfa.OPTIONAL,
-            mfa_second_factor=cognito.MfaSecondFactor(sms=False, otp=True),
+            mfa=cognito.Mfa.OFF,  # MVP decision; revisit before wider release
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
+            deletion_protection=config.retain_data,
             removal_policy=config.removal_policy,
         )
         # Public SPA client: no secret; authorization-code + PKCE via the hosted UI (TODO domain).
@@ -36,6 +63,7 @@ class IdentityStack(Stack):
             generate_secret=False,
             auth_flows=cognito.AuthFlow(user_srp=True),
             prevent_user_existence_errors=True,
+            enable_token_revocation=True,
             access_token_validity=Duration.hours(1),
             id_token_validity=Duration.hours(1),
             refresh_token_validity=Duration.days(30),

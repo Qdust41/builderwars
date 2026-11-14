@@ -7,7 +7,7 @@ here is production-ready.
 
 | Who | Mechanism | State |
 | --- | --- | --- |
-| Humans | Cognito user pool; API Gateway JWT authoriser + in-app verification | Pool/authoriser in CDK; in-app verification TODO. Local uses `X-Dev-User` header. |
+| Humans | Cognito user pool; API Gateway JWT authoriser + in-app verification | Pool/authoriser in CDK; in-app verification in `api/auth.py` (ADR 0005). Local uses `X-Dev-User` header. |
 | Devices | One X.509 certificate per host+board pair, attached to an IoT thing + `DevicePolicy`; files in `~/.builderwars/credentials/` (0600) on the host | Policy in CDK; provisioning TODO (spec 03). |
 | Backend | IAM roles per function, least privilege | API: send to jobs/commands queues, read artifacts. Ingest: put `raw/*`. Command dispatcher: `iot:Publish` on `devices/*/commands` only. Jobs: artifacts r/w. |
 
@@ -61,7 +61,7 @@ artifact. Building, flashing and deployment jobs are not implemented yet.
 
 ## Known gaps (must close before real users)
 
-1. Cognito JWT verification in the API.
+1. ~~Cognito JWT verification in the API.~~ Done (ADR 0005).
 2. AppSync subscribe-time membership check (`onSubscribe` handler).
 3. Device provisioning flow and certificate rotation/revocation.
 4. Reject messages from unregistered device ids.

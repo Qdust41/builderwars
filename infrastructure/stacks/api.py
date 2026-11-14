@@ -3,8 +3,11 @@
 TODO before first deploy:
 * Package dependencies: build a Lambda asset from ``uv export`` + ``pip install --target`` (or a
   container image from docker/api.Dockerfile). The asset below is source only.
-* Implement Cognito auth mode and PostgreSQL repositories in the API; the app intentionally
-  refuses to start in non-local environments until then.
+* Implement PostgreSQL repositories in the API; the app intentionally refuses to start in
+  non-local environments until then. (Cognito auth mode is implemented: the app verifies the
+  JWT itself as well as the gateway's authorizer.)
+* If the function moves into a VPC, it still needs egress (NAT or a cognito-idp endpoint) to
+  fetch the user pool JWKS and look users up.
 * Give the function VPC access when RDS is enabled.
 """
 
@@ -63,6 +66,9 @@ class ApiStack(Stack):
             environment={
                 "APP_ENV": config.name,
                 "AUTH_MODE": "cognito",
+                "COGNITO_REGION": self.region,
+                "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
+                "COGNITO_APP_CLIENT_ID": user_pool_client.user_pool_client_id,
                 "REPOSITORY_BACKEND": "postgres",
                 "JOBS_QUEUE_URL": jobs_queue.queue_url,
                 "COMMANDS_QUEUE_URL": commands_queue.queue_url,
@@ -74,6 +80,8 @@ class ApiStack(Stack):
         jobs_queue.grant_send_messages(fn)
         commands_queue.grant_send_messages(fn)
         artifacts_bucket.grant_read(fn)
+        # Adding members by email looks accounts up in the pool; read-only, this pool only.
+        user_pool.grant(fn, "cognito-idp:ListUsers")
 
         jwt = authorizers.HttpJwtAuthorizer(
             "CognitoJwt",
