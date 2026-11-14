@@ -14,6 +14,10 @@ def _event(data: dict) -> RealtimeEvent:
 
 def test_channel_is_scoped_to_project_and_session() -> None:
     assert _event({}).channel == "projects/p/sessions/s"
+    device_event = RealtimeEvent(
+        type=RealtimeEventType.DEVICE_LOG, project_id="prj_1", device_id="dev_2"
+    )
+    assert device_event.channel == "projects/prj-1/devices/dev-2"
 
 
 @pytest.mark.parametrize(

@@ -47,7 +47,9 @@ def test_project_device_session_job_flow(client: TestClient) -> None:
         f"/projects/{pid}/sessions", json={"device_id": did}, headers=_as("alice")
     ).json()
     channel = client.get(f"/sessions/{session['id']}/channel", headers=_as("alice")).json()
-    assert channel["channel"] == f"projects/{pid}/sessions/{session['id']}"
+    assert channel["channel"] == "projects/{}/sessions/{}".format(
+        pid.replace("_", "-"), session["id"].replace("_", "-")
+    )
 
     job = client.post(f"/projects/{pid}/jobs", json={"job_type": "test_run"}, headers=_as("alice"))
     assert job.status_code == 202

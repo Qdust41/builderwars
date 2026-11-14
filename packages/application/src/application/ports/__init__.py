@@ -12,6 +12,7 @@ from application.ports.messaging import (
 )
 from application.ports.repositories import (
     DeviceCommandRepository,
+    DeviceLogEntry,
     DeviceRepository,
     JobRepository,
     MembershipRepository,
@@ -21,6 +22,7 @@ from application.ports.repositories import (
     SequenceTracker,
     SessionRepository,
     TelemetryRepository,
+    TelemetrySample,
     UserDirectory,
 )
 
@@ -28,6 +30,7 @@ __all__ = [
     "CommandQueue",
     "DeviceCommandPublisher",
     "DeviceCommandRepository",
+    "DeviceLogEntry",
     "DeviceRepository",
     "JobQueue",
     "JobRepository",
@@ -39,5 +42,6 @@ __all__ = [
     "SequenceTracker",
     "SessionRepository",
     "TelemetryRepository",
+    "TelemetrySample",
     "UserDirectory",
 ]

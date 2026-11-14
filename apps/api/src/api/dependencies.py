@@ -11,16 +11,20 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Request, status
 
 from api.auth import CognitoTokenVerifier, InvalidTokenError, JwksUrlKeySource
+from api.local_realtime import LocalRealtimeHub
 from api.settings import AuthMode, RepositoryBackend, Settings, validate_settings
 from application.adapters import memory
-from application.ports import UserDirectory
+from application.ports import DeviceCommandRepository, UserDirectory
 from application.services import (
     Authorizer,
     CommandService,
+    DeviceEventPublisher,
+    DeviceMessageIngestService,
     DeviceService,
     JobService,
     ProjectService,
     SessionService,
+    TelemetryQueryService,
 )
 from domain.users import User
 
@@ -28,6 +32,18 @@ from domain.users import User
 @dataclass(frozen=True, slots=True)
 class CurrentUser:
     user_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class LocalDevBridge:
+    """LOCAL ONLY: stands in for IoT Core, SQS and AppSync so a simulated host can talk to
+    this API process (see ``api.routes.local_dev``). Never built for deployed environments."""
+
+    realtime: LocalRealtimeHub
+    events: DeviceEventPublisher
+    ingest: DeviceMessageIngestService
+    commands: DeviceCommandRepository
+    command_queue: memory.InMemoryCommandQueue
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +59,8 @@ class Container:
     sessions: SessionService
     jobs: JobService
     commands: CommandService
+    telemetry: TelemetryQueryService
+    local: LocalDevBridge | None = None
 
 
 def build_container(
@@ -64,6 +82,11 @@ def build_container(
     devices = memory.InMemoryDeviceRepository()
     sessions = memory.InMemorySessionRepository()
     jobs = memory.InMemoryJobRepository()
+    commands = memory.InMemoryDeviceCommandRepository()
+    command_queue = memory.InMemoryCommandQueue()
+    telemetry = memory.InMemoryTelemetryRepository()
+    realtime = LocalRealtimeHub()
+    events = DeviceEventPublisher(realtime)
     authorizer = Authorizer(memberships)
 
     dev_users: memory.InMemoryUserDirectory | None = None
@@ -79,6 +102,21 @@ def build_container(
     elif users is None:
         users = dev_users = memory.InMemoryUserDirectory()
 
+    local = LocalDevBridge(
+        realtime=realtime,
+        events=events,
+        ingest=DeviceMessageIngestService(
+            devices=devices,
+            processed=memory.InMemoryProcessedMessageStore(),
+            raw_store=memory.InMemoryRawMessageStore(),
+            telemetry=telemetry,
+            sequences=memory.InMemorySequenceTracker(),
+            commands=commands,
+            events=events,
+        ),
+        commands=commands,
+        command_queue=command_queue,
+    )
     return Container(
         settings=settings,
         token_verifier=token_verifier,
@@ -87,14 +125,11 @@ def build_container(
         authorizer=authorizer,
         projects=ProjectService(projects, memberships, authorizer, users),
         devices=DeviceService(devices, authorizer),
-        sessions=SessionService(sessions, devices, authorizer, memory.RecordingRealtimePublisher()),
+        sessions=SessionService(sessions, devices, authorizer, realtime),
         jobs=JobService(jobs, devices, memory.InMemoryJobQueue(), authorizer),
-        commands=CommandService(
-            memory.InMemoryDeviceCommandRepository(),
-            devices,
-            memory.InMemoryCommandQueue(),
-            authorizer,
-        ),
+        commands=CommandService(commands, devices, command_queue, authorizer),
+        telemetry=TelemetryQueryService(devices, telemetry, authorizer),
+        local=local,
     )
 
 
@@ -171,8 +206,13 @@ def get_command_service(container: ContainerDep) -> CommandService:
     return container.commands
 
 
+def get_telemetry_service(container: ContainerDep) -> TelemetryQueryService:
+    return container.telemetry
+
+
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 DeviceServiceDep = Annotated[DeviceService, Depends(get_device_service)]
 SessionServiceDep = Annotated[SessionService, Depends(get_session_service)]
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 CommandServiceDep = Annotated[CommandService, Depends(get_command_service)]
+TelemetryServiceDep = Annotated[TelemetryQueryService, Depends(get_telemetry_service)]

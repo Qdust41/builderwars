@@ -180,3 +180,86 @@ def test_a_device_cannot_complete_another_devices_command(ingest) -> None:
     ingest.commands.add(command.mark_sent(NOW))
     _ingest(ingest, _result_body("dev-2", command.id), "devices/dev-2/responses")
     assert ingest.commands.get(command.id).status is CommandStatus.SENT
+
+
+def test_registered_device_gets_live_telemetry_log_and_command_events(ingest) -> None:
+    device = Device(project_id="prj_1", display_name="d", hardware_model="freewili-1-og")
+    ingest.devices.add(device)
+    topic = f"devices/{device.id}"
+    _, body = _body(device_id=device.id, payload=_batch(40.0, 41.0))
+    _ingest(ingest, body, f"{topic}/telemetry")
+    _, log_body = _body(
+        device_id=device.id,
+        message_type=MessageType.LOG,
+        payload={"level": "info", "message": "hi"},
+    )
+    _ingest(ingest, log_body, f"{topic}/logs")
+    command = DeviceCommand(project_id="prj_1", device_id=device.id, name="ping", requested_by="u")
+    ingest.commands.add(command.mark_sent(NOW))
+    _ingest(ingest, _result_body(device.id, command.id), f"{topic}/responses")
+
+    events = ingest.realtime.events
+    assert [e.type.value for e in events] == [
+        "device.telemetry",
+        "device.log",
+        "device.command.updated",
+    ]
+    assert {e.channel for e in events} == {f"projects/prj-1/devices/{device.id.replace('_', '-')}"}
+    assert [s["readings"] for s in events[0].data["samples"]] == [
+        {"temperature_c": 40.0},
+        {"temperature_c": 41.0},
+    ]
+    assert events[1].data == {
+        "at": NOW.isoformat(),
+        "kind": "log",
+        "level": "info",
+        "message": "hi",
+    }
+    assert events[2].data["command_id"] == command.id
+    assert events[2].data["status"] == "succeeded"
+    assert events[2].data["output"] == {"pong": True}
+
+
+def test_unregistered_devices_and_repeated_results_publish_nothing(ingest) -> None:
+    _, body = _body()
+    _ingest(ingest, body)
+    command = DeviceCommand(project_id="p", device_id="dev-1", name="ping", requested_by="u")
+    ingest.commands.add(command.mark_sent(NOW))
+    _ingest(ingest, _result_body("dev-1", command.id), "devices/dev-1/responses")
+    _ingest(ingest, _result_body("dev-1", command.id, "failed"), "devices/dev-1/responses")
+    # Only the first result changes the command, and only it is announced.
+    assert [e.type.value for e in ingest.realtime.events] == ["device.command.updated"]
+    assert ingest.commands.get(command.id).status is CommandStatus.SUCCEEDED
+
+
+def test_an_event_that_breaks_the_contract_is_dropped_not_raised(ingest) -> None:
+    command = DeviceCommand(project_id="p", device_id="dev-1", name="ping", requested_by="u")
+    ingest.commands.add(command.mark_sent(NOW))
+    _, body = _body(
+        device_id="dev-1",
+        message_type=MessageType.COMMAND_RESULT,
+        payload={"command_id": command.id, "status": "succeeded", "output": {"token": "x"}},
+    )
+    result = _ingest(ingest, body, "devices/dev-1/responses")
+    assert result.outcome is IngestOutcome.PROCESSED
+    assert ingest.commands.get(command.id).status is CommandStatus.SUCCEEDED
+    assert ingest.realtime.events == []
+
+
+def test_recent_reads_return_the_newest_records_oldest_first(ingest) -> None:
+    _, body = _body(payload=_batch(1.0, 2.0, 3.0))
+    _ingest(ingest, body)
+    _, ev = _body(
+        message_type=MessageType.EVENT,
+        payload={"name": "board_disconnected", "severity": "warning", "detail": "usb"},
+    )
+    _ingest(ingest, ev, "devices/dev-1/events")
+    recent = ingest.telemetry.recent_telemetry("dev-1", limit=2)
+    assert [s.readings for s in recent] == [{"temperature_c": 2.0}, {"temperature_c": 3.0}]
+    [entry] = ingest.telemetry.recent_logs("dev-1", limit=10)
+    assert (entry.kind, entry.level, entry.message) == (
+        "event",
+        "warning",
+        "board_disconnected: usb",
+    )
+    assert ingest.telemetry.recent_telemetry("other", limit=5) == []

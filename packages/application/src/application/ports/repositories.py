@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
@@ -92,8 +93,37 @@ class DeviceCommandRepository(Protocol):
     def count_pending(self, device_id: str) -> int: ...
 
 
+@dataclass(frozen=True, slots=True)
+class TelemetrySample:
+    """One timestamped set of readings (a telemetry batch holds 1-32 of these)."""
+
+    at: datetime
+    readings: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceLogEntry:
+    """A device log line or event, merged into one stream for display.
+
+    ``kind`` is ``"log"`` (``level`` = log level) or ``"event"`` (``level`` = severity,
+    ``message`` = event name plus detail).
+    """
+
+    at: datetime
+    kind: str
+    level: str
+    message: str
+
+
 class TelemetryRepository(Protocol):
-    """Normalised telemetry/log records. Storage choice depends on volume (open decision #6)."""
+    """Normalised telemetry/log records. Storage choice depends on volume (open decision #6).
+
+    Reads return the newest ``limit`` records, oldest first.
+    """
+
+    def recent_telemetry(self, device_id: str, *, limit: int) -> list[TelemetrySample]: ...
+
+    def recent_logs(self, device_id: str, *, limit: int) -> list[DeviceLogEntry]: ...
 
     def add_telemetry(
         self, *, device_id: str, message_id: str, at: datetime, metrics: dict[str, object]

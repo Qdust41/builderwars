@@ -115,6 +115,27 @@ class SessionChannelOut(BaseModel):
     event_types: list[RealtimeEventType]
 
 
+class DeviceChannelOut(BaseModel):
+    device_id: str
+    channel: str
+    event_types: list[RealtimeEventType]
+
+
+TelemetryValue = float | int | bool | str
+
+
+class TelemetrySampleOut(BaseModel):
+    ts: datetime
+    readings: dict[str, TelemetryValue]
+
+
+class DeviceLogEntryOut(BaseModel):
+    at: datetime
+    kind: Literal["log", "event"]
+    level: str
+    message: str
+
+
 class JobCreate(BaseModel):
     job_type: JobType
     device_id: str | None = None

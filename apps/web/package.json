@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "gen:api": "openapi-typescript ../../contracts/api/openapi.json -o src/api/schema.gen.ts",
+    "check:api": "openapi-typescript ../../contracts/api/openapi.json -o node_modules/.cache/schema.gen.ts && node -e \"const fs=require('fs');if(fs.readFileSync('node_modules/.cache/schema.gen.ts','utf8')!==fs.readFileSync('src/api/schema.gen.ts','utf8')){console.error('src/api/schema.gen.ts is stale: run npm run gen:api');process.exit(1)}\"",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -20,6 +22,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.9",
     "vite": "^8.3.8",
     "vitest": "^5.1.0"

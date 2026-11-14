@@ -64,7 +64,7 @@ delta is called out.
 | --- | --- | --- |
 | 1 | Host runtime targets CPython 3.10+; `FreeWiliSensors` adapter (GPIO + buttons as placeholder readings); `DEVICE_SENSORS=freewili`; `BoardUnavailableError` → `status: degraded` + `board_disconnected` event | Pick the real sensor set (spec 02); run against a real board |
 | 2 | `MqttTransport` on `awsiotsdk` (mTLS, client id = thing name, QoS 1); `mqtt` extra | Exercise against a dev IoT endpoint; provisioning (spec 03) |
-| 4 | Unchanged (notifications only, no CRDT) | Presence, session broadcast of command results |
+| 4 | Notifications only, no CRDT. Device channel `projects/{p}/devices/{d}` carries `device.telemetry`, `device.log` and `device.command.updated` (ADR 0005) | Presence, session broadcast of command results |
 | 5 | Command path: `POST /projects/{id}/devices/{device_id}/commands`, `GET /commands/{id}`, per-device bound of 32 pending, 30 s expiry, dispatcher worker, results applied by ingest (a device can't complete another device's command) | AWS adapters, timeout sweeper, session broadcast |
 | 6/7 | Telemetry payload is now `{"samples": [{"ts", "readings"}]}` (1–32 samples); host batches per 5 s window or 32 samples; new `event` message type on `devices/{id}/events` | Ingest rate limiting |
 | 8 | `ai_platform.providers.ProviderConfig` (`openai_compatible` / `bedrock`, `AI_MODEL` required), client stub; new `ai:run` permission (member+) | Client implementation and default model (spec 08) |

@@ -1,9 +1,23 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from typing import Annotated, Literal, cast
 
-from api.dependencies import CommandServiceDep, DeviceServiceDep, UserDep
-from api.schemas import CommandCreate, CommandOut, DeviceCreate, DeviceOut, DeviceStatusOut
+from fastapi import APIRouter, Query, status
+
+from api.dependencies import CommandServiceDep, DeviceServiceDep, TelemetryServiceDep, UserDep
+from api.schemas import (
+    CommandCreate,
+    CommandOut,
+    DeviceChannelOut,
+    DeviceCreate,
+    DeviceLogEntryOut,
+    DeviceOut,
+    DeviceStatusOut,
+    TelemetrySampleOut,
+    TelemetryValue,
+)
+from application.realtime import DEVICE_EVENT_TYPES, device_channel
+from application.services.telemetry import MAX_LOG_ENTRIES, MAX_TELEMETRY_SAMPLES
 
 router = APIRouter(tags=["devices"])
 
@@ -80,3 +94,48 @@ def send_command(
 @router.get("/commands/{command_id}", response_model=CommandOut)
 def get_command(command_id: str, user: UserDep, service: CommandServiceDep) -> CommandOut:
     return CommandOut.of(service.get_command(user_id=user.user_id, command_id=command_id))
+
+
+@router.get("/devices/{device_id}/telemetry", response_model=list[TelemetrySampleOut])
+def get_device_telemetry(
+    device_id: str,
+    user: UserDep,
+    service: TelemetryServiceDep,
+    limit: Annotated[int, Query(ge=1, le=MAX_TELEMETRY_SAMPLES)] = 300,
+) -> list[TelemetrySampleOut]:
+    """The newest ``limit`` telemetry samples, oldest first."""
+    samples = service.recent_telemetry(user_id=user.user_id, device_id=device_id, limit=limit)
+    return [
+        TelemetrySampleOut(ts=s.at, readings=cast(dict[str, TelemetryValue], s.readings))
+        for s in samples
+    ]
+
+
+@router.get("/devices/{device_id}/logs", response_model=list[DeviceLogEntryOut])
+def get_device_logs(
+    device_id: str,
+    user: UserDep,
+    service: TelemetryServiceDep,
+    limit: Annotated[int, Query(ge=1, le=MAX_LOG_ENTRIES)] = 200,
+) -> list[DeviceLogEntryOut]:
+    """The newest ``limit`` log lines and device events, oldest first."""
+    entries = service.recent_logs(user_id=user.user_id, device_id=device_id, limit=limit)
+    return [
+        DeviceLogEntryOut(
+            at=e.at, kind=cast(Literal["log", "event"], e.kind), level=e.level, message=e.message
+        )
+        for e in entries
+    ]
+
+
+@router.get("/devices/{device_id}/channel", response_model=DeviceChannelOut)
+def get_device_channel(
+    device_id: str, user: UserDep, service: DeviceServiceDep
+) -> DeviceChannelOut:
+    """Realtime channel for this device's telemetry, logs and command updates (members only)."""
+    device = service.get_device(user_id=user.user_id, device_id=device_id)
+    return DeviceChannelOut(
+        device_id=device.id,
+        channel=device_channel(device.project_id, device.id),
+        event_types=list(DEVICE_EVENT_TYPES),
+    )

@@ -16,6 +16,7 @@ from device_protocol.schemas import TELEMETRY_BATCH_WINDOW_S, TELEMETRY_MAX_SAMP
 class TransportKind(StrEnum):
     STDOUT = "stdout"  # local development: print JSON lines
     MQTT = "mqtt"  # AWS IoT Core over MQTT/TLS (awsiotsdk, optional extra "mqtt")
+    LOCAL_API = "local-api"  # local development: talk to a local API's /local routes
 
 
 class SensorKind(StrEnum):
@@ -49,6 +50,7 @@ class DeviceConfig:
     key_path: Path | None = None
     ca_path: Path | None = None
     offline_buffer_size: int = 1000
+    local_api_url: str = "http://localhost:8000"
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> DeviceConfig:
@@ -74,6 +76,7 @@ class DeviceConfig:
             cert_path=Path(e["IOT_CERT_PATH"]).expanduser() if e.get("IOT_CERT_PATH") else None,
             key_path=Path(e["IOT_KEY_PATH"]).expanduser() if e.get("IOT_KEY_PATH") else None,
             ca_path=Path(e["IOT_CA_PATH"]).expanduser() if e.get("IOT_CA_PATH") else None,
+            local_api_url=e.get("LOCAL_API_URL", "http://localhost:8000"),
         )
         cfg.validate()
         return cfg

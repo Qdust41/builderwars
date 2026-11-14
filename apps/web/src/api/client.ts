@@ -1,12 +1,16 @@
 import type {
   CommandArg,
   Device,
+  DeviceChannel,
   DeviceCommand,
+  DeviceLogEntry,
+  Health,
   Job,
   JobType,
   Project,
   Session,
   SessionChannel,
+  TelemetrySample,
 } from "./types";
 
 export class ApiError extends Error {
@@ -55,7 +59,7 @@ export class ApiClient {
     return (await res.json()) as T;
   }
 
-  health = () => this.request<{ status: string; environment: string }>("GET", "/health");
+  health = () => this.request<Health>("GET", "/health");
   listProjects = () => this.request<Project[]>("GET", "/projects");
   createProject = (name: string) => this.request<Project>("POST", "/projects", { name });
   getProject = (id: string) => this.request<Project>("GET", `/projects/${encodeURIComponent(id)}`);
@@ -81,6 +85,21 @@ export class ApiClient {
   getCommand = (id: string) =>
     this.request<DeviceCommand>("GET", `/commands/${encodeURIComponent(id)}`);
   getDevice = (id: string) => this.request<Device>("GET", `/devices/${encodeURIComponent(id)}`);
+  /** Newest `limit` samples, oldest first. */
+  getTelemetry = (deviceId: string, limit = 300) =>
+    this.request<TelemetrySample[]>(
+      "GET",
+      `/devices/${encodeURIComponent(deviceId)}/telemetry?limit=${limit}`,
+    );
+  /** Newest `limit` log lines and device events, oldest first. */
+  getLogs = (deviceId: string, limit = 200) =>
+    this.request<DeviceLogEntry[]>(
+      "GET",
+      `/devices/${encodeURIComponent(deviceId)}/logs?limit=${limit}`,
+    );
+  /** Realtime channel for the device (membership checked by the API). */
+  getDeviceChannel = (deviceId: string) =>
+    this.request<DeviceChannel>("GET", `/devices/${encodeURIComponent(deviceId)}/channel`);
   listSessions = (projectId: string) =>
     this.request<Session[]>("GET", `/projects/${encodeURIComponent(projectId)}/sessions`);
   startSession = (projectId: string, deviceId?: string) =>
@@ -96,7 +115,6 @@ export class ApiClient {
     });
 }
 
-export const api = new ApiClient(
-  import.meta.env.VITE_API_BASE_URL ?? "/api",
-  devUserAuth(import.meta.env.VITE_DEV_USER ?? "dev-user"),
-);
+export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
+export const apiAuth = devUserAuth(import.meta.env.VITE_DEV_USER ?? "dev-user");
+export const api = new ApiClient(apiBaseUrl, apiAuth);

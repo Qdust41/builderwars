@@ -64,6 +64,11 @@ DEVICE_ID=dev-local-001 BUILDERWARS_STATE_DIR=/tmp/bw-state uv run python -m boa
 
 # Frontend on http://localhost:5173 (proxies /api -> :8000)
 cd apps/web && npm install && npm run dev
+
+# Live device dashboard: register a device in the web app, then point the host runtime at the
+# local API (see apps/web/README.md)
+DEVICE_ID=<dev_...> DEVICE_TRANSPORT=local-api BUILDERWARS_STATE_DIR=/tmp/bw-state \
+  uv run python -m board_runtime.main
 ```
 
 Interactive API docs: http://localhost:8000/docs. Local auth is the `X-Dev-User` header; the
@@ -126,7 +131,8 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 | Device commands | API route, per-device queue (32 pending, 30 s expiry), dispatcher handler and result handling exist with in-memory adapters. AWS adapters, timeout sweeper and session broadcast: TODO. |
 | Workers in AWS | Lambda handlers raise `NotImplementedError` until AWS adapters exist. |
 | Job execution | No executors; queued jobs fail with "not implemented". Fargate: TODO. |
-| Realtime | Recording publisher locally; AppSync client/publisher: TODO; membership check on subscribe: TODO. |
+| Realtime | Locally, an in-process hub streams events to the browser (`/local/realtime`). Web AppSync Events client built (needs Cognito sign-in for its token). AppSync publisher (server side): TODO; membership check on subscribe: TODO. |
+| Web app | Device dashboard (live telemetry charts, log stream, commands) works locally. Cognito sign-in and hosting: TODO. |
 | AI | Tool definitions, approval gate, redaction, run records, provider config (OpenAI-compatible / Bedrock). No client, no executors, no default model (spec 08). |
 | Firmware | Model, job types and host-side sha256 check only. No build, flashing or deployment (spec 09). |
 | Ingest rate limiting | Not implemented (burst 10 msg/s, sustained 60 msg/min per device planned). |

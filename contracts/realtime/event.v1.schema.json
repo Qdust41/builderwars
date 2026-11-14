@@ -12,7 +12,10 @@
         "ai.run.delta",
         "ai.run.completed",
         "firmware.build.started",
-        "firmware.build.completed"
+        "firmware.build.completed",
+        "device.telemetry",
+        "device.log",
+        "device.command.updated"
       ],
       "title": "RealtimeEventType",
       "type": "string"
@@ -37,6 +40,18 @@
       "title": "Data",
       "type": "object"
     },
+    "device_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Device Id"
+    },
     "event_id": {
       "format": "uuid",
       "title": "Event Id",
@@ -57,8 +72,16 @@
       "type": "integer"
     },
     "session_id": {
-      "title": "Session Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Session Id"
     },
     "type": {
       "$ref": "#/$defs/RealtimeEventType"
@@ -66,8 +89,7 @@
   },
   "required": [
     "type",
-    "project_id",
-    "session_id"
+    "project_id"
   ],
   "title": "RealtimeEvent",
   "type": "object"

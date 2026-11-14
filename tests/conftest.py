@@ -9,6 +9,7 @@ from application.adapters import memory
 from application.services import (
     Authorizer,
     CommandService,
+    DeviceEventPublisher,
     DeviceMessageIngestService,
     DeviceService,
     JobService,
@@ -80,6 +81,7 @@ class IngestWorld:
     raw: memory.InMemoryRawMessageStore
     telemetry: memory.InMemoryTelemetryRepository
     commands: memory.InMemoryDeviceCommandRepository
+    realtime: memory.RecordingRealtimePublisher
 
 
 @pytest.fixture
@@ -88,6 +90,7 @@ def ingest() -> IngestWorld:
     raw = memory.InMemoryRawMessageStore()
     telemetry = memory.InMemoryTelemetryRepository()
     commands = memory.InMemoryDeviceCommandRepository()
+    realtime = memory.RecordingRealtimePublisher()
     service = DeviceMessageIngestService(
         devices=devices,
         processed=memory.InMemoryProcessedMessageStore(),
@@ -95,5 +98,6 @@ def ingest() -> IngestWorld:
         telemetry=telemetry,
         sequences=memory.InMemorySequenceTracker(),
         commands=commands,
+        events=DeviceEventPublisher(realtime),
     )
-    return IngestWorld(service, devices, raw, telemetry, commands)
+    return IngestWorld(service, devices, raw, telemetry, commands, realtime)

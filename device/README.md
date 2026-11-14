@@ -13,7 +13,15 @@ uv run python -m board_runtime.simulator --device-id sim-001 --count 40
 # Runtime loop with simulated sensors and the stdout transport
 DEVICE_ID=dev-local-001 BUILDERWARS_STATE_DIR=/tmp/bw-state \
   uv run python -m board_runtime.main --samples 12
+
+# Same loop, sending to a local API (uvicorn on :8000) so the web dashboard updates live and
+# commands such as ping come back. DEVICE_ID must be a device registered through the API.
+DEVICE_ID=<dev_...> DEVICE_TRANSPORT=local-api LOCAL_API_URL=http://localhost:8000 \
+  BUILDERWARS_STATE_DIR=/tmp/bw-state uv run python -m board_runtime.main
 ```
+
+`local-api` is a development transport only: it is not an authenticated IoT device, and the
+API serves its routes only with the in-memory backend (ADR 0005).
 
 ## On a real host (not yet exercised end to end)
 
