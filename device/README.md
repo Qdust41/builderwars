@@ -21,7 +21,7 @@ DEVICE_ID=<dev_...> DEVICE_TRANSPORT=local-api LOCAL_API_URL=http://localhost:80
 ```
 
 `local-api` is a development transport only: it is not an authenticated IoT device, and the
-API serves its routes only with the in-memory backend (ADR 0005).
+API serves its routes only with the in-memory backend (ADR 0006).
 
 ## On a real host (not yet exercised end to end)
 

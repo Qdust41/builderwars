@@ -1,4 +1,4 @@
-# 0005 — Device realtime channel and the local development bridge
+# 0006 — Device realtime channel and the local development bridge
 
 Status: accepted (workstream F, web dashboard)
 

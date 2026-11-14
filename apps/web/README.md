@@ -29,7 +29,7 @@ DEVICE_ID=<dev_...> DEVICE_TRANSPORT=local-api DEVICE_BATCH_WINDOW_S=2 \
 
 Telemetry, logs and command results then arrive live; **Send ping** round-trips through the
 host. The local API routes that make this work (`/local/*`) only exist with the in-memory
-backend (ADR 0005).
+backend (ADR 0006).
 
 ## Layout
 

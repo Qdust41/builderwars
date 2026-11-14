@@ -248,6 +248,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Members */
+        get: operations["list_members_projects__project_id__members_get"];
+        put?: never;
+        /** Add Member */
+        post: operations["add_member_projects__project_id__members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/members/{member_user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Member */
+        delete: operations["remove_member_projects__project_id__members__member_user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/sessions": {
         parameters: {
             query?: never;
@@ -488,6 +523,30 @@ export interface components {
          * @enum {string}
          */
         JobType: "ai_run" | "firmware_build" | "firmware_deploy" | "firmware_rollback" | "test_run" | "data_analysis";
+        /** MemberAdd */
+        MemberAdd: {
+            /** Email */
+            email: string;
+            /**
+             * Role
+             * @default member
+             * @enum {string}
+             */
+            role: "admin" | "member" | "viewer";
+        };
+        /** MemberOut */
+        MemberOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string | null;
+            role: components["schemas"]["ProjectRole"];
+            /** User Id */
+            user_id: string;
+        };
         /** ProjectCreate */
         ProjectCreate: {
             /** Name */
@@ -512,6 +571,11 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * ProjectRole
+         * @enum {string}
+         */
+        ProjectRole: "owner" | "admin" | "member" | "viewer";
         /**
          * RealtimeEventType
          * @enum {string}
@@ -591,6 +655,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -624,6 +689,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -657,6 +723,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -692,6 +759,7 @@ export interface operations {
                 limit?: number;
             };
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -725,6 +793,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -760,6 +829,7 @@ export interface operations {
                 limit?: number;
             };
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -813,6 +883,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -846,6 +917,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path?: never;
@@ -877,6 +949,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path?: never;
@@ -912,6 +985,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -945,6 +1019,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -978,6 +1053,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -1015,6 +1091,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -1053,6 +1130,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -1086,10 +1164,116 @@ export interface operations {
             };
         };
     };
+    list_members_projects__project_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_member_projects__project_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_member_projects__project_id__members__member_user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+                member_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_sessions_projects__project_id__sessions_get: {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -1123,6 +1307,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -1160,6 +1345,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
@@ -1193,6 +1379,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                authorization?: string | null;
                 "x-dev-user"?: string | null;
             };
             path: {
