@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.35",
     "bw-application",
+    "bw-aws-adapters",
     "bw-domain",
     "fastapi>=0.115",
     "mangum>=0.19",
@@ -23,4 +24,5 @@ packages = ["src/api"]
 
 [tool.uv.sources]
 bw-application = { workspace = true }
+bw-aws-adapters = { workspace = true }
 bw-domain = { workspace = true }
