@@ -21,7 +21,10 @@ class MessageFactory:
         self._config = config
         self._sequence = sequence or MemorySequenceStore()
 
-    def build(self, message_type: MessageType, payload: dict[str, Any]) -> tuple[str, bytes]:
+    def build(
+        self, message_type: MessageType, payload: dict[str, Any]
+    ) -> tuple[str, bytes, DeviceEnvelope]:
+        """Return ``(topic, encoded_body, envelope)`` for one valid, sequenced message."""
         validate_payload(message_type, payload)  # fail on the host, not in the cloud
         envelope = DeviceEnvelope.new(
             device_id=self._config.device_id,
@@ -32,4 +35,4 @@ class MessageFactory:
             hardware_model=self._config.hardware_model,
             timestamp=datetime.now(UTC),
         )
-        return topic_for_message(self._config.device_id, message_type), encode_message(envelope)
+        return topic_for_message(self._config.device_id, message_type), encode_message(envelope), envelope

@@ -14,15 +14,22 @@ import logging
 import sys
 from typing import TextIO
 
-from board_runtime.config import DeviceConfig, TransportKind
+from pathlib import Path
+
+from board_runtime.config import DeviceConfig, TransportKind, default_state_dir
 from board_runtime.connectivity import StdoutTransport
 from board_runtime.hardware import SimulatedSensors
-from board_runtime.logging import DeviceLogForwarder
+from board_runtime.logging import CsvLogSink, DeviceLogForwarder
 from board_runtime.main import BoardRuntime
 
 
 def simulate(
-    *, device_id: str, count: int, seed: int | None = None, out: TextIO | None = None
+    *,
+    device_id: str,
+    count: int,
+    seed: int | None = None,
+    out: TextIO | None = None,
+    csv_path: Path | None = None,
 ) -> None:
     config = DeviceConfig(
         device_id=device_id,
@@ -30,7 +37,11 @@ def simulate(
         firmware_version="0.0.0-sim",
         transport=TransportKind.STDOUT,
     )
-    runtime = BoardRuntime(config, StdoutTransport(out or sys.stdout), SimulatedSensors(seed))
+    path = csv_path if csv_path is not None else default_state_dir() / "logs" / f"{device_id}.csv"
+    csv_sink = CsvLogSink(path)
+    runtime = BoardRuntime(
+        config, StdoutTransport(out or sys.stdout), SimulatedSensors(seed), csv_sink=csv_sink
+    )
     app_log = logging.getLogger("board_runtime.simulator.app")
     app_log.propagate = False
     app_log.setLevel(logging.INFO)
@@ -52,8 +63,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--device-id", default="sim-001")
     parser.add_argument("--count", type=int, default=5, help="number of sensor samples")
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--csv",
+        type=Path,
+        default=None,
+        help="CSV log file (default: ~/.builderwars/logs/<device-id>.csv)",
+    )
     args = parser.parse_args(argv)
-    simulate(device_id=args.device_id, count=args.count, seed=args.seed)
+    simulate(device_id=args.device_id, count=args.count, seed=args.seed, csv_path=args.csv)
 
 
 if __name__ == "__main__":

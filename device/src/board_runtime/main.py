@@ -32,6 +32,7 @@ from board_runtime.hardware import (
     SensorReader,
     SimulatedSensors,
 )
+from board_runtime.logging import CsvLogSink
 from board_runtime.messages import MessageFactory
 from board_runtime.sequence import FileSequenceStore, SequenceStore
 from device_protocol import MessageType, MessageValidationError, decode_message, topic_for
@@ -52,6 +53,7 @@ class BoardRuntime:
         buffer: OfflineBuffer | None = None,
         dispatcher: CommandDispatcher | None = None,
         sequence: SequenceStore | None = None,
+        csv_sink: CsvLogSink | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.config = config
@@ -60,6 +62,7 @@ class BoardRuntime:
         self.buffer = buffer or BoundedMemoryBuffer(config.offline_buffer_size)
         self.dispatcher = dispatcher or default_dispatcher(self)
         self.messages = MessageFactory(config, sequence)
+        self.csv_sink = csv_sink
         self.batcher = TelemetryBatcher(
             window_s=config.batch_window_s, max_samples=config.batch_max_samples
         )
@@ -81,11 +84,15 @@ class BoardRuntime:
         self.flush_telemetry()
         self.send(MessageType.STATUS, {"state": DeviceState.SHUTTING_DOWN.value})
         self.transport.disconnect()
+        if self.csv_sink is not None:
+            self.csv_sink.close()
 
     # -- outbound --------------------------------------------------------------------------
     def send(self, message_type: MessageType, payload: dict[str, Any]) -> None:
         with self._lock:
-            topic, body = self.messages.build(message_type, payload)
+            topic, body, envelope = self.messages.build(message_type, payload)
+            if self.csv_sink is not None:
+                self.csv_sink.write_envelope(envelope)
             dropped_before = getattr(self.buffer, "dropped", 0)
             self.buffer.append(topic, body)
             if getattr(self.buffer, "dropped", 0) > dropped_before:
@@ -196,8 +203,11 @@ def main(argv: list[str] | None = None) -> None:
 
     config = DeviceConfig.from_env()
     sequence = FileSequenceStore(config.state_dir, config.device_id) if config.state_dir else None
+    csv_sink = CsvLogSink(config.log_csv_path) if config.log_csv_path is not None else None
+    if csv_sink is not None:
+        log.info("logging device logs to %s", csv_sink.path)
     runtime = BoardRuntime(
-        config, build_transport(config), build_sensors(config), sequence=sequence
+        config, build_transport(config), build_sensors(config), sequence=sequence, csv_sink=csv_sink
     )
     runtime.start()
     count = 0

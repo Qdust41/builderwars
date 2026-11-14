@@ -31,6 +31,22 @@ def default_state_dir() -> Path:
     return Path.home() / ".builderwars"
 
 
+def _log_csv_path(e: dict[str, str]) -> Path | None:
+    """Resolve ``BUILDERWARS_LOG_CSV``: unset -> default under the state dir; off -> None."""
+    raw = e.get("BUILDERWARS_LOG_CSV")
+    if raw is None:
+        state_dir = (
+            Path(e["BUILDERWARS_STATE_DIR"]).expanduser()
+            if e.get("BUILDERWARS_STATE_DIR")
+            else default_state_dir()
+        )
+        device_id = e.get("DEVICE_ID", "device")
+        return state_dir / "logs" / f"{device_id}.csv"
+    if raw.strip().lower() in {"", "0", "off", "none", "false"}:
+        return None
+    return Path(raw).expanduser()
+
+
 @dataclass(frozen=True)
 class DeviceConfig:
     device_id: str
@@ -49,6 +65,7 @@ class DeviceConfig:
     key_path: Path | None = None
     ca_path: Path | None = None
     offline_buffer_size: int = 1000
+    log_csv_path: Path | None = None  # None -> no local CSV log sink (see from_env)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> DeviceConfig:
@@ -69,6 +86,7 @@ class DeviceConfig:
             state_dir=Path(e["BUILDERWARS_STATE_DIR"]).expanduser()
             if e.get("BUILDERWARS_STATE_DIR")
             else default_state_dir(),
+            log_csv_path=_log_csv_path(e),
             mqtt_endpoint=e.get("IOT_ENDPOINT") or None,
             mqtt_port=int(e.get("IOT_PORT", "8883")),
             cert_path=Path(e["IOT_CERT_PATH"]).expanduser() if e.get("IOT_CERT_PATH") else None,
