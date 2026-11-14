@@ -1,7 +1,8 @@
 """AWS IoT Core: per-device policy and the rule that forwards device messages to SQS.
 
-Provisioning approach (NOT implemented, no certificates are created here):
-* One IoT thing per board; thing name == device id used in topics.
+Provisioning approach (NOT implemented, no certificates are created here; spec 03):
+* A device is one host PC + FREE-WILi pair (decision #2): one IoT thing, thing name == device id
+  used in topics. The host connects directly to IoT Core; no Greengrass or local gateway.
 * One X.509 certificate per board, created by a privileged provisioning flow (e.g. fleet
   provisioning by claim, or certificates created out-of-band during manufacturing), attached
   to the thing and to ``DevicePolicy``. Private keys never touch our database or git.
@@ -21,12 +22,12 @@ from config import EnvConfig
 from constructs import Construct
 
 THING = "${iot:Connection.Thing.ThingName}"
-DEVICE_TO_CLOUD = ("telemetry", "logs", "status", "responses")
+DEVICE_TO_CLOUD = ("telemetry", "logs", "status", "events", "responses")
 
 # Matches workers.handlers.device_message.IncomingDeviceMessage.
 INGEST_RULE_SQL = (
     "SELECT topic() AS topic, timestamp() AS received_at_ms, encode(*, 'base64') AS body_b64 "
-    "FROM 'devices/+/+' WHERE topic(3) IN ['telemetry', 'logs', 'status', 'responses']"
+    "FROM 'devices/+/+' WHERE topic(3) IN ['telemetry', 'logs', 'status', 'events', 'responses']"
 )
 
 

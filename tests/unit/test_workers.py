@@ -86,3 +86,46 @@ def test_executor_exception_marks_job_failed() -> None:
 def test_unknown_job_id_is_dropped() -> None:
     _, _, handler = _job_world()
     assert handler.handle(JobMessage(job_id="job_missing")) is None
+
+
+def _queued_command(repo, **kw):
+    from domain.devices import DeviceCommand
+
+    command = DeviceCommand(project_id="p", device_id="dev-1", name="ping", requested_by="u", **kw)
+    repo.add(command)
+    return command
+
+
+def test_command_dispatch_publishes_once_and_marks_sent() -> None:
+    from device_protocol import MessageType
+    from domain.devices import CommandStatus
+    from workers.handlers import CommandDispatchHandler, CommandMessage
+
+    repo = memory.InMemoryDeviceCommandRepository()
+    publisher = memory.RecordingCommandPublisher()
+    command = _queued_command(repo)
+    handler = CommandDispatchHandler(repo, publisher)
+    handler.handle(CommandMessage(command_id=command.id))
+    handler.handle(CommandMessage(command_id=command.id))  # redelivery
+    [envelope] = publisher.commands
+    assert envelope.device_id == "dev-1"
+    assert envelope.message_type is MessageType.COMMAND
+    assert envelope.payload["command_id"] == command.id
+    assert repo.get(command.id).status is CommandStatus.SENT
+
+
+def test_expired_command_times_out_instead_of_sending() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from domain.devices import CommandStatus
+    from workers.handlers import CommandDispatchHandler, CommandMessage
+
+    repo = memory.InMemoryDeviceCommandRepository()
+    publisher = memory.RecordingCommandPublisher()
+    created = datetime(2026, 11, 14, tzinfo=UTC)
+    command = _queued_command(repo, created_at=created)
+    CommandDispatchHandler(repo, publisher).handle(
+        CommandMessage(command_id=command.id), now=created + timedelta(minutes=5)
+    )
+    assert publisher.commands == []
+    assert repo.get(command.id).status is CommandStatus.TIMED_OUT

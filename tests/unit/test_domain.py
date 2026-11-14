@@ -94,3 +94,39 @@ def test_firmware_artifact_validates_checksum_and_compatibility() -> None:
     artifact = FirmwareArtifact("p", "1.0", "a" * 64, loc, frozenset({"board-a"}))
     assert artifact.is_compatible_with("board-a")
     assert not artifact.is_compatible_with("board-b")
+
+
+def test_command_lifecycle_and_idempotent_results() -> None:
+    from domain.devices import DEFAULT_COMMAND_TTL, CommandStatus, DeviceCommand
+
+    now = datetime(2026, 11, 14, 18, 30, tzinfo=UTC)
+    command = DeviceCommand(
+        project_id="p", device_id="d", name="ping", requested_by="u", created_at=now
+    )
+    assert command.expires_at == now + DEFAULT_COMMAND_TTL
+    assert not command.is_expired(now)
+    assert command.is_expired(now + DEFAULT_COMMAND_TTL)
+    sent = command.mark_sent(now)
+    with pytest.raises(InvalidStateTransitionError):
+        sent.mark_sent(now)
+    done = sent.complete(CommandStatus.SUCCEEDED, now=now, output={"pong": True})
+    assert done.status is CommandStatus.SUCCEEDED
+    assert done.complete(CommandStatus.FAILED, now=now) is done  # repeated result: no-op
+    with pytest.raises(InvalidStateTransitionError):
+        done.time_out(now)
+    with pytest.raises(ValueError, match="result status"):
+        sent.complete(CommandStatus.TIMED_OUT, now=now)
+
+
+def test_firmware_requires_listed_extensions() -> None:
+    loc = ArtifactLocation(bucket="b", key="k")
+    artifact = FirmwareArtifact(
+        "p",
+        "1.0",
+        "a" * 64,
+        loc,
+        frozenset({"freewili-1-og"}),
+        required_extensions=frozenset({"bottlenose-wifi-orca"}),
+    )
+    assert artifact.is_compatible_with("freewili-1-og", frozenset({"bottlenose-wifi-orca"}))
+    assert not artifact.is_compatible_with("freewili-1-og")

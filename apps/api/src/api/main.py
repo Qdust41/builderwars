@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from api.dependencies import build_container
 from api.routes import devices, events, health, jobs, projects, sessions
 from api.settings import Settings
+from application.services import CommandQueueFullError
 from domain.common import InvalidStateTransitionError, NotFoundError, PermissionDeniedError
 
 
@@ -34,6 +35,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(PermissionDeniedError)
     async def _forbidden(_: Request, exc: PermissionDeniedError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_403_FORBIDDEN)
+
+    @app.exception_handler(CommandQueueFullError)
+    async def _queue_full(_: Request, exc: CommandQueueFullError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
 
     @app.exception_handler(InvalidStateTransitionError)
     async def _conflict(_: Request, exc: InvalidStateTransitionError) -> JSONResponse:

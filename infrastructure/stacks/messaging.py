@@ -23,6 +23,9 @@ class MessagingStack(Stack):
         super().__init__(scope, cid, **kw)
         self.ingest_queue, self.ingest_dlq = self._queue_with_dlq("DeviceIngest", config)
         self.jobs_queue, self.jobs_dlq = self._queue_with_dlq("Jobs", config)
+        # Device commands (decision #5). Standard queue: per-device FIFO order is enforced by
+        # the command records, and expiry is 30 s, so FIFO-queue cost/complexity isn't needed.
+        self.commands_queue, self.commands_dlq = self._queue_with_dlq("DeviceCommands", config)
 
     def _queue_with_dlq(self, name: str, config: EnvConfig) -> tuple[sqs.Queue, sqs.Queue]:
         dlq = sqs.Queue(
@@ -54,5 +57,5 @@ class MessagingStack(Stack):
             treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
             alarm_description=f"{name} messages are failing repeatedly and landed in the DLQ",
         )
-        # TODO: alarm actions (SNS topic -> on-call) once an owner/channel is decided.
+        # Alarm actions are out of MVP scope (decision #13): no SNS wiring yet.
         return queue, dlq

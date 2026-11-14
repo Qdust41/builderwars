@@ -79,3 +79,30 @@ def test_request_validation(client: TestClient) -> None:
     pid = client.post("/projects", json={"name": "P"}, headers=_as("a")).json()["id"]
     bad_job = client.post(f"/projects/{pid}/jobs", json={"job_type": "flash"}, headers=_as("a"))
     assert bad_job.status_code == 422
+
+
+def test_device_command_flow(client: TestClient) -> None:
+    pid = client.post("/projects", json={"name": "Bench"}, headers=_as("alice")).json()["id"]
+    device = client.post(
+        f"/projects/{pid}/devices", json={"display_name": "FREE-WILi #1"}, headers=_as("alice")
+    ).json()
+    assert device["hardware_model"] == "freewili-1-og"
+    assert device["extensions"] == ["bottlenose-wifi-orca"]
+
+    sent = client.post(
+        f"/projects/{pid}/devices/{device['id']}/commands",
+        json={"name": "ping", "args": {}},
+        headers=_as("alice"),
+    )
+    assert sent.status_code == 202
+    assert sent.json()["status"] == "queued"
+    got = client.get(f"/commands/{sent.json()['id']}", headers=_as("alice"))
+    assert got.json()["id"] == sent.json()["id"]
+
+    assert client.get(f"/commands/{sent.json()['id']}", headers=_as("mallory")).status_code == 404
+    bad = client.post(
+        f"/projects/{pid}/devices/{device['id']}/commands",
+        json={"name": "rm -rf /"},
+        headers=_as("alice"),
+    )
+    assert bad.status_code == 422

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from application.realtime import RealtimeEventType
-from domain.devices import ConnectionStatus, Device
+from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project
 from domain.sessions import Session, SessionStatus
@@ -40,7 +40,8 @@ class ProjectOut(_Out):
 
 class DeviceCreate(BaseModel):
     display_name: str = Field(min_length=1, max_length=200)
-    hardware_model: str = Field(min_length=1, max_length=64)
+    hardware_model: str = Field(default="freewili-1-og", min_length=1, max_length=64)
+    extensions: list[str] = Field(default_factory=lambda: ["bottlenose-wifi-orca"], max_length=8)
 
 
 class DeviceOut(_Out):
@@ -48,10 +49,16 @@ class DeviceOut(_Out):
     project_id: str
     display_name: str
     hardware_model: str
+    extensions: list[str]
     firmware_version: str | None
     connection_status: ConnectionStatus
     last_seen_at: datetime | None
     created_at: datetime
+
+    @field_validator("extensions", mode="before")
+    @classmethod
+    def _sorted(cls, value: object) -> object:
+        return sorted(value) if isinstance(value, set | frozenset) else value
 
     @classmethod
     def of(cls, d: Device) -> DeviceOut:
@@ -110,3 +117,33 @@ class JobOut(_Out):
     @classmethod
     def of(cls, j: Job) -> JobOut:
         return cls.model_validate(j)
+
+
+CommandArg = float | int | bool | str
+
+
+class CommandCreate(BaseModel):
+    """Same naming rules as the protocol's ``CommandPayload``; the host's allowlist decides."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    args: dict[str, CommandArg] = Field(default_factory=dict, max_length=32)
+
+
+class CommandOut(_Out):
+    id: str
+    project_id: str
+    device_id: str
+    name: str
+    args: dict[str, CommandArg]
+    requested_by: str
+    status: CommandStatus
+    created_at: datetime
+    expires_at: datetime | None
+    sent_at: datetime | None
+    completed_at: datetime | None
+    detail: str | None
+    output: dict[str, CommandArg]
+
+    @classmethod
+    def of(cls, c: DeviceCommand) -> CommandOut:
+        return cls.model_validate(c)

@@ -46,4 +46,4 @@ def test_cli_pipeline() -> None:
         capture_output=True,
         text=True,
     )
-    assert "summary: processed=6; telemetry records=2" in worker.stdout
+    assert "summary: processed=5; telemetry samples=2; events=0" in worker.stdout

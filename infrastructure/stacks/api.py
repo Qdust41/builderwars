@@ -39,6 +39,7 @@ class ApiStack(Stack):
         user_pool: cognito.IUserPool,
         user_pool_client: cognito.IUserPoolClient,
         jobs_queue: sqs.IQueue,
+        commands_queue: sqs.IQueue,
         artifacts_bucket: s3.IBucket,
         **kw: Any,
     ) -> None:
@@ -64,11 +65,14 @@ class ApiStack(Stack):
                 "AUTH_MODE": "cognito",
                 "REPOSITORY_BACKEND": "postgres",
                 "JOBS_QUEUE_URL": jobs_queue.queue_url,
+                "COMMANDS_QUEUE_URL": commands_queue.queue_url,
                 "ARTIFACTS_BUCKET": artifacts_bucket.bucket_name,
             },
         )
-        # Least privilege: enqueue jobs and read artifacts. Nothing else.
+        # Least privilege: enqueue jobs/commands and read artifacts. The API never publishes to
+        # IoT directly; the command dispatcher worker does.
         jobs_queue.grant_send_messages(fn)
+        commands_queue.grant_send_messages(fn)
         artifacts_bucket.grant_read(fn)
 
         jwt = authorizers.HttpJwtAuthorizer(

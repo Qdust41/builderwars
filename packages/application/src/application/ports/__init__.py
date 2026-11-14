@@ -4,20 +4,29 @@ Concrete adapters live elsewhere: ``application.adapters.memory`` for local deve
 and (TODO) PostgreSQL / SQS / IoT Core / AppSync adapters for AWS.
 """
 
-from application.ports.messaging import DeviceCommandPublisher, JobQueue, RealtimePublisher
+from application.ports.messaging import (
+    CommandQueue,
+    DeviceCommandPublisher,
+    JobQueue,
+    RealtimePublisher,
+)
 from application.ports.repositories import (
+    DeviceCommandRepository,
     DeviceRepository,
     JobRepository,
     MembershipRepository,
     ProcessedMessageStore,
     ProjectRepository,
     RawDeviceMessageStore,
+    SequenceTracker,
     SessionRepository,
     TelemetryRepository,
 )
 
 __all__ = [
+    "CommandQueue",
     "DeviceCommandPublisher",
+    "DeviceCommandRepository",
     "DeviceRepository",
     "JobQueue",
     "JobRepository",
@@ -26,6 +35,7 @@ __all__ = [
     "ProjectRepository",
     "RawDeviceMessageStore",
     "RealtimePublisher",
+    "SequenceTracker",
     "SessionRepository",
     "TelemetryRepository",
 ]

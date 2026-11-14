@@ -14,7 +14,7 @@ from datetime import datetime
 
 from application.realtime import RealtimeEvent
 from device_protocol import DeviceEnvelope
-from domain.devices import Device
+from domain.devices import Device, DeviceCommand
 from domain.jobs import Job
 from domain.projects import Project, ProjectMembership
 from domain.sessions import Session
@@ -109,15 +109,77 @@ class InMemoryProcessedMessageStore:
 @dataclass
 class InMemoryRawMessageStore:
     items: list[tuple[str, str, datetime, bytes]] = field(default_factory=list)
+    quarantined: list[tuple[str | None, datetime, bytes, str]] = field(default_factory=list)
 
     def put(self, *, device_id: str, message_id: str, received_at: datetime, body: bytes) -> None:
         self.items.append((device_id, message_id, received_at, body))
+
+    def quarantine(
+        self, *, device_id: str | None, received_at: datetime, body: bytes, reason: str
+    ) -> None:
+        self.quarantined.append((device_id, received_at, body, reason))
+
+
+class InMemorySequenceTracker:
+    def __init__(self) -> None:
+        self._last: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def observe(self, device_id: str, sequence_number: int) -> int:
+        with self._lock:
+            last = self._last.get(device_id)
+            if last is None or sequence_number > last:
+                self._last[device_id] = sequence_number
+            if last is None or sequence_number <= last:
+                return 0
+            return sequence_number - last - 1
+
+
+class InMemoryDeviceCommandRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, DeviceCommand] = {}
+
+    def add(self, command: DeviceCommand) -> None:
+        self._items[command.id] = command
+
+    def get(self, command_id: str) -> DeviceCommand | None:
+        return self._items.get(command_id)
+
+    def save(self, command: DeviceCommand) -> None:
+        self._items[command.id] = command
+
+    def count_pending(self, device_id: str) -> int:
+        return sum(
+            1 for c in self._items.values() if c.device_id == device_id and c.status.is_pending
+        )
 
 
 @dataclass
 class InMemoryTelemetryRepository:
     telemetry: list[dict[str, object]] = field(default_factory=list)
     logs: list[dict[str, object]] = field(default_factory=list)
+    events: list[dict[str, object]] = field(default_factory=list)
+
+    def add_event(
+        self,
+        *,
+        device_id: str,
+        message_id: str | None,
+        at: datetime,
+        name: str,
+        severity: str,
+        detail: str | None,
+    ) -> None:
+        self.events.append(
+            {
+                "device_id": device_id,
+                "message_id": message_id,
+                "at": at,
+                "name": name,
+                "severity": severity,
+                "detail": detail,
+            }
+        )
 
     def add_telemetry(
         self, *, device_id: str, message_id: str, at: datetime, metrics: dict[str, object]
@@ -146,6 +208,14 @@ class InMemoryJobQueue:
 
     def enqueue(self, job_id: str) -> None:
         self.job_ids.append(job_id)
+
+
+@dataclass
+class InMemoryCommandQueue:
+    command_ids: list[str] = field(default_factory=list)
+
+    def enqueue_command(self, command_id: str) -> None:
+        self.command_ids.append(command_id)
 
 
 @dataclass

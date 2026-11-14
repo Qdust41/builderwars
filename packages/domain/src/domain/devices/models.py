@@ -15,7 +15,7 @@ class ConnectionStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Device:
-    """A registered physical board.
+    """A registered device: one host PC + FREE-WILi board pair, one IoT thing (decision #2).
 
     Never put certificates or private keys on this model. Device credentials live in AWS IoT
     (and, for provisioning, a secrets store); this row only references the IoT thing name.
@@ -23,7 +23,8 @@ class Device:
 
     project_id: str
     display_name: str
-    hardware_model: str
+    hardware_model: str  # e.g. "freewili-1-og"
+    extensions: frozenset[str] = frozenset()  # e.g. {"bottlenose-wifi-orca"}
     id: str = field(default_factory=lambda: new_id("dev"))
     firmware_version: str | None = None
     connection_status: ConnectionStatus = ConnectionStatus.UNKNOWN

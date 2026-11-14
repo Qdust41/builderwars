@@ -1,7 +1,10 @@
-"""Firmware / board-runtime artifact references.
+"""Firmware artifact references (decision #9).
 
-Model only. Building, signing and deploying firmware are out of scope for the scaffold
-(docs/open-decisions.md #9). Nothing in this codebase flashes or deploys firmware.
+"Firmware" is a FREE-WILi ``_main.uf2`` (wilibsp dual-CPU build). sha256 is mandatory; a
+cryptographic signature is optional for the MVP (``signature_reference``). Deployment and
+rollback are jobs targeting one device (``JobType.FIRMWARE_DEPLOY``/``FIRMWARE_ROLLBACK``);
+rollback redeploys the previous approved version, so N-1 is always retained.
+Model only: nothing in this codebase builds, flashes or deploys firmware yet.
 """
 
 from __future__ import annotations
@@ -38,9 +41,10 @@ class FirmwareArtifact:
     checksum_sha256: str
     location: ArtifactLocation
     compatible_hardware_models: frozenset[str]
+    required_extensions: frozenset[str] = frozenset()  # e.g. Orca modules the app needs
     build_job_id: str | None = None
     state: FirmwareArtifactState = FirmwareArtifactState.BUILT
-    signature_reference: str | None = None  # TODO: signing scheme is an open decision
+    signature_reference: str | None = None  # optional for MVP (decision #9)
     id: str = field(default_factory=lambda: new_id("fw"))
     created_at: datetime = field(default_factory=utcnow)
 
@@ -50,5 +54,10 @@ class FirmwareArtifact:
         if not self.compatible_hardware_models:
             raise ValueError("an artifact must declare at least one compatible hardware model")
 
-    def is_compatible_with(self, hardware_model: str) -> bool:
-        return hardware_model in self.compatible_hardware_models
+    def is_compatible_with(
+        self, hardware_model: str, extensions: frozenset[str] = frozenset()
+    ) -> bool:
+        return (
+            hardware_model in self.compatible_hardware_models
+            and self.required_extensions <= extensions
+        )

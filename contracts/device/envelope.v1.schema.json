@@ -7,7 +7,8 @@
         "status",
         "command",
         "command_result",
-        "heartbeat"
+        "heartbeat",
+        "event"
       ],
       "title": "MessageType",
       "type": "string"

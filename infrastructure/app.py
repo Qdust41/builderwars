@@ -46,6 +46,7 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         user_pool=identity.user_pool,
         user_pool_client=identity.user_pool_client,
         jobs_queue=messaging.jobs_queue,
+        commands_queue=messaging.commands_queue,
         artifacts_bucket=storage.artifacts_bucket,
         env=env,
     )
@@ -55,6 +56,7 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         config=config,
         ingest_queue=messaging.ingest_queue,
         jobs_queue=messaging.jobs_queue,
+        commands_queue=messaging.commands_queue,
         device_data_bucket=storage.device_data_bucket,
         artifacts_bucket=storage.artifacts_bucket,
         env=env,

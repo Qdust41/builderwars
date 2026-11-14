@@ -12,6 +12,12 @@ class JobQueue(Protocol):
     def enqueue(self, job_id: str) -> None: ...
 
 
+class CommandQueue(Protocol):
+    """Hands a device command to the dispatcher worker (SQS in AWS). Carries only the id."""
+
+    def enqueue_command(self, command_id: str) -> None: ...
+
+
 class RealtimePublisher(Protocol):
     """Publishes notifications to session subscribers (AppSync Events in AWS).
 

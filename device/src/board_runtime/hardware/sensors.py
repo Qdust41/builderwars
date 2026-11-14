@@ -1,8 +1,4 @@
-"""Hardware access boundary.
-
-Real drivers (GPIO/I2C/SPI/ADC...) depend on the board, which is not chosen yet
-(open decision #1). Everything hardware-specific must sit behind ``SensorReader``.
-"""
+"""Hardware access boundary. Everything board-specific sits behind ``SensorReader``."""
 
 from __future__ import annotations
 
@@ -10,9 +6,17 @@ import math
 import random
 from typing import Protocol
 
+from device_protocol.schemas import MetricValue
+
+
+class BoardUnavailableError(Exception):
+    """The board can't be reached (e.g. USB unplugged). The runtime reports ``degraded``."""
+
 
 class SensorReader(Protocol):
-    def read(self) -> dict[str, float | int | bool | str]: ...
+    def read(self) -> dict[str, MetricValue]:
+        """Return one sample of readings, or raise ``BoardUnavailableError``."""
+        ...
 
 
 class SimulatedSensors:
@@ -22,7 +26,7 @@ class SimulatedSensors:
         self._rng = random.Random(seed)  # noqa: S311 - simulation only
         self._tick = 0
 
-    def read(self) -> dict[str, float | int | bool | str]:
+    def read(self) -> dict[str, MetricValue]:
         self._tick += 1
         temp = 40.0 + 2.5 * math.sin(self._tick / 5) + self._rng.uniform(-0.2, 0.2)
         return {

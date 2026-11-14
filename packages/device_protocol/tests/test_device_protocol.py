@@ -19,9 +19,10 @@ from device_protocol import (
     topic_for_message,
 )
 from device_protocol.topics import InvalidTopicError, TopicChannel
-from tests.conftest import FIXTURES
 
 pytestmark = pytest.mark.contract
+
+FIXTURES = Path(__file__).resolve().parents[3] / "contracts" / "device" / "fixtures"
 
 VALID = sorted((FIXTURES / "valid").glob("*.json"))
 INVALID = sorted((FIXTURES / "invalid").glob("*.json"))
@@ -56,7 +57,11 @@ def test_oversized_raw_message_is_rejected_before_parsing() -> None:
 
 def test_oversized_payload_is_rejected() -> None:
     data = json.loads((FIXTURES / "valid" / "telemetry.json").read_text())
-    data["payload"] = {"blob": "x" * (MAX_PAYLOAD_BYTES + 1)}
+    data["payload"] = {
+        "samples": [
+            {"ts": "2026-11-14T18:30:00Z", "readings": {"blob": "x" * (MAX_PAYLOAD_BYTES + 1)}}
+        ]
+    }
     with pytest.raises(MessageValidationError) as info:
         decode_message(data)
     assert info.value.reason is RejectionReason.INVALID_ENVELOPE
@@ -88,6 +93,7 @@ def test_envelope_new_produces_unique_ids() -> None:
         (MessageType.LOG, "devices/device-001/logs"),
         (MessageType.STATUS, "devices/device-001/status"),
         (MessageType.HEARTBEAT, "devices/device-001/status"),
+        (MessageType.EVENT, "devices/device-001/events"),
         (MessageType.COMMAND, "devices/device-001/commands"),
         (MessageType.COMMAND_RESULT, "devices/device-001/responses"),
     ],
@@ -109,3 +115,18 @@ def test_parse_topic_rejects_unexpected_topics(topic: str) -> None:
 def test_topic_for_refuses_wildcards_in_device_id() -> None:
     with pytest.raises(InvalidTopicError):
         topic_for("#", TopicChannel.TELEMETRY)
+
+
+def test_schema_version_check_comes_before_payload_shape() -> None:
+    data = json.loads((FIXTURES / "valid" / "telemetry.json").read_text())
+    data["schema_version"] = 2
+    data["payload"] = {"anything": "goes"}
+    with pytest.raises(MessageValidationError) as info:
+        decode_message(data)
+    assert info.value.reason is RejectionReason.UNSUPPORTED_VERSION
+
+
+def test_strenum_values_serialise_as_plain_strings() -> None:
+    # Guards the Python 3.10 StrEnum backport in device_protocol.compat.
+    assert str(MessageType.TELEMETRY) == "telemetry"
+    assert json.dumps({"t": MessageType.EVENT}) == '{"t": "event"}'

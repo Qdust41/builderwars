@@ -2,13 +2,29 @@
   "message_id": "00000000-0000-4000-8000-000000000001",
   "schema_version": 1,
   "device_id": "device-001",
-  "timestamp": "2026-11-14T18:30:00Z",
+  "timestamp": "2026-11-14T18:30:05Z",
   "sequence_number": 1042,
   "firmware_version": "0.1.0",
   "hardware_model": "devboard-x",
   "message_type": "telemetry",
   "payload": {
-    "temperature_c": 42.5,
-    "fan_on": true
+    "samples": [
+      {
+        "ts": "2026-11-14T18:30:01Z",
+        "readings": {
+          "temperature_c": 42.5,
+          "io_3": 1,
+          "button_red": false
+        }
+      },
+      {
+        "ts": "2026-11-14T18:30:02Z",
+        "readings": {
+          "temperature_c": 42.6,
+          "io_3": 0,
+          "button_red": true
+        }
+      }
+    ]
   }
 }

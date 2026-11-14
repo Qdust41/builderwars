@@ -1,0 +1,20 @@
+{
+  "message_id": "00000000-0000-4000-8000-000000000001",
+  "schema_version": 1,
+  "device_id": "device-001",
+  "timestamp": "2026-11-14T18:30:05Z",
+  "sequence_number": 1042,
+  "firmware_version": "0.1.0",
+  "hardware_model": "devboard-x",
+  "message_type": "telemetry",
+  "payload": {
+    "samples": [
+      {
+        "ts": "2026-11-14T18:30:02",
+        "readings": {
+          "t": 1
+        }
+      }
+    ]
+  }
+}

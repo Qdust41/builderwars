@@ -41,7 +41,8 @@ class AiRun:
 
 
 class ModelProvider(Protocol):
-    """Provider-agnostic model interface. No provider is chosen yet (open decision #8)."""
+    """Model interface. Implementations speak the OpenAI-compatible Chat Completions API
+    (decision #8); see ``ai_platform.providers``."""
 
     def complete(
         self, *, system: str, messages: Sequence[dict[str, Any]], tools: Sequence[str]

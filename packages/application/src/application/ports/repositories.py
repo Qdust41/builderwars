@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from domain.devices import Device
+from domain.devices import Device, DeviceCommand
 from domain.jobs import Job
 from domain.projects import Project, ProjectMembership
 from domain.sessions import Session
@@ -52,11 +52,34 @@ class ProcessedMessageStore(Protocol):
 
 
 class RawDeviceMessageStore(Protocol):
-    """Raw message retention (S3 in AWS), kept separate from normalised records."""
+    """Raw message retention (S3 ``raw/`` in AWS), kept separate from normalised records.
+
+    Rejected messages are quarantined (S3 ``rejected/``) rather than silently dropped.
+    """
 
     def put(
         self, *, device_id: str, message_id: str, received_at: datetime, body: bytes
     ) -> None: ...
+
+    def quarantine(
+        self, *, device_id: str | None, received_at: datetime, body: bytes, reason: str
+    ) -> None: ...
+
+
+class SequenceTracker(Protocol):
+    """Remembers the highest ``sequence_number`` seen per device, for gap detection.
+
+    Returns how many numbers were skipped (0 = contiguous, first message, or out of order).
+    """
+
+    def observe(self, device_id: str, sequence_number: int) -> int: ...
+
+
+class DeviceCommandRepository(Protocol):
+    def add(self, command: DeviceCommand) -> None: ...
+    def get(self, command_id: str) -> DeviceCommand | None: ...
+    def save(self, command: DeviceCommand) -> None: ...
+    def count_pending(self, device_id: str) -> int: ...
 
 
 class TelemetryRepository(Protocol):
@@ -69,3 +92,16 @@ class TelemetryRepository(Protocol):
     def add_log(
         self, *, device_id: str, message_id: str, at: datetime, level: str, message: str
     ) -> None: ...
+
+    def add_event(
+        self,
+        *,
+        device_id: str,
+        message_id: str | None,
+        at: datetime,
+        name: str,
+        severity: str,
+        detail: str | None,
+    ) -> None:
+        """Device-reported events and ingest-derived ones (e.g. ``sequence_gap``)."""
+        ...

@@ -8,9 +8,10 @@ function with validated, scalar arguments.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from device_protocol.compat import UTC
 from device_protocol.schemas import CommandPayload, CommandResultPayload, CommandResultStatus
 
 CommandHandler = Callable[[dict[str, Any]], dict[str, Any]]

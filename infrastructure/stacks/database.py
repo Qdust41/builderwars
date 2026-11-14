@@ -1,4 +1,5 @@
-"""PostgreSQL on RDS (optional; ``enable_rds`` per environment). INCURS ONGOING COST.
+"""PostgreSQL on RDS (``enable_rds``: prod only, decision #12). db.t4g.micro is free-tier
+eligible for 12 months; after that it INCURS ONGOING COST.
 
 Private subnets only, encrypted, credentials generated into Secrets Manager. No NAT gateways
 (cost); Lambdas that need the DB will need VPC endpoints for other AWS services. When RDS is
@@ -40,8 +41,7 @@ class DatabaseStack(Stack):
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED),
             publicly_accessible=False,
             storage_encrypted=True,
-            allocated_storage=20,
-            max_allocated_storage=100,
+            allocated_storage=20,  # free tier: 20 GB; no storage autoscaling (decision #11)
             credentials=rds.Credentials.from_generated_secret("builderwars_admin"),
             database_name="builderwars",
             backup_retention=Duration.days(7),

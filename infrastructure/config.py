@@ -19,6 +19,8 @@ class EnvConfig:
     retain_data: bool
     log_retention: logs.RetentionDays
     raw_data_expiry_days: int
+    # Placeholder only: alarm actions are out of MVP scope (decision #13). Not wired to SNS.
+    ops_alert_email: str = "ops-alerts@example.com"
 
     @property
     def removal_policy(self) -> RemovalPolicy:
@@ -28,11 +30,11 @@ class EnvConfig:
         return f"builderwars-{self.name}-{suffix}"
 
 
-# RDS is off by default in dev to avoid its ongoing cost (see docs/aws-deployment.md); retention
-# periods are placeholders until open decision #6 (volumes/retention) is settled.
+# Decisions #11/#12: us-east-1 (via CDK_DEFAULT_REGION), free tier. RDS (db.t4g.micro) in prod
+# only. Raw-data retention 30/90/365 days (decision #6).
 ENVIRONMENTS: dict[str, EnvConfig] = {
     "dev": EnvConfig("dev", False, False, logs.RetentionDays.TWO_WEEKS, 30),
-    "staging": EnvConfig("staging", True, True, logs.RetentionDays.ONE_MONTH, 90),
+    "staging": EnvConfig("staging", False, True, logs.RetentionDays.ONE_MONTH, 90),
     "prod": EnvConfig("prod", True, True, logs.RetentionDays.THREE_MONTHS, 365),
 }
 

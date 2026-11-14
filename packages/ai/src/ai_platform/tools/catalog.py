@@ -76,14 +76,14 @@ def default_registry() -> ToolRegistry:
                 "Propose a code change. Stored as a proposal for human review; never applied.",
                 ToolAccess.PROPOSAL,
                 ProposePatchArgs,
-                Permission.CREATE_JOB,
+                Permission.RUN_AI,
             ),
             Tool(
                 "request_build_or_test_job",
                 "Request a firmware build or test run in an isolated worker. Needs approval.",
                 ToolAccess.PRIVILEGED,
                 RequestJobArgs,
-                Permission.CREATE_JOB,
+                Permission.RUN_AI,
             ),
         ]
     )

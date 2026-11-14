@@ -1,49 +1,71 @@
 """Payload schemas for each message type.
 
-These are PROVISIONAL until the board hardware and firmware capabilities are confirmed
-(see docs/open-decisions.md). They exist so both sides validate the same shape today.
+Shapes follow docs/open-decisions.md (2026-11-14). Sensor names inside telemetry readings stay
+free-form until the board I/O spec (spec 02) pins them down.
 """
 
 from __future__ import annotations
 
+import itertools
+import re
 from datetime import datetime
-from enum import StrEnum
-from typing import Any, Final
+from typing import Any, Final, Union
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
+from device_protocol.compat import StrEnum
 from device_protocol.envelopes import MessageType
 
-MetricValue = float | int | bool | str
+# Union[...] rather than "|": isinstance() needs a runtime union object on Python 3.10 too.
+MetricValue = Union[float, int, bool, str]  # noqa: UP007
+
+# Telemetry batching (decision #6): the host samples ~1/s and publishes one telemetry message
+# per window, or earlier once the batch is full. Limits apply to the whole message.
+TELEMETRY_BATCH_WINDOW_S: Final[float] = 5.0
+TELEMETRY_MAX_SAMPLES: Final[int] = 32
+METRIC_NAME_PATTERN: Final[str] = r"^[a-z][a-z0-9_]{0,63}$"
 
 
 class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class TelemetryPayload(BaseModel):
-    """Flat map of metric name -> scalar value, e.g. ``{"temperature_c": 42.5}``.
+def _check_readings(value: dict[str, MetricValue]) -> dict[str, MetricValue]:
+    if not value:
+        raise ValueError("a sample must contain at least one reading")
+    for key, reading in value.items():
+        if not isinstance(reading, MetricValue):  # type: ignore[arg-type]
+            raise ValueError(f"reading {key!r} must be a scalar, got {type(reading).__name__}")
+    return value
 
-    Extra keys are the metrics themselves, so unknown keys are allowed but values must be scalars.
-    """
 
-    model_config = ConfigDict(extra="allow", frozen=True)
+class TelemetrySample(_Payload):
+    """One sensor sample. Keeps its own timestamp; the envelope timestamp is the flush time."""
 
-    def metrics(self) -> dict[str, MetricValue]:
-        extra = self.model_extra or {}
-        return dict(extra)
+    ts: AwareDatetime
+    readings: dict[str, Any]
 
+    @field_validator("readings")
     @classmethod
-    def validate_metrics(cls, data: dict[str, Any]) -> TelemetryPayload:
-        if not data:
-            raise ValueError("telemetry payload must contain at least one metric")
-        for key, value in data.items():
-            if not isinstance(key, str) or not key:
-                raise ValueError("metric names must be non-empty strings")
-            if not isinstance(value, MetricValue):
-                raise ValueError(f"metric {key!r} must be a scalar, got {type(value).__name__}")
-        return cls.model_validate(data)
+    def _scalar_readings(cls, value: dict[str, Any]) -> dict[str, Any]:
+        for key in value:
+            if not re.fullmatch(METRIC_NAME_PATTERN, key):
+                raise ValueError(f"reading name {key!r} must match {METRIC_NAME_PATTERN}")
+        return _check_readings(value)
+
+
+class TelemetryPayload(_Payload):
+    """A batch of 1..32 samples, ordered by ``ts``."""
+
+    samples: list[TelemetrySample] = Field(min_length=1, max_length=TELEMETRY_MAX_SAMPLES)
+
+    @field_validator("samples")
+    @classmethod
+    def _ordered(cls, value: list[TelemetrySample]) -> list[TelemetrySample]:
+        if any(b.ts < a.ts for a, b in itertools.pairwise(value)):
+            raise ValueError("samples must be ordered by ts")
+        return value
 
 
 class LogLevel(StrEnum):
@@ -64,6 +86,7 @@ class DeviceState(StrEnum):
     BOOTING = "booting"
     ONLINE = "online"
     BUSY = "busy"
+    DEGRADED = "degraded"  # host is online but the board is unreachable over USB
     ERROR = "error"
     SHUTTING_DOWN = "shutting_down"
 
@@ -78,8 +101,23 @@ class HeartbeatPayload(_Payload):
     uptime_s: int = Field(ge=0)
 
 
+class EventSeverity(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class EventPayload(_Payload):
+    """A discrete occurrence, e.g. ``board_disconnected`` or ``offline_buffer_overflow``."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    severity: EventSeverity = EventSeverity.INFO
+    detail: str | None = Field(default=None, max_length=1024)
+    data: dict[str, MetricValue] = Field(default_factory=dict)
+
+
 class CommandPayload(_Payload):
-    """Cloud -> device. Commands are named operations from an allowlist on the board.
+    """Cloud -> device. Commands are named operations from an allowlist on the host runtime.
 
     There is deliberately no "run arbitrary shell" command.
     """
@@ -111,12 +149,11 @@ PAYLOAD_MODELS: Final[dict[MessageType, type[BaseModel]]] = {
     MessageType.LOG: LogPayload,
     MessageType.STATUS: StatusPayload,
     MessageType.HEARTBEAT: HeartbeatPayload,
+    MessageType.EVENT: EventPayload,
     MessageType.COMMAND: CommandPayload,
     MessageType.COMMAND_RESULT: CommandResultPayload,
 }
 
 
 def validate_payload(message_type: MessageType, payload: dict[str, Any]) -> BaseModel:
-    if message_type is MessageType.TELEMETRY:
-        return TelemetryPayload.validate_metrics(payload)
     return PAYLOAD_MODELS[message_type].model_validate(payload)

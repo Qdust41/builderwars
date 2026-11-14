@@ -10,7 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aws_cdk import Duration, Stack
+from aws_cdk import Aws, Duration, Stack
+from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_lambda_event_sources as sources
 from aws_cdk import aws_logs as logs
@@ -33,6 +34,7 @@ class WorkersStack(Stack):
         config: EnvConfig,
         ingest_queue: sqs.IQueue,
         jobs_queue: sqs.IQueue,
+        commands_queue: sqs.IQueue,
         device_data_bucket: s3.IBucket,
         artifacts_bucket: s3.IBucket,
         **kw: Any,
@@ -52,6 +54,23 @@ class WorkersStack(Stack):
                 max_batching_window=Duration.seconds(5),
                 report_batch_item_failures=True,
             )
+        )
+
+        commands_fn = self._function(
+            "CommandDispatch", "workers.main.command_dispatch_lambda_handler", code, config
+        )
+        # Only cloud -> device command topics; never device -> cloud topics.
+        commands_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["iot:Publish"],
+                resources=[
+                    f"arn:{Aws.PARTITION}:iot:{Aws.REGION}:{Aws.ACCOUNT_ID}:topic/devices/*/commands"
+                ],
+            )
+        )
+        # TODO: IOT_DATA_ENDPOINT env (account-specific ATS endpoint) for the iot-data client.
+        commands_fn.add_event_source(
+            sources.SqsEventSource(commands_queue, batch_size=10, report_batch_item_failures=True)
         )
 
         jobs_fn = self._function("Jobs", "workers.main.job_lambda_handler", code, config)

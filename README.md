@@ -23,7 +23,7 @@ packages/
   domain/           framework-free domain models and rules    -> bw-domain
   application/      services + ports (+ in-memory adapters)   -> bw-application
   ai/               controlled AI tool boundary (stubs)       -> bw-ai-platform, `ai_platform`
-device/         board runtime + local simulator               -> bw-board-runtime, `board_runtime`
+device/         host-PC runtime for the FREE-WILi + simulator -> bw-board-runtime, `board_runtime`
 infrastructure/ AWS CDK (Python) — synth only
 contracts/      GENERATED JSON Schemas / OpenAPI + device message fixtures
 tests/          unit / contract / integration / end_to_end
@@ -37,7 +37,8 @@ Dependency direction: `api`, `workers` → `application` → `domain`, `device_p
 
 ## Prerequisites
 
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/) (0.11+)
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/) (0.11+) for development. The host runtime
+  that drives a real board only needs Python 3.10+ (see [device/README.md](device/README.md)).
 - Node.js 22+ and npm (frontend, and the CDK CLI if you use it)
 - Docker is optional
 
@@ -55,11 +56,11 @@ curl localhost:8000/health
 curl -X POST localhost:8000/projects -H 'X-Dev-User: alice' -H 'Content-Type: application/json' -d '{"name":"Rover"}'
 
 # Board simulator -> local worker harness (validates, deduplicates, records)
-uv run python -m board_runtime.simulator --count 5 > /tmp/messages.jsonl
+uv run python -m board_runtime.simulator --count 40 > /tmp/messages.jsonl
 uv run python -m workers.main /tmp/messages.jsonl
 
-# Board runtime loop (prints JSON lines; Ctrl-C to stop)
-DEVICE_ID=dev-local-001 uv run python -m board_runtime.main --iterations 3
+# Host runtime loop with simulated sensors (prints JSON lines; Ctrl-C to stop)
+DEVICE_ID=dev-local-001 BUILDERWARS_STATE_DIR=/tmp/bw-state uv run python -m board_runtime.main --samples 12
 
 # Frontend on http://localhost:5173 (proxies /api -> :8000)
 cd apps/web && npm install && npm run dev
@@ -93,7 +94,8 @@ After changing a protocol model, realtime event or API schema, regenerate the co
 
 ## Architecture in one paragraph
 
-Boards talk MQTT/TLS to **AWS IoT Core** with per-device certificates; an IoT rule forwards
+A **device** is a host PC wired over USB to a FREE-WILi 1-OG board (with a Bottlenose WiFi
+Orca); the host runs `device/` and holds the internet connection. Hosts talk MQTT/TLS to **AWS IoT Core** with per-device certificates; an IoT rule forwards
 device-to-cloud topics to **SQS**, where idempotent **workers** validate messages against the
 shared `device_protocol` contract and record them. Users talk to a **FastAPI** app (API Gateway +
 Lambda) authenticated by **Cognito**; it owns authorisation and is the only path for commands to
@@ -108,7 +110,8 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 - [Device protocol](docs/device-protocol.md) — envelope, topics, versioning, limits
 - [Security](docs/security.md) — identities, authorisation, AI and firmware controls
 - [AWS deployment (future)](docs/aws-deployment.md) — steps, costs, testing against real IoT
-- [Open product decisions](docs/open-decisions.md) — questions that need an owner's answer
+- [Product decisions](docs/open-decisions.md) — answered decisions and what the scaffold does with each
+- [Spec outline](docs/spec-outline.md) — the specs still to write, in order
 - [Architecture decision records](docs/decisions/)
 
 ## What is not implemented
@@ -117,13 +120,15 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 | --- | --- |
 | Persistence | In-memory only (local/test). PostgreSQL repositories: TODO. |
 | User auth | `X-Dev-User` header locally. Cognito JWT verification: TODO; API refuses non-local envs until done. |
-| Device connectivity | Stdout/in-memory transports. MQTT/TLS to IoT Core: stub. Reconnect loop: placeholder (`BackoffPolicy` exists). Offline buffer: RAM only. |
-| Device provisioning | Not implemented (no certificates created anywhere). |
-| Device commands from the API | Not exposed yet (route TODO); board-side allowlisted dispatcher exists. |
+| Device connectivity | MQTT/TLS via `awsiotsdk` implemented but not yet run against a real IoT endpoint (SDK handles reconnects). Offline buffer: RAM only. |
+| Board I/O | `FreeWiliSensors` (vendor `freewili` package) reads GPIO + buttons as placeholder readings; not yet run on a real board. Sensor set: spec 02. |
+| Device provisioning | Not implemented (no certificates created anywhere; spec 03). |
+| Device commands | API route, per-device queue (32 pending, 30 s expiry), dispatcher handler and result handling exist with in-memory adapters. AWS adapters, timeout sweeper and session broadcast: TODO. |
 | Workers in AWS | Lambda handlers raise `NotImplementedError` until AWS adapters exist. |
 | Job execution | No executors; queued jobs fail with "not implemented". Fargate: TODO. |
 | Realtime | Recording publisher locally; AppSync client/publisher: TODO; membership check on subscribe: TODO. |
-| AI | Tool definitions, approval gate, redaction, run records only. No provider, no executors. |
-| Firmware | Model only. No build, signing, or deployment. |
+| AI | Tool definitions, approval gate, redaction, run records, provider config (OpenAI-compatible / Bedrock). No client, no executors, no default model (spec 08). |
+| Firmware | Model, job types and host-side sha256 check only. No build, flashing or deployment (spec 09). |
+| Ingest rate limiting | Not implemented (burst 10 msg/s, sustained 60 msg/min per device planned). |
 | Lambda packaging | CDK assets are source-only; dependency bundling TODO. |
 | Collaborative editing | Deliberately deferred (CRDT/Yjs later if needed). |

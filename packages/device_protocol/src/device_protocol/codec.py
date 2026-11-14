@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from device_protocol.compat import StrEnum
 from device_protocol.envelopes import MAX_MESSAGE_BYTES, DeviceEnvelope
 from device_protocol.schemas import validate_payload
 from device_protocol.versioning import is_supported
