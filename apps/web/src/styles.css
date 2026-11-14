@@ -84,8 +84,61 @@ a {
   margin: 0 auto;
   padding: 1.5rem 16px;
 }
-.badge {
+.header-user {
   margin-left: auto;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+.center {
+  text-align: center;
+  margin-top: 4rem;
+}
+.signin {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 16px;
+}
+.signin-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+.signin-card h1 {
+  font-size: 1.25rem;
+  margin: 0 0 0.25rem;
+}
+.signin-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.signin-card p {
+  margin: 0;
+}
+input {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-0);
+  color: var(--text-primary);
+}
+.signin-links {
+  display: flex;
+  justify-content: center;
+}
+.badge {
   font-size: 0.75rem;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;

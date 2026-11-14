@@ -13,6 +13,8 @@ import type {
   TelemetrySample,
 } from "./types";
 
+import { auth } from "../auth";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -33,6 +35,9 @@ export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** The only module that talks HTTP to the platform API. */
 export class ApiClient {
+  /** Called on any 401, e.g. to send the user back to sign-in. */
+  onUnauthorized: (() => void) | undefined;
+
   constructor(
     private readonly baseUrl: string,
     private readonly auth: AuthHeaderProvider,
@@ -47,6 +52,7 @@ export class ApiClient {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    if (res.status === 401) this.onUnauthorized?.();
     if (!res.ok) {
       let detail = res.statusText;
       try {
@@ -116,5 +122,5 @@ export class ApiClient {
 }
 
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
-export const apiAuth = devUserAuth(import.meta.env.VITE_DEV_USER ?? "dev-user");
+export const apiAuth: AuthHeaderProvider = () => auth.apiHeaders();
 export const api = new ApiClient(apiBaseUrl, apiAuth);

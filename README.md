@@ -131,8 +131,8 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 | Device commands | API route, per-device queue (32 pending, 30 s expiry), dispatcher handler and result handling exist with in-memory adapters. AWS adapters, timeout sweeper and session broadcast: TODO. |
 | Workers in AWS | Lambda handlers raise `NotImplementedError` until AWS adapters exist. |
 | Job execution | No executors; queued jobs fail with "not implemented". Fargate: TODO. |
-| Realtime | Locally, an in-process hub streams events to the browser (`/local/realtime`). Web AppSync Events client built (needs Cognito sign-in for its token). AppSync publisher (server side): TODO; membership check on subscribe: TODO. |
-| Web app | Device dashboard (live telemetry charts, log stream, commands) works locally. Cognito sign-in and hosting: TODO. |
+| Realtime | Locally, an in-process hub streams events to the browser (`/local/realtime`). Web AppSync Events client built (Cognito ID token). AppSync publisher (server side): TODO; membership check on subscribe: TODO. |
+| Web app | Device dashboard (live telemetry charts, log stream, commands) works locally; Cognito sign-in page (`VITE_AUTH_MODE=cognito`). Hosting, password reset and member management UI: TODO. |
 | AI | Tool definitions, approval gate, redaction, run records, provider config (OpenAI-compatible / Bedrock). No client, no executors, no default model (spec 08). |
 | Firmware | Model, job types and host-side sha256 check only. No build, flashing or deployment (spec 09). |
 | Ingest rate limiting | Not implemented (burst 10 msg/s, sustained 60 msg/min per device planned). |

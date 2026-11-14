@@ -31,16 +31,27 @@ Telemetry, logs and command results then arrive live; **Send ping** round-trips 
 host. The local API routes that make this work (`/local/*`) only exist with the in-memory
 backend (ADR 0006).
 
+## Sign-in
+
+`VITE_AUTH_MODE=dev-header` (default, local only) sends `VITE_DEV_USER` as `X-Dev-User`.
+`VITE_AUTH_MODE=cognito` shows an email + password sign-in page (with account creation and
+the emailed verification code) against the user pool, using Amplify Auth (SRP). Set
+`VITE_COGNITO_USER_POOL_ID` and `VITE_COGNITO_CLIENT_ID` from the CDK outputs `UserPoolId` and
+`UserPoolClientId`, and run the API with `AUTH_MODE=cognito`. The API gets the access token;
+AppSync Events gets the ID token. Admin-created accounts are asked for a new password on first
+sign-in. Password reset and MFA are not built yet.
+
 ## Layout
 
-- `src/api/client.ts` — the only module that calls the HTTP API. Auth headers come from an
-  `AuthHeaderProvider` (local: `X-Dev-User`; Cognito later).
+- `src/api/client.ts` — the only module that calls the HTTP API. Auth headers come from
+  `src/auth/` (`X-Dev-User` locally, `Authorization: Bearer <access token>` with Cognito).
+- `src/auth/` — `AuthGate` (sign-in page until signed in), dev and Cognito auth services.
 - `src/api/types.ts` — names for the generated `schema.gen.ts` types (from
   `contracts/api/openapi.json`). Never edit `schema.gen.ts` by hand.
 - `src/realtime/` — `RealtimeClient` interface, chosen by `VITE_REALTIME_PROVIDER`:
   `local` (default; the local API's event stream), `memory` (in-browser bus for tests) or
-  `appsync` (AWS AppSync Events WebSocket; needs the Cognito ID token, not wired until
-  sign-in lands, plus `VITE_APPSYNC_EVENTS_HTTP_DNS` / `VITE_APPSYNC_EVENTS_REALTIME_DNS`).
+  `appsync` (AWS AppSync Events WebSocket with the Cognito ID token; needs
+  `VITE_AUTH_MODE=cognito` plus `VITE_APPSYNC_EVENTS_HTTP_DNS` / `VITE_APPSYNC_EVENTS_REALTIME_DNS`).
 - `src/device/` — the device page's data: `useDeviceLive` (load, subscribe, refetch on every
   reconnect) and pure telemetry helpers.
 - `src/components/` — `MetricChart` (one SVG chart per reading), `LogStream`, `CommandList`.

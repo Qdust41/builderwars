@@ -180,8 +180,10 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
   `GET /devices/{id}/channel`, and refetches on every (re)subscribe.
 - Web client (built): `apps/web/src/realtime/appsync.ts` speaks the `aws-appsync-event-ws`
   protocol (one socket, many subscriptions, keepalive timeout, resubscribe on reconnect).
-  It needs the Cognito ID token from sign-in (workstream B). Locally the browser reads
+  It authorises with the Cognito ID token from web sign-in. Locally the browser reads
   `GET /local/realtime` (server-sent events) instead.
+- Web sign-in (built): email + password page with account creation and code confirmation
+  (Amplify Auth, SRP, `VITE_AUTH_MODE=cognito`). Not built: password reset, hosted UI.
 
 ## 07 — Device command path
 

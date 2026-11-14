@@ -1,4 +1,5 @@
 import { apiAuth, apiBaseUrl } from "../api/client";
+import { auth } from "../auth";
 import { AppSyncEventsClient } from "./appsync";
 import { LocalApiRealtimeClient } from "./localApi";
 import { InMemoryRealtimeClient } from "./memory";
@@ -7,7 +8,8 @@ import type { RealtimeClient } from "./types";
 /**
  * - `local` (default): the local API's event stream (API must run with APP_ENV=local).
  * - `memory`: in-browser bus only; nothing arrives unless the page emits it.
- * - `appsync`: AWS AppSync Events. Needs Cognito sign-in for the token (not wired yet).
+ * - `appsync`: AWS AppSync Events, authorised with the Cognito ID token
+ *   (`VITE_AUTH_MODE=cognito`).
  */
 export function createRealtimeClient(): RealtimeClient {
   switch (import.meta.env.VITE_REALTIME_PROVIDER ?? "local") {
@@ -15,10 +17,7 @@ export function createRealtimeClient(): RealtimeClient {
       return new AppSyncEventsClient({
         httpDomain: import.meta.env.VITE_APPSYNC_EVENTS_HTTP_DNS ?? "",
         realtimeDomain: import.meta.env.VITE_APPSYNC_EVENTS_REALTIME_DNS ?? "",
-        // TODO (workstream B): return { Authorization: <Cognito ID token> } once sign-in lands.
-        auth: async () => {
-          throw new Error("AppSync realtime needs Cognito sign-in, which is not wired yet");
-        },
+        auth: () => auth.realtimeHeaders(),
       });
     case "memory":
       return new InMemoryRealtimeClient();
