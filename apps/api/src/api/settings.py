@@ -9,7 +9,6 @@ class AppEnv(StrEnum):
     LOCAL = "local"
     TEST = "test"
     DEV = "dev"
-    STAGING = "staging"
     PROD = "prod"
 
 

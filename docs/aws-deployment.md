@@ -5,7 +5,7 @@ Nothing in this repository deploys automatically. CI only synthesises templates.
 ## Before the first deploy
 
 1. Region (us-east-1), budget (free tier) and volumes are decided (#6, #11). Still open:
-   staging storage (#12) and alarm recipients (#13, out of MVP scope).
+   alarm recipients (#13, out of MVP scope). There is no staging (#12): deploy `-c env=prod`.
 2. Implement the TODOs that make the deployed API start: Cognito auth mode, PostgreSQL
    repositories (or decide on another store via an ADR), SQS/AppSync/IoT adapters.
 3. Bundle Lambda dependencies (`uv export --package bw-api` → `pip install --target`, or switch
@@ -15,12 +15,12 @@ Nothing in this repository deploys automatically. CI only synthesises templates.
 ## Deploying (manual, deliberate)
 
 ```bash
-export AWS_PROFILE=<your-dev-profile>
+export AWS_PROFILE=<your-prod-profile>
 export CDK_DEFAULT_ACCOUNT=<account-id> CDK_DEFAULT_REGION=us-east-1
 cd infrastructure
 npx aws-cdk@2 bootstrap                 # once per account/region
-npx aws-cdk@2 diff -c env=dev
-npx aws-cdk@2 deploy -c env=dev --all   # review the IAM/security-change prompt carefully
+npx aws-cdk@2 diff -c env=prod
+npx aws-cdk@2 deploy -c env=prod --all   # review the IAM/security-change prompt carefully
 ```
 
 ## Resources with ongoing cost

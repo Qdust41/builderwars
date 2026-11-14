@@ -138,7 +138,8 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
   retention defined in spec (recommend: status/log 90 days, telemetry 365 days, commands
   permanent).
 - Acceptance: 10 boards × 1 batched msg/5 s (each batch ≤32 samples) sustained for 24 h
-  in staging with zero unexplained gaps; an invalid message is quarantined and a message
+  (load test against prod before real users, or a local replay of recorded traffic; no
+  staging, decision #12) with zero unexplained gaps; an invalid message is quarantined and a message
   whose processing keeps failing lands in the DLQ (alarm firing deferred with #13).
 
 ## 05 — Users, projects & authorization
@@ -224,7 +225,7 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 - Rollback: deploy previous approved version; N-1 always retained.
 - Precondition: host online (IoT `status: online`) and board USB-connected; deploy to an
   offline host queues with a deadline.
-- Acceptance: build → approve → deploy → verify → rollback all exercised in staging with a
+- Acceptance: build → approve → deploy → verify → rollback all exercised in prod against a dedicated test device with a
   real board; a corrupt artifact (bad sha256) is refused by the host before flashing.
 
 ## 10 — Jobs & background work
@@ -275,17 +276,17 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 ## 13 — Environments & deployment
 
 - Regions: us-east-1 only (decision #11); region always from `CDK_DEFAULT_REGION`.
-- Envs: dev (local, in-memory adapters, `dev-header` auth), staging (AWS; storage still
-  open, see decision #12: in-memory can't back a deployed env, recommended shared-RDS
-  schema), prod (AWS, RDS free tier `db.t4g.micro`).
+- Envs: dev (local, in-memory adapters, `dev-header` auth) and prod (AWS, RDS free tier
+  `db.t4g.micro`). **No deployed staging for the MVP** (decision #12): changes go local →
+  prod.
 - Free-tier budget plan: IoT Core 1M msg/mo, API GW 1M req, Lambda 400k GB-s, S3
   (negligible), AppSync Events free tier, RDS 750 h/mo t4g.micro. Expected usage at MVP
   scale with 5 s telemetry batching (decision #6): 10 boards × 12 msg/min ≈ **518k
   IoT msg/mo — inside the 1M free tier**; all other services fit free tier with wide
   margin. Budget alarm at $25/mo as the safety net (normal spend ≈ $0).
-- CI/CD: GitHub Actions — unit + contract tests on PR; deploy staging on merge to main;
+- CI/CD: GitHub Actions — unit + contract tests on PR;
   prod deploy manual gate.
-- Acceptance: `cdk deploy` from a clean checkout produces the full staging environment;
+- Acceptance: `cdk deploy -c env=prod` from a clean checkout produces the full prod environment;
   monthly cost at MVP scale < $10 (tracked by a budget alarm at $25).
 
 ---

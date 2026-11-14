@@ -20,7 +20,8 @@ def stacks(request: pytest.FixtureRequest) -> dict[str, Template]:
 
 def test_rds_only_when_enabled() -> None:
     assert "database" not in build(cdk.App(), get_config("dev"))
-    assert "database" not in build(cdk.App(), get_config("staging"))
+    with pytest.raises(ValueError, match="unknown env"):
+        get_config("staging")  # no deployed staging for the MVP (decision #12)
     assert "database" in build(cdk.App(), get_config("prod"))
 
 

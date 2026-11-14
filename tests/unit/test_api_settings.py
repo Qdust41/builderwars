@@ -12,7 +12,7 @@ from api.settings import (
 )
 
 
-@pytest.mark.parametrize("env", [AppEnv.DEV, AppEnv.STAGING, AppEnv.PROD])
+@pytest.mark.parametrize("env", [AppEnv.DEV, AppEnv.PROD])
 def test_dev_header_auth_is_refused_outside_local(env: AppEnv) -> None:
     with pytest.raises(UnsafeConfigurationError, match="AUTH_MODE"):
         validate_settings(Settings(app_env=env, auth_mode=AuthMode.DEV_HEADER))
