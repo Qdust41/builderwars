@@ -69,7 +69,7 @@ loads job → skips unless still `queued` (idempotent) → runs executor → `su
 SQS commands queue → dispatcher publishes to `devices/{id}/commands` (or times it out after
 30 s) → host runs the allowlisted handler → `command_result` on `devices/{id}/responses` →
 ingest completes the record and publishes `device.command.updated` on the device channel
-(`projects/{p}/devices/{d}`; ADR 0006). Session broadcast of results: TODO.
+(`projects/{p}/devices/{d}`; ADR 0008). Session broadcast of results: TODO.
 
 **Device dashboard.** Ingest publishes `device.telemetry` and `device.log` on the device
 channel for registered devices. The web device page loads recent telemetry and logs from the

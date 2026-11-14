@@ -173,7 +173,7 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 - Acceptance: two browsers viewing one project see each other's presence and command
   results within ~2 s; killing one browser degrades the other to a presence notice, not an
   error.
-- Device channel (ADR 0006, built): `projects/{project}/devices/{device}` carries
+- Device channel (ADR 0008, built): `projects/{project}/devices/{device}` carries
   `device.telemetry`, `device.log` and `device.command.updated` for everyone viewing a device.
   Channel ids use `-` for `_` (AppSync segments are `[A-Za-z0-9-]`). The device page loads
   `GET /devices/{id}/telemetry` and `/logs`, subscribes to the channel from
