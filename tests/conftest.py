@@ -24,6 +24,7 @@ FIXTURES = ROOT / "contracts" / "device" / "fixtures"
 class World:
     projects_repo: memory.InMemoryProjectRepository
     memberships: memory.InMemoryMembershipRepository
+    users: memory.InMemoryUserDirectory
     devices_repo: memory.InMemoryDeviceRepository
     sessions_repo: memory.InMemorySessionRepository
     jobs_repo: memory.InMemoryJobRepository
@@ -43,6 +44,7 @@ class World:
 def world() -> World:
     projects_repo = memory.InMemoryProjectRepository()
     memberships = memory.InMemoryMembershipRepository()
+    users = memory.InMemoryUserDirectory()
     devices_repo = memory.InMemoryDeviceRepository()
     sessions_repo = memory.InMemorySessionRepository()
     jobs_repo = memory.InMemoryJobRepository()
@@ -54,13 +56,14 @@ def world() -> World:
     return World(
         projects_repo=projects_repo,
         memberships=memberships,
+        users=users,
         devices_repo=devices_repo,
         sessions_repo=sessions_repo,
         jobs_repo=jobs_repo,
         queue=queue,
         realtime=realtime,
         authorizer=authorizer,
-        projects=ProjectService(projects_repo, memberships, authorizer),
+        projects=ProjectService(projects_repo, memberships, authorizer, users),
         devices=DeviceService(devices_repo, authorizer),
         sessions=SessionService(sessions_repo, devices_repo, authorizer, realtime),
         jobs=JobService(jobs_repo, devices_repo, queue, authorizer),

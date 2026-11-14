@@ -144,8 +144,12 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 
 ## 05 — Users, projects & authorization
 
-- Cognito user pool (email), no self sign-up in deployed envs (decision #10); owner adds
-  members by email.
+- Cognito user pool: email + password, self sign-up with an emailed code, MFA off for the
+  MVP (decision #10, ADR 0005). Owner/admin adds existing accounts by email
+  (`POST /projects/{id}/members`, role admin/member/viewer; only the owner grants or removes
+  admin); `DELETE /projects/{id}/members/{user_id}` removes (or leaves); the owner can't leave.
+- The API verifies the bearer token itself: RS256 via the pool JWKS, issuer, expiry, and the
+  app client (`client_id` on access tokens, `aud` on ID tokens). Bad/missing token → 401.
 - Per-project roles owner/admin/member/viewer; role → permission matrix (names as in
   `domain/projects/authorization.py`): `project:view` and `session:join` (all roles);
   `session:start`, `job:create`, `ai:run` (member+); `project:manage`,

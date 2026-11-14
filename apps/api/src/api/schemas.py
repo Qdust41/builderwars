@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from application.realtime import RealtimeEventType
+from application.services import ProjectMember
 from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
 from domain.jobs import Job, JobStatus, JobType
-from domain.projects import Project
+from domain.projects import Project, ProjectRole
 from domain.sessions import Session, SessionStatus
 
 
@@ -36,6 +38,24 @@ class ProjectOut(_Out):
     @classmethod
     def of(cls, p: Project) -> ProjectOut:
         return cls.model_validate(p)
+
+
+class MemberAdd(BaseModel):
+    email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+$")
+    # Ownership is never granted here; only the owner may grant admin.
+    role: Literal[ProjectRole.ADMIN, ProjectRole.MEMBER, ProjectRole.VIEWER] = ProjectRole.MEMBER
+
+
+class MemberOut(BaseModel):
+    user_id: str
+    email: str | None
+    role: ProjectRole
+    created_at: datetime
+
+    @classmethod
+    def of(cls, m: ProjectMember) -> MemberOut:
+        ms = m.membership
+        return cls(user_id=ms.user_id, email=m.email, role=ms.role, created_at=ms.created_at)
 
 
 class DeviceCreate(BaseModel):

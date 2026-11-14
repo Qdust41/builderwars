@@ -8,6 +8,7 @@ from domain.devices import Device, DeviceCommand
 from domain.jobs import Job
 from domain.projects import Project, ProjectMembership
 from domain.sessions import Session
+from domain.users import User
 
 
 class ProjectRepository(Protocol):
@@ -20,6 +21,15 @@ class MembershipRepository(Protocol):
     def add(self, membership: ProjectMembership) -> None: ...
     def get(self, project_id: str, user_id: str) -> ProjectMembership | None: ...
     def list_for_user(self, user_id: str) -> list[ProjectMembership]: ...
+    def list_for_project(self, project_id: str) -> list[ProjectMembership]: ...
+    def remove(self, project_id: str, user_id: str) -> None: ...
+
+
+class UserDirectory(Protocol):
+    """Read-only lookup of human accounts. In AWS this is the Cognito user pool."""
+
+    def find_by_email(self, email: str) -> User | None: ...
+    def get(self, user_id: str) -> User | None: ...
 
 
 class DeviceRepository(Protocol):

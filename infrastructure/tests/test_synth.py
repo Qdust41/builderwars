@@ -135,3 +135,45 @@ def test_rds_stays_in_free_tier_shape() -> None:
             "MaxAllocatedStorage": Match.absent(),
         },
     )
+
+
+def test_user_pool_is_email_password_sign_up_without_mfa(stacks: dict[str, Template]) -> None:
+    identity = stacks["identity"]
+    identity.has_resource_properties(
+        "AWS::Cognito::UserPool",
+        {
+            "AdminCreateUserConfig": Match.object_like({"AllowAdminCreateUserOnly": False}),
+            "UsernameAttributes": ["email"],
+            "AutoVerifiedAttributes": ["email"],
+            "MfaConfiguration": "OFF",
+        },
+    )
+    identity.has_resource_properties(
+        "AWS::Cognito::UserPoolClient",
+        {"GenerateSecret": False, "EnableTokenRevocation": True},
+    )
+
+
+def test_prod_user_pool_has_deletion_protection() -> None:
+    template = Template.from_stack(build(cdk.App(), get_config("prod"))["identity"])
+    template.has_resource_properties("AWS::Cognito::UserPool", {"DeletionProtection": "ACTIVE"})
+
+
+def test_api_can_only_list_users_in_its_pool(stacks: dict[str, Template]) -> None:
+    api = stacks["api"]
+    api.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": Match.object_like(
+                    {
+                        "COGNITO_USER_POOL_ID": Match.any_value(),
+                        "COGNITO_APP_CLIENT_ID": Match.any_value(),
+                    }
+                )
+            }
+        },
+    )
+    policies = json.dumps(api.find_resources("AWS::IAM::Policy"))
+    assert "cognito-idp:ListUsers" in policies
+    assert "cognito-idp:Admin" not in policies

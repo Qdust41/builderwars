@@ -21,6 +21,7 @@ from application.ports.repositories import (
     SequenceTracker,
     SessionRepository,
     TelemetryRepository,
+    UserDirectory,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "SequenceTracker",
     "SessionRepository",
     "TelemetryRepository",
+    "UserDirectory",
 ]
