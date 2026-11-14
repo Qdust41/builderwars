@@ -17,4 +17,4 @@ environment, which is why there is no deployed staging for the MVP (decision #12
 
 ## Consequences
 Deployed environments cannot start until real adapters exist — intended. PostgreSQL repositories
-now exist (ADR 0005); queue and realtime adapters are still missing.
+now exist (ADR 0006); queue and realtime adapters are still missing.

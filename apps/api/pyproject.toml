@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "FastAPI application"
 requires-python = ">=3.12"
 dependencies = [
+    "boto3>=1.35",
     "bw-application",
     "bw-domain",
     "fastapi>=0.115",
     "mangum>=0.19",
     "pydantic-settings>=2.6",
+    "pyjwt[crypto]>=2.10",
     "uvicorn>=0.32",
 ]
 

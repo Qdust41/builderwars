@@ -124,6 +124,19 @@ class PostgresMembershipRepository(_Repo):
         )
         return [_membership(r) for r in rows]
 
+    def list_for_project(self, project_id: str) -> list[ProjectMembership]:
+        rows = self._all(
+            "SELECT * FROM project_memberships WHERE project_id = %s ORDER BY created_at, user_id",
+            (project_id,),
+        )
+        return [_membership(r) for r in rows]
+
+    def remove(self, project_id: str, user_id: str) -> None:
+        self._exec(
+            "DELETE FROM project_memberships WHERE project_id = %s AND user_id = %s",
+            (project_id, user_id),
+        )
+
 
 # --- devices ------------------------------------------------------------------------------------
 

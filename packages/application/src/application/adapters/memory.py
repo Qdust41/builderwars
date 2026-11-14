@@ -18,6 +18,7 @@ from domain.devices import Device, DeviceCommand
 from domain.jobs import Job
 from domain.projects import Project, ProjectMembership
 from domain.sessions import Session
+from domain.users import User, normalize_email
 
 
 class InMemoryProjectRepository:
@@ -46,6 +47,29 @@ class InMemoryMembershipRepository:
 
     def list_for_user(self, user_id: str) -> list[ProjectMembership]:
         return [m for m in self._items.values() if m.user_id == user_id]
+
+    def list_for_project(self, project_id: str) -> list[ProjectMembership]:
+        return [m for m in self._items.values() if m.project_id == project_id]
+
+    def remove(self, project_id: str, user_id: str) -> None:
+        self._items.pop((project_id, user_id), None)
+
+
+class InMemoryUserDirectory:
+    """Local stand-in for the Cognito user pool. ``add`` is how tests and dev mode seed it."""
+
+    def __init__(self) -> None:
+        self._by_id: dict[str, User] = {}
+
+    def add(self, user: User) -> None:
+        self._by_id[user.user_id] = user
+
+    def find_by_email(self, email: str) -> User | None:
+        wanted = normalize_email(email)
+        return next((u for u in self._by_id.values() if normalize_email(u.email) == wanted), None)
+
+    def get(self, user_id: str) -> User | None:
+        return self._by_id.get(user_id)
 
 
 class InMemoryDeviceRepository:

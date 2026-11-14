@@ -12,6 +12,7 @@ dependencies = [
     "bw-api",
     "bw-workers",
     "bw-board-runtime",
+    "freewili>=0.0.51",
 ]
 
 [dependency-groups]
@@ -107,5 +108,5 @@ files = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["mangum.*", "awsiot.*", "awscrt.*", "freewili.*"]
+module = ["mangum.*", "awsiot.*", "awscrt.*", "freewili.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true

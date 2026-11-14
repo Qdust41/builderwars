@@ -119,3 +119,14 @@ def test_device_command_flow(client: TestClient) -> None:
         headers=_as("alice"),
     )
     assert bad.status_code == 422
+
+
+def test_dev_header_users_can_be_added_by_email(client: TestClient) -> None:
+    pid = client.post("/projects", json={"name": "Shared"}, headers=_as("alice")).json()["id"]
+    client.get("/projects", headers=_as("bob"))  # dev mode registers bob@example.com on first use
+    added = client.post(
+        f"/projects/{pid}/members", json={"email": "bob@example.com"}, headers=_as("alice")
+    )
+    assert added.status_code == 201
+    assert added.json()["role"] == "member"
+    assert client.get(f"/projects/{pid}", headers=_as("bob")).status_code == 200

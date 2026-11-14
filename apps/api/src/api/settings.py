@@ -15,7 +15,7 @@ class AppEnv(StrEnum):
 
 class AuthMode(StrEnum):
     DEV_HEADER = "dev-header"  # trusts an X-Dev-User header. LOCAL/TEST ONLY.
-    COGNITO = "cognito"  # TODO: verify Cognito JWTs
+    COGNITO = "cognito"  # verifies Cognito JWTs against the user pool JWKS
 
 
 class RepositoryBackend(StrEnum):
@@ -37,8 +37,29 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     database_pool_max_size: int = 5
 
+    # AUTH_MODE=cognito. Ids, not secrets: the stack passes them as Lambda environment.
+    cognito_region: str = "us-east-1"
+    cognito_user_pool_id: str | None = None
+    cognito_app_client_id: str | None = None
+    # Override for tests or a local JWKS; defaults to the user pool's well-known URL.
+    cognito_jwks_url: str | None = None
+
+    @property
+    def cognito_issuer(self) -> str:
+        return (
+            f"https://cognito-idp.{self.cognito_region}.amazonaws.com/{self.cognito_user_pool_id}"
+        )
+
+    @property
+    def cognito_jwks_endpoint(self) -> str:
+        return self.cognito_jwks_url or f"{self.cognito_issuer}/.well-known/jwks.json"
+
 
 class UnsafeConfigurationError(RuntimeError):
+    pass
+
+
+class MissingConfigurationError(RuntimeError):
     pass
 
 
@@ -52,6 +73,16 @@ def validate_settings(settings: Settings) -> Settings:
         if settings.repository_backend is RepositoryBackend.MEMORY:
             raise UnsafeConfigurationError(
                 f"REPOSITORY_BACKEND=memory is not allowed when APP_ENV={settings.app_env.value}"
+            )
+    if settings.auth_mode is AuthMode.COGNITO:
+        missing = [
+            name
+            for name in ("cognito_user_pool_id", "cognito_app_client_id")
+            if not getattr(settings, name)
+        ]
+        if missing:
+            raise MissingConfigurationError(
+                "AUTH_MODE=cognito needs " + ", ".join(n.upper() for n in missing)
             )
     if settings.repository_backend is RepositoryBackend.POSTGRES and settings.database_url is None:
         raise UnsafeConfigurationError("REPOSITORY_BACKEND=postgres needs DATABASE_URL")

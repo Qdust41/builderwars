@@ -77,6 +77,16 @@ def test_memberships_are_keyed_by_project_and_user(repos: Any) -> None:
     assert [m.project_id for m in repos.memberships.list_for_user("bob")] == [p1.id, p2.id]
     assert repos.memberships.list_for_user("carol") == []
 
+    repos.memberships.add(
+        ProjectMembership(p1.id, "carol", ProjectRole.MEMBER, created_at=T0 + timedelta(seconds=2))
+    )
+    assert [m.user_id for m in repos.memberships.list_for_project(p1.id)] == ["bob", "carol"]
+    repos.memberships.remove(p1.id, "bob")
+    repos.memberships.remove(p1.id, "nobody")  # removing a non-member is a no-op
+    assert repos.memberships.get(p1.id, "bob") is None
+    assert [m.user_id for m in repos.memberships.list_for_project(p1.id)] == ["carol"]
+    assert [m.project_id for m in repos.memberships.list_for_user("bob")] == [p2.id]
+
 
 def test_devices_round_trip_save_and_list_for_project(repos: Any) -> None:
     project, other = _project(repos), _project(repos, "Other")

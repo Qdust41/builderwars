@@ -137,7 +137,7 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 - Retention: raw S3 30/90/365 days by env (existing `infrastructure/config.py`); RDS
   retention defined in spec (recommend: status/log 90 days, telemetry 365 days, commands
   permanent).
-- Storage (built, ADR 0005): `processed_messages` (idempotency keys, `INSERT … ON CONFLICT DO
+- Storage (built, ADR 0006): `processed_messages` (idempotency keys, `INSERT … ON CONFLICT DO
   NOTHING`), `device_sequences` (per-device high-water mark, row-locked), `raw_device_messages`
   (body + sha256, unique per device and message id), `quarantined_device_messages`,
   `device_telemetry` (one row per sample, jsonb metrics), `device_logs`, `device_events`. No
@@ -149,8 +149,12 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 
 ## 05 — Users, projects & authorization
 
-- Cognito user pool (email), no self sign-up in deployed envs (decision #10); owner adds
-  members by email.
+- Cognito user pool: email + password, self sign-up with an emailed code, MFA off for the
+  MVP (decision #10, ADR 0005). Owner/admin adds existing accounts by email
+  (`POST /projects/{id}/members`, role admin/member/viewer; only the owner grants or removes
+  admin); `DELETE /projects/{id}/members/{user_id}` removes (or leaves); the owner can't leave.
+- The API verifies the bearer token itself: RS256 via the pool JWKS, issuer, expiry, and the
+  app client (`client_id` on access tokens, `aud` on ID tokens). Bad/missing token → 401.
 - Per-project roles owner/admin/member/viewer; role → permission matrix (names as in
   `domain/projects/authorization.py`): `project:view` and `session:join` (all roles);
   `session:start`, `job:create`, `ai:run` (member+); `project:manage`,
@@ -161,7 +165,7 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
   **member lacking a permission** gets 403.
 - API: FastAPI on Lambda (Mangum) behind API Gateway; Cognito authorizer (dev env:
   `dev-header` auth mode from `apps/api/src/api/settings.py`).
-- Storage (built, ADR 0005): `projects`, `project_memberships` (primary key project + user, so
+- Storage (built, ADR 0006): `projects`, `project_memberships` (primary key project + user, so
   re-adding changes the role), `devices`, `sessions`, `jobs`, `device_commands`; all keyed to
   `projects` with `ON DELETE CASCADE`.
 - Acceptance: role matrix table in spec maps 1:1 to policy tests in `tests/contract`.

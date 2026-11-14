@@ -1,4 +1,4 @@
-# 0005 — PostgreSQL repositories: psycopg 3, raw SQL, forward-only SQL migrations
+# 0006 — PostgreSQL repositories: psycopg 3, raw SQL, forward-only SQL migrations
 
 Status: accepted (2026-11-14, workstream A)
 

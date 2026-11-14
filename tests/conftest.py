@@ -127,6 +127,7 @@ class PgTelemetryView:
 class World:
     projects_repo: Any
     memberships: Any
+    users: memory.InMemoryUserDirectory
     devices_repo: Any
     sessions_repo: Any
     jobs_repo: Any
@@ -156,6 +157,7 @@ def world(backend: str, request: pytest.FixtureRequest) -> World:
         sessions_repo = memory.InMemorySessionRepository()
         jobs_repo = memory.InMemoryJobRepository()
         commands_repo = memory.InMemoryDeviceCommandRepository()
+    users = memory.InMemoryUserDirectory()
     queue = memory.InMemoryJobQueue()
     realtime = memory.RecordingRealtimePublisher()
     authorizer = Authorizer(memberships)
@@ -163,13 +165,14 @@ def world(backend: str, request: pytest.FixtureRequest) -> World:
     return World(
         projects_repo=projects_repo,
         memberships=memberships,
+        users=users,
         devices_repo=devices_repo,
         sessions_repo=sessions_repo,
         jobs_repo=jobs_repo,
         queue=queue,
         realtime=realtime,
         authorizer=authorizer,
-        projects=ProjectService(projects_repo, memberships, authorizer),
+        projects=ProjectService(projects_repo, memberships, authorizer, users),
         devices=DeviceService(devices_repo, authorizer),
         sessions=SessionService(sessions_repo, devices_repo, authorizer, realtime),
         jobs=JobService(jobs_repo, devices_repo, queue, authorizer),

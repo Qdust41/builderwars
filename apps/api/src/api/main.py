@@ -12,16 +12,22 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.dependencies import build_container
+from api.dependencies import Container, build_container
 from api.routes import devices, events, health, jobs, projects, sessions
 from api.settings import Settings
 from application.services import CommandQueueFullError
-from domain.common import InvalidStateTransitionError, NotFoundError, PermissionDeniedError
+from domain.common import (
+    ConflictError,
+    InvalidStateTransitionError,
+    NotFoundError,
+    PermissionDeniedError,
+)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or Settings()
-    container = build_container(settings)
+def create_app(settings: Settings | None = None, *, container: Container | None = None) -> FastAPI:
+    """``container`` replaces the adapters ``settings`` would choose (tests only)."""
+    container = container or build_container(settings or Settings())
+    settings = container.settings
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -34,7 +40,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Dev-User"],
     )
 
@@ -48,6 +54,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(CommandQueueFullError)
     async def _queue_full(_: Request, exc: CommandQueueFullError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
+
+    @app.exception_handler(ConflictError)
+    async def _already(_: Request, exc: ConflictError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
 
     @app.exception_handler(InvalidStateTransitionError)

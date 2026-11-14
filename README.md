@@ -126,8 +126,8 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 
 | Area | State |
 | --- | --- |
-| Persistence | PostgreSQL repositories for every port (`REPOSITORY_BACKEND=postgres`, ADR 0005), or in-memory for local/test. Migrations run by hand: `uv run python -m application.adapters.postgres`. Not yet wired to RDS (workstream C). |
-| User auth | `X-Dev-User` header locally. Cognito JWT verification: TODO; API refuses non-local envs until done. |
+| Persistence | PostgreSQL repositories for every port (`REPOSITORY_BACKEND=postgres`, ADR 0006), or in-memory for local/test. Migrations run by hand: `uv run python -m application.adapters.postgres`. Not yet wired to RDS (workstream C). |
+| User auth | `X-Dev-User` header locally; `AUTH_MODE=cognito` verifies Cognito JWTs (ADR 0005). Project members are added by email. |
 | Device connectivity | MQTT/TLS via `awsiotsdk` implemented but not yet run against a real IoT endpoint (SDK handles reconnects). Offline buffer: RAM only. |
 | Board I/O | `FreeWiliSensors` (vendor `freewili` package) reads GPIO + buttons as placeholder readings; not yet run on a real board. Sensor set: spec 02. |
 | Device provisioning | Not implemented (no certificates created anywhere; spec 03). |

@@ -30,3 +30,7 @@ class PermissionDeniedError(DomainError):
 
 class InvalidStateTransitionError(DomainError):
     pass
+
+
+class ConflictError(DomainError):
+    """The request conflicts with current state (e.g. the user is already a member)."""
