@@ -95,12 +95,13 @@ class ApiStack(Stack):
             jwt_issuer=f"https://cognito-idp.{self.region}.amazonaws.com/{user_pool.user_pool_id}",
             jwt_audience=[user_pool_client.user_pool_client_id],
         )
-        http_api = apigw.HttpApi(
+        http_api = self.http_api = apigw.HttpApi(
             self,
             "HttpApi",
             api_name=config.resource_name("api"),
             default_authorizer=jwt,
-            # TODO: restrict CORS origins to the deployed web app domain.
+            # No CORS: the web app reaches the API same-origin through CloudFront's /api/*
+            # behavior (stacks/web.py), and local development goes through the Vite proxy.
         )
         integration = integrations.HttpLambdaIntegration("ApiIntegration", fn)
         http_api.add_routes(

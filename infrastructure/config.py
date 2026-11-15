@@ -24,6 +24,9 @@ class EnvConfig:
     raw_data_expiry_days: int
     # Placeholder only: alarm actions are out of MVP scope (decision #13). Not wired to SNS.
     ops_alert_email: str = "ops-alerts@example.com"
+    # Public hostname of the web app (DNS lives in Cloudflare, see docs/deployment-guide.md).
+    # None serves the app on the CloudFront domain only, with no certificate.
+    web_domain: str | None = None
 
     @property
     def removal_policy(self) -> RemovalPolicy:
@@ -37,7 +40,14 @@ class EnvConfig:
 # only; no staging. Raw-data retention 30 (dev) / 365 (prod) days (decision #6).
 ENVIRONMENTS: dict[str, EnvConfig] = {
     "dev": EnvConfig("dev", False, False, logs.RetentionDays.TWO_WEEKS, 30),
-    "prod": EnvConfig("prod", True, True, logs.RetentionDays.THREE_MONTHS, 365),
+    "prod": EnvConfig(
+        "prod",
+        True,
+        True,
+        logs.RetentionDays.THREE_MONTHS,
+        365,
+        web_domain="builderwars.jimweaver.com",
+    ),
 }
 
 

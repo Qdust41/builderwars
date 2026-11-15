@@ -280,3 +280,61 @@ def test_api_can_only_list_users_in_its_pool(stacks: dict[str, Template]) -> Non
     policies = json.dumps(api.find_resources("AWS::IAM::Policy"))
     assert "cognito-idp:ListUsers" in policies
     assert "cognito-idp:Admin" not in policies
+
+
+def test_web_bucket_is_private_and_served_through_oac(stacks: dict[str, Template]) -> None:
+    web = stacks["web"]
+    web.has_resource_properties(
+        "AWS::S3::Bucket",
+        {
+            "PublicAccessBlockConfiguration": {
+                "BlockPublicAcls": True,
+                "BlockPublicPolicy": True,
+                "IgnorePublicAcls": True,
+                "RestrictPublicBuckets": True,
+            }
+        },
+    )
+    web.resource_count_is("AWS::CloudFront::OriginAccessControl", 1)
+    web.has_resource_properties(
+        "AWS::CloudFront::Distribution",
+        {
+            "DistributionConfig": Match.object_like(
+                {
+                    "DefaultCacheBehavior": Match.object_like(
+                        {"ViewerProtocolPolicy": "redirect-to-https"}
+                    )
+                }
+            )
+        },
+    )
+
+
+def test_web_proxies_api_same_origin_without_caching(stacks: dict[str, Template]) -> None:
+    config = next(iter(stacks["web"].find_resources("AWS::CloudFront::Distribution").values()))[
+        "Properties"
+    ]["DistributionConfig"]
+    (api,) = config["CacheBehaviors"]
+    assert api["PathPattern"] == "/api/*"
+    assert api["CachePolicyId"] == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"  # CachingDisabled
+    # AllViewerExceptHostHeader: forwards Authorization, lets API Gateway see its own Host.
+    assert api["OriginRequestPolicyId"] == "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+    assert "DELETE" in api["AllowedMethods"]
+    assert len(api["FunctionAssociations"]) == 1
+    # SPA fallback is a function on the site behavior, never distribution-wide error pages
+    # (those would replace the API's own 403/404 responses with index.html).
+    assert "CustomErrorResponses" not in config
+
+
+def test_web_domain_only_in_prod() -> None:
+    prod = Template.from_stack(build(new_app(), get_config("prod"))["web"])
+    prod.has_resource_properties(
+        "AWS::CertificateManager::Certificate",
+        {"DomainName": "builderwars.jimweaver.com", "ValidationMethod": "DNS"},
+    )
+    prod.has_resource_properties(
+        "AWS::CloudFront::Distribution",
+        {"DistributionConfig": Match.object_like({"Aliases": ["builderwars.jimweaver.com"]})},
+    )
+    dev = Template.from_stack(build(new_app(), get_config("dev"))["web"])
+    dev.resource_count_is("AWS::CertificateManager::Certificate", 0)
