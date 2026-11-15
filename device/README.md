@@ -27,8 +27,9 @@ export DEVICE_ID=<thing-name> DEVICE_SENSORS=freewili DEVICE_TRANSPORT=mqtt \
 builderwars-host
 ```
 
-`freewili` is installed separately on purpose: it pins `typing-extensions` exactly, which
-would force older pydantic on the whole workspace if it were locked as an extra. (The
+On the host, `freewili` is installed by name rather than as a `device` extra, because it pins
+`typing-extensions` exactly. In the dev workspace it is a root dependency (`pyproject.toml`), so
+`uv sync` already installs it; that pin is why the lockfile holds pydantic at 2.11.x. (The
 decisions doc mentions `onewili`; that isn't on PyPI, and `freewili` is the vendor's published
 library.)
 
