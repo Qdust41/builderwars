@@ -13,49 +13,32 @@ Decisions this follows (don't re-decide them here):
 - Cognito: **self sign-up on, email + password, MFA off**, Cognito's built-in email sender
   (about 50 emails/day). No SES and no custom domain yet (ADR 0005).
 - A "device" is a **host PC wired over USB to a FREE-WILi**; the host runtime is Python 3.10+
-  and talks to AWS IoT Core over MQTT with one X.509 certificate per device (ADR 0004).
+  (ADR 0004). Boards have **no IoT certificates** for now: the user signs in to the
+  `builderwars` CLI and it uploads through the API as them (ADR 0009). The MQTT/certificate path
+  (steps 11 and the end of 13) is parked.
 
 ## The whole path at a glance
 
-| # | Step | Where | Blocked on |
+| # | Step | Where | Notes |
 | --- | --- | --- | --- |
-| 1 | AWS account, root MFA, budget alert | AWS console | nothing |
-| 2 | Deploy identity for your laptop | AWS console + laptop | nothing |
-| 3 | Tools on the deploying laptop | laptop | nothing |
-| 4 | Get the code and check it | laptop | nothing |
-| 5 | `cdk bootstrap` | laptop | nothing |
-| 6 | `cdk deploy -c env=prod --all` | laptop | **PR #5, PR #7** |
-| 7 | Run the Migrate Lambda, smoke test | laptop | **PR #5, PR #7** |
-| 8 | Run the web dashboard against prod | laptop | **PR #6** (+ #7) |
-| 9 | Sign up, create a project | browser | step 8 |
-| 10 | Register a device, note its id | browser | step 9 |
+| 1 | AWS account, root MFA, budget alert | AWS console | once |
+| 2 | Deploy identity for your laptop | AWS console + laptop | once |
+| 3 | Tools on the deploying laptop | laptop | |
+| 4 | Get the code and check it | laptop | |
+| 5 | `cdk bootstrap` | laptop | once per account + region |
+| 6 | `cdk deploy -c env=prod --all` | laptop or GitHub Actions | merges to `main` do this |
+| 7 | Run the Migrate Lambda, smoke test | laptop or GitHub Actions | merges to `main` do this |
+| 8 | Open the web dashboard | browser | <https://builderwars.jimweaver.com> |
+| 9 | Sign up, create a project | browser | |
+| 10 | Register a device, note its id | browser | |
 | 11 | Give the device an IoT identity (thing + certificate) | laptop | **skip for now** (ADR 0009) |
-| 12 | Set up the host PC and test the board | host PC | **`qwen-cli` branch** for the `builderwars` CLI |
-| 13 | Connect the host runtime to prod | host PC | steps 11-12 |
-| 14 | Verify end to end, send a command | browser + AWS console | step 13 |
+| 12 | Set up the host PC and test the board | host PC | the `builderwars` CLI |
+| 13 | Connect the board: `builderwars login`, `run --cloud` | host PC | steps 10 and 12 |
+| 14 | Verify end to end | browser | step 13 |
 
-Steps 1-5 can be done today. Everything that touches a running prod needs PRs merged first.
-
-## 0. What has to merge first
-
-`main` today can synthesise prod but **cannot run it**: the Lambdas there have no bundled
-dependencies, no PostgreSQL repositories and no AWS adapters.
-
-- [ ] **PR #5** (PostgreSQL repositories + migrations). Merge first.
-- [ ] **PR #7** (AWS adapters, Lambda bundling, public-RDS-over-TLS, `Migrate` Lambda). It is
-      stacked on #5: retarget it to `main` after #5 merges, then merge it.
-- [ ] **PR #6** (web dashboard + web Cognito sign-in). Adds no AWS resources, so it doesn't block
-      the backend deploy, but you need it for steps 8-10 and 14. After it merges, a small
-      follow-up wires live device events into ingest and the command dispatcher; until then the
-      dashboard shows device data on refresh rather than live.
-- [ ] **`qwen-cli` branch** (the `builderwars` board CLI, CSV log sink). Not needed for the cloud;
-      needed for the `builderwars ...` commands in steps 12-13. Without it, use
-      `builderwars-host` as shown in those steps.
-- [ ] **PR #4** (device revoke, presence, refusing unknown devices) is a draft and optional for a
-      first deploy. Once it is in, ingest **quarantines messages from devices that aren't
-      registered** (step 10), so register before connecting.
-
-After merging, deploy from an up-to-date `main` (`git pull`).
+Everything prod needs is on `main`; there are no PRs to wait for. After the first deploy by
+hand (steps 1-7), **every merge to `main` deploys prod** (see "Deploying from GitHub Actions"),
+so most people only need steps 9-14.
 
 ## 1. AWS account (once, console)
 
@@ -92,7 +75,7 @@ RDS, a VPC, IoT rules and so on).
 | AWS CLI v2 | credentials, IoT provisioning, invoking the Migrate Lambda | `aws --version` |
 | Node.js 22+ and npm | `npx aws-cdk@2`, the web dashboard | `node --version` |
 | Python 3.12 | CDK app, the API/workers workspace | `python3.12 --version` |
-| uv 0.11.32 | workspace install; after PR #7 the deploy bundles Lambda code from `uv.lock` (Docker works as a fallback) | `uv --version` |
+| uv 0.11.32 | workspace install; the deploy bundles Lambda code from `uv.lock` (Docker works as a fallback) | `uv --version` |
 
 The deploy needs internet access to PyPI and npm (bundling downloads wheels for
 `aarch64-manylinux`). No Docker is needed when `uv` is on `PATH`.
@@ -128,7 +111,7 @@ npx aws-cdk@2 bootstrap aws://$CDK_DEFAULT_ACCOUNT/us-east-1
 
 - [ ] Done. This creates the `CDKToolkit` stack (an S3 asset bucket and an ECR repo, pennies).
 
-## 6. Deploy prod (after PR #5 and PR #7)
+## 6. Deploy prod
 
 With the same variables as step 5, from `infrastructure/`:
 
@@ -187,11 +170,10 @@ If you ever need the database directly (debugging only): the endpoint is in the 
 the password is in the Secrets Manager secret the Database stack created. Connect with
 `sslmode=require`; the server refuses non-TLS connections.
 
-## 8. Web dashboard (after PR #6)
+## 8. Web dashboard
 
 Prod serves it at <https://builderwars.jimweaver.com> (see "Web app on your domain" below); every
-deploy from `main` rebuilds and uploads it. Sign-in needs PR #6. To run it locally against prod
-instead, Vite proxies `/api` to the deployed API, so no CORS change is needed:
+deploy from `main` rebuilds and uploads it. To run it locally against prod instead, Vite proxies `/api` to the deployed API, so no CORS change is needed:
 
 ```bash
 cd apps/web
@@ -282,8 +264,8 @@ board, USB serial access.
 workspace. `freewili` is already a workspace dependency on `main`; add the MQTT extra:
 
 ```bash
-uv sync --frozen --all-extras    # adds awsiotsdk (the device "mqtt" extra)
-uv run builderwars               # after the qwen-cli branch merges
+uv sync --frozen
+uv run builderwars               # what's plugged in, and what to type next
 ```
 
 **Option B: a bare host (e.g. a Raspberry Pi or an older PC on 3.10).**
@@ -291,14 +273,15 @@ uv run builderwars               # after the qwen-cli branch merges
 ```bash
 git clone https://github.com/Qdust41/builderwars && cd builderwars
 python3 -m venv ~/.builderwars/venv && . ~/.builderwars/venv/bin/activate
-pip install ./packages/device_protocol "./device[mqtt]" freewili==0.0.51
+pip install ./packages/device_protocol ./device freewili==0.0.51
+# add the "mqtt" extra ("./device[mqtt]") only for the parked certificate path
 ```
 
 Serial access (Linux): the board shows up as two ttys (`/dev/ttyACM0`, `/dev/ttyACM1`: main and
 display CPU). Your user must be in the group that owns them, `dialout` on Debian/Ubuntu or
 `uucp` on Arch: `sudo usermod -aG dialout $USER`, then log out and back in.
 
-Test the board **before** involving AWS (needs the `qwen-cli` branch):
+Test the board **before** involving the cloud:
 
 ```bash
 builderwars ports                 # boards + serial ports, and whether you can open them
@@ -306,8 +289,6 @@ builderwars /dev/ttyACM0          # step-by-step check; prints PASS or the faili
 builderwars test --watch          # press a button, see GPIO/button changes live
 builderwars run /dev/ttyACM0 -n 10   # full runtime, JSON lines to stdout (no cloud yet)
 ```
-
-Without the `qwen-cli` branch: `DEVICE_ID=bench DEVICE_SENSORS=freewili builderwars-host --samples 10`.
 
 No board (it is currently out of action)? Everything below also works with simulated sensors: just
 leave out the port.
@@ -324,10 +305,13 @@ builderwars run --cloud --device-id dev_... /dev/ttyACM0   # live to the dashboa
 builderwars upload dev-local --device-id dev_...    # optional: upload an earlier log CSV
 ```
 
+Leave out the port to send simulated sensors instead (useful while the board is out of action).
 Open the device page in the web app while it runs: telemetry and logs appear live. Dashboard
-commands do not reach the board in this mode yet.
+commands do not reach the board in this mode yet. Afterwards, `builderwars logs dev_...` downloads
+the device's cloud logs to a CSV (`--since`, `--until`, `-o`, `--force`). The full CLI reference
+is in the root [README](../README.md#the-builderwars-cli).
 
-**Later, with an IoT certificate (step 11):** put the settings in one file on the host, e.g. `~/.builderwars/prod.env` (not in the repo):
+**Later (parked), with an IoT certificate (step 11):** put the settings in one file on the host, e.g. `~/.builderwars/prod.env` (not in the repo):
 
 ```bash
 DEVICE_ID=dev_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx           # exactly the registered id
@@ -346,12 +330,10 @@ set -a; . ~/.builderwars/prod.env; set +a
 
 builderwars run -n 30                 # simulated sensors -> prod: proves the cloud path
 builderwars run /dev/ttyACM0          # the real board -> prod, until Ctrl+C
-# without the qwen-cli branch:  builderwars-host --samples 30   /   builderwars-host --port /dev/ttyACM0
 ```
 
 - [ ] Always run with `DEVICE_ID` (or `--device-id`) set to the registered id. IoT refuses any
-      other client id. With PR #10, `builderwars run` stops with a hint if it's missing; before
-      that it silently connects as `dev-local`, which IoT refuses.
+      other client id; `builderwars run` stops with a hint if it's missing.
 - [ ] The runtime checks the three files exist before connecting; a bad path fails fast with the
       variable name.
 
@@ -360,32 +342,35 @@ service unit isn't in the repo yet.
 
 ## 14. Verify end to end
 
-Work outward from the board until data appears:
+With `builderwars run --cloud` going (step 13), work outward from the host until data appears:
 
-1. **IoT Core → MQTT test client:** subscribe to `devices/<device id>/#`. Status, telemetry
-   (every 5 s or 32 samples), logs and heartbeats (every 30 s) should arrive.
-2. **SQS:** the ingest queue's dead-letter queue (in the Messaging stack) stays empty.
-3. **CloudWatch Logs:** the `DeviceIngest` Lambda's log group shows batches processed, no errors.
-4. **Web dashboard:** the device shows `online`, a recent last-seen time, telemetry and logs.
-5. **Command round trip:** send `ping` (or `get_uptime`) from the device page. It goes API → SQS
-   → CommandDispatch Lambda → `devices/<id>/commands` → host → `devices/<id>/responses` → ingest,
-   and the command's status turns to succeeded. The host's terminal logs the command too.
+1. **Host terminal:** network or API errors show there, and messages are buffered (last 1000)
+   until it can send again. `builderwars whoami` confirms the sign-in; a permission error means
+   your role on the project is viewer (uploading needs member or higher).
+2. **Web dashboard:** the device shows `online`, a recent last-seen time, telemetry (every 5 s
+   or 32 samples) and logs, live.
+3. **CloudWatch Logs:** the API Lambda's log group shows the `POST /devices/{id}/messages`
+   calls, no errors.
+4. **Logs download:** `builderwars logs dev_... -o -` prints what the cloud stored.
 
 Stopping the runtime with Ctrl+C sends a `shutting_down` status, so the device goes `offline`.
+Commands from the device page (`ping`, `get_uptime`) don't reach a CLI-connected board yet.
+
+With the parked MQTT path instead, check the IoT Core MQTT test client
+(`devices/<device id>/#`), the ingest queue's DLQ and the `DeviceIngest` Lambda's logs; a
+command then goes API → SQS → CommandDispatch Lambda → `devices/<id>/commands` → host →
+`devices/<id>/responses` → ingest.
 
 ## Local log files on the host
 
-With the `qwen-cli` branch, every `log` message the runtime sends is also appended to
-`~/.builderwars/logs/<device id>.csv` (`BUILDERWARS_LOG_CSV=off` disables it; for `sim` too
-after PR #10).
-`builderwars show` lists them.
+Every `log` message the runtime sends is also appended to `~/.builderwars/logs/<device id>.csv`
+(`BUILDERWARS_LOG_CSV=off` disables it, for `run` and `sim`). `builderwars show` lists them, and
+`builderwars upload <file or device id> --device-id dev_...` sends one to the cloud (already
+stored messages are skipped).
 
-`builderwars to-sql <device id>` makes a `.sql` dump of one file for SQLite or a scratch
-PostgreSQL. **Don't load it into the prod database**: the same log lines already reached prod
-over MQTT. Before PR #10 the dump also targets `device_logs`, which prod has in a different shape
-(from PR #5), so it fails there; after #10 it writes its own `host_device_logs` table and skips
-rows already present. `docs/log-ingestion-spec.md` describes a
-future upload path; it is not built.
+`builderwars to-sql <csv or device id>` makes a `.sql` dump of one file for SQLite or a scratch
+PostgreSQL. It writes its own `host_device_logs` table and skips rows already present. **Don't
+load it into the prod database**: the same log lines already reached prod.
 
 ## Web app on your domain
 
