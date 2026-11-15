@@ -1,6 +1,6 @@
 # AWS deployment (future — not performed by the scaffold)
 
-Nothing in this repository deploys automatically. CI only synthesises templates. For the full
+After the first manual deploy, merging to `main` deploys prod (`.github/workflows/deploy.yml`). For the full
 step-by-step walkthrough (account, deploy, sign-up, device provisioning, connecting a board) see
 [deployment-guide.md](deployment-guide.md).
 
@@ -20,6 +20,7 @@ Docker) and access to PyPI. Template tests skip bundling.
 ```bash
 export AWS_PROFILE=<your-prod-profile>
 export CDK_DEFAULT_ACCOUNT=<account-id> CDK_DEFAULT_REGION=us-east-1
+export AWS_REGION=us-east-1   # the CDK CLI overrides CDK_DEFAULT_REGION with the SDK region
 cd infrastructure
 npx aws-cdk@2 bootstrap                 # once per account/region
 npx aws-cdk@2 diff -c env=prod
