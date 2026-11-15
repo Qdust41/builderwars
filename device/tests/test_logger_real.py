@@ -178,7 +178,9 @@ def test_csv_row_without_imu() -> None:
 
 
 def test_batches_of_wide_samples_stay_under_the_size_limit() -> None:
-    from datetime import UTC, datetime, timedelta
+    from datetime import datetime, timedelta
+
+    from device_protocol.compat import UTC
 
     readings = {**{f"gpio_{i}": 1 for i in range(32)}, "gpio_raw": 4294967295}
     readings.update({name: -32768 for name in lr.IMU_VALUES})
