@@ -76,7 +76,7 @@ export function SignInPage({ auth, onSignedIn }: { auth: AuthService; onSignedIn
           }}
         />
         <div aria-hidden="true" className="absolute -top-24 -left-24 size-96 rounded-full bg-indigo-600/30 blur-3xl" />
-        <Logo className="relative text-white" />
+        <Logo tagline className="relative text-white" />
         <div className="relative mt-auto max-w-md">
           <h2 className="text-3xl font-semibold tracking-tight text-white">
             Build hardware together, from anywhere.
@@ -101,7 +101,7 @@ export function SignInPage({ auth, onSignedIn }: { auth: AuthService; onSignedIn
 
       <main className="flex flex-1 items-center justify-center px-4 py-12">
         <form className="w-full max-w-sm" onSubmit={submit}>
-          <Logo className="mb-10 text-fg lg:hidden" />
+          <Logo tagline className="mb-10 text-fg lg:hidden" />
           <h1 className="text-2xl font-semibold tracking-tight text-fg">{TITLES[view]}</h1>
           <p className="mt-1.5 text-sm text-muted">
             {view === "sign-in"

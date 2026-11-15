@@ -3,8 +3,19 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { ConnectionStatus } from "../api/types";
 
-/** Small product mark: a chip outline. Neutral until branding is decided. */
-export function Logo({ className = "" }: { className?: string }) {
+export const PRODUCT_NAME = "MESH";
+export const PRODUCT_FULL_NAME = "Multi-client Engineering for Shared Hardware";
+
+/** Product mark: a chip outline plus the MESH name, optionally with the full name under it. */
+export function Logo({
+  className = "",
+  tagline = false,
+  taglineClassName = "",
+}: {
+  className?: string;
+  tagline?: boolean;
+  taglineClassName?: string;
+}) {
   return (
     <span className={`inline-flex items-center gap-2 font-semibold tracking-tight ${className}`}>
       <span className="grid size-7 place-items-center rounded-lg bg-accent text-accent-ink shadow-sm">
@@ -13,7 +24,14 @@ export function Logo({ className = "" }: { className?: string }) {
           <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" strokeLinecap="round" />
         </svg>
       </span>
-      <span>Builderwars</span>
+      {tagline ? (
+        <span className="flex flex-col leading-tight">
+          <span>{PRODUCT_NAME}</span>
+          <span className={`text-[11px] font-normal tracking-normal opacity-70 ${taglineClassName}`}>{PRODUCT_FULL_NAME}</span>
+        </span>
+      ) : (
+        <span title={PRODUCT_FULL_NAME}>{PRODUCT_NAME}</span>
+      )}
     </span>
   );
 }

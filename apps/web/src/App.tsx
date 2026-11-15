@@ -23,8 +23,8 @@ function Shell() {
     <div className="min-h-screen bg-bg">
       <header className="sticky top-0 z-20 border-b border-line bg-surface/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 sm:px-6">
-          <Link to="/" aria-label="Builderwars home">
-            <Logo className="text-fg" />
+          <Link to="/" aria-label="MESH home">
+            <Logo tagline taglineClassName="hidden md:block" className="text-fg" />
           </Link>
           <nav className="flex items-center gap-1 text-sm">
             <NavLink
