@@ -13,8 +13,8 @@ interface Props {
   domain: [number, number];
 }
 
-const HEIGHT = 132;
-const PAD = { top: 10, right: 12, bottom: 22, left: 48 };
+const HEIGHT = 156;
+const PAD = { top: 16, right: 12, bottom: 22, left: 44 };
 
 const timeFmt = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
@@ -68,6 +68,12 @@ export function MetricChart({ series, domain }: Props) {
     else path += `L${px},${py}`;
   });
 
+  // Soft fill under number lines (not step lines) to give the chart some weight.
+  const area =
+    !isBool && points.length > 1
+      ? `${path}L${x(points[points.length - 1].t).toFixed(1)},${PAD.top + innerH}L${x(points[0].t).toFixed(1)},${PAD.top + innerH}Z`
+      : "";
+
   const xTicks = [t0, (t0 + t1) / 2, t1];
   const hovered = hover === undefined ? undefined : points[hover];
   const last = points.at(-1);
@@ -85,13 +91,13 @@ export function MetricChart({ series, domain }: Props) {
 
   const latestText = formatValue(series.latest, isBool ? "" : unit);
   return (
-    <figure className="metric">
-      <figcaption>
-        <span className="metric-label">
+    <figure className="m-0 min-w-0">
+      <figcaption className="mb-2 flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm font-medium text-fg-2">
           {label}
-          {unit && !isBool ? <span className="metric-unit"> ({unit})</span> : null}
+          {unit && !isBool ? <span className="text-muted"> ({unit})</span> : null}
         </span>
-        <span className="metric-value">{latestText}</span>
+        <span className="text-sm font-semibold tabular-nums text-fg">{latestText}</span>
       </figcaption>
       <div ref={wrap} className="metric-plot">
         <svg
@@ -102,7 +108,7 @@ export function MetricChart({ series, domain }: Props) {
         >
           {yTicks.map((v) => (
             <g key={v}>
-              <line className="grid" x1={PAD.left} x2={width - PAD.right} y1={y(v)} y2={y(v)} />
+              <line className="chart-grid" x1={PAD.left} x2={width - PAD.right} y1={y(v)} y2={y(v)} />
               <text className="tick" x={PAD.left - 6} y={y(v)} dy="0.32em" textAnchor="end">
                 {isBool ? (v ? "On" : "Off") : formatTick(v)}
               </text>
@@ -119,6 +125,7 @@ export function MetricChart({ series, domain }: Props) {
               {timeFmt.format(t)}
             </text>
           ))}
+          {area && <path className="series-area" d={area} />}
           <path className="series-line" d={path} />
           {last && <circle className="series-dot" cx={x(last.t)} cy={y(last.v)} r={4} />}
           {hovered && (
@@ -145,7 +152,7 @@ export function MetricChart({ series, domain }: Props) {
         </svg>
         {hovered && (
           <div
-            className="tooltip"
+            className="pointer-events-none absolute flex flex-col rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs shadow-lg"
             style={
               // Beside the crosshair, on the side with more room, so it never hides the value.
               x(hovered.t) < width / 2
@@ -153,8 +160,8 @@ export function MetricChart({ series, domain }: Props) {
                 : { right: width - x(hovered.t) + 8, top: PAD.top }
             }
           >
-            <strong>{formatValue(isBool ? hovered.v === 1 : hovered.v, isBool ? "" : unit)}</strong>
-            <span>{timeFmt.format(hovered.t)}</span>
+            <strong className="font-semibold text-fg">{formatValue(isBool ? hovered.v === 1 : hovered.v, isBool ? "" : unit)}</strong>
+            <span className="text-muted">{timeFmt.format(hovered.t)}</span>
           </div>
         )}
       </div>

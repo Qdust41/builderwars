@@ -7,6 +7,14 @@ const timeFmt = new Intl.DateTimeFormat(undefined, {
   second: "2-digit",
 });
 
+function levelClass(level: string): string {
+  const l = level.toLowerCase();
+  if (l === "error" || l === "critical" || l === "fatal") return "text-red-400";
+  if (l === "warning" || l === "warn") return "text-amber-300";
+  if (l === "debug") return "text-console-muted";
+  return "text-sky-300";
+}
+
 /** Device logs and events, oldest at the top; follows new lines unless the reader scrolled up. */
 export function LogStream({ entries }: { entries: DeviceLogEntry[] }) {
   const box = useRef<HTMLDivElement>(null);
@@ -20,7 +28,7 @@ export function LogStream({ entries }: { entries: DeviceLogEntry[] }) {
   return (
     <div
       ref={box}
-      className="log-stream"
+      className="h-72 overflow-y-auto bg-console lg:h-96 px-4 py-3 font-mono text-xs leading-relaxed text-console-fg"
       role="log"
       aria-live="polite"
       onScroll={(e) => {
@@ -29,16 +37,18 @@ export function LogStream({ entries }: { entries: DeviceLogEntry[] }) {
       }}
     >
       {entries.length === 0 ? (
-        <p className="muted">No log lines yet.</p>
+        <p className="text-console-muted">Waiting for log lines…</p>
       ) : (
         <ol>
           {entries.map((e, i) => (
-            <li key={`${e.at}-${i}`} className={`log-${e.level}`}>
-              <time dateTime={e.at}>{timeFmt.format(Date.parse(e.at))}</time>
-              <span className={`level level-${e.level}`}>
-                {e.kind === "event" ? `event · ${e.level}` : e.level}
+            <li key={`${e.at}-${i}`} className="flex gap-3 py-0.5">
+              <time dateTime={e.at} className="shrink-0 text-console-muted">
+                {timeFmt.format(Date.parse(e.at))}
+              </time>
+              <span className={`w-14 shrink-0 uppercase ${levelClass(e.level)}`}>
+                {e.kind === "event" ? "event" : e.level}
               </span>
-              <span className="log-message">{e.message}</span>
+              <span className="min-w-0 break-words whitespace-pre-wrap">{e.message}</span>
             </li>
           ))}
         </ol>
