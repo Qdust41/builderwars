@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { auth as defaultAuth } from ".";
+import { Spinner } from "../components/ui";
 import { SignInPage } from "./SignInPage";
 import type { AuthService, SignedInUser } from "./types";
 
@@ -33,7 +34,7 @@ export function AuthGate({ children, auth = defaultAuth }: { children: ReactNode
     };
   }, [auth, refresh]);
 
-  if (user === undefined) return <p className="muted center">Loading…</p>;
+  if (user === undefined) return <Spinner />;
   if (user === null) return <SignInPage auth={auth} onSignedIn={refresh} />;
   const session: Session = {
     user,

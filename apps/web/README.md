@@ -1,7 +1,8 @@
 # Web app
 
-React + TypeScript (Vite). Pages: projects, project (devices + sessions), device dashboard,
-session.
+React + TypeScript (Vite), styled with Tailwind CSS v4 and lucide-react icons. Pages: sign-in,
+projects, project (devices + sessions), device dashboard, session. Light and dark themes follow
+the OS.
 
 ```bash
 npm install
@@ -54,5 +55,9 @@ sign-in. Password reset and MFA are not built yet.
   `VITE_AUTH_MODE=cognito` plus `VITE_APPSYNC_EVENTS_HTTP_DNS` / `VITE_APPSYNC_EVENTS_REALTIME_DNS`).
 - `src/device/` — the device page's data: `useDeviceLive` (load, subscribe, refetch on every
   reconnect) and pure telemetry helpers.
-- `src/components/` — `MetricChart` (one SVG chart per reading), `LogStream`, `CommandList`.
+- `src/components/` — `MetricChart` (one SVG chart per reading), `LogStream`, `CommandList`, and
+  shared pieces in `ui.tsx` (page header, status pill, empty state, error banner).
+- `src/styles.css` — design tokens (CSS variables for light and dark) exposed to Tailwind as
+  `bg-surface`, `text-fg`, `text-muted`, `border-line`, `bg-accent` and so on, plus the `btn-*`,
+  `input` and `card` component classes. Change the palette here, not in components.
 - The browser never publishes device commands or realtime events.
