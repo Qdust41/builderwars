@@ -26,8 +26,9 @@ class HostReport(_Report):
     sensor_source: str = Field(
         default="freewili",
         max_length=20,
-        description="'freewili' (real board), 'simulated' (--simulate) or 'freewili-gpio' "
-        "(no sensors defined: raw FREE-WILi pins)",
+        description="'freewili' (real board), 'simulated' (--simulate), 'freewili-gpio' "
+        "(no sensors defined: raw FREE-WILi pins) or 'logger-real' (--logger real: GPIO "
+        "bitfield + MPU6050 via onewili)",
     )
 
 

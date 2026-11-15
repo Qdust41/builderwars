@@ -97,13 +97,14 @@ cloud's `device_logs`, and re-loading a dump skips rows already present.
 | `config.py` | Env-based config; cert/key **paths** only | done |
 | `messages.py` | Builds validated, sequenced envelopes | done |
 | `sequence.py` | Sequence numbers persisted in `~/.builderwars/seq/<device_id>` (decision #14) | done |
-| `batching.py` | Telemetry batches: flush every 5 s or at 32 samples (decision #6) | done |
+| `batching.py` | Telemetry batches: flush every 5 s, at 32 samples (decision #6), or before 16 KB | done |
 | `connectivity/transport.py` | `Transport` protocol, stdout + recording transports | done |
 | `connectivity/mqtt_client.py` | AWS IoT Core MQTT/TLS via `awsiotsdk` (`mqtt` extra) | done, untested against real IoT |
 | `connectivity/backoff.py` | Exponential backoff with jitter | available; the SDK reconnects itself |
 | `connectivity/buffer.py` | Offline buffer (bounded, RAM, drop-oldest) | done; persistence TODO |
 | `hardware/freewili.py` | FREE-WILi over USB via `freewili`; unplug -> `BoardUnavailableError` | done, untested on hardware; readings are placeholders |
 | `hardware/sensors.py` | `SensorReader` protocol, simulated sensors | done |
+| `hardware/logger_real.py` | `run --logger real`: GPIO bitfield + MPU6050 via `onewili` (port of `scripts/wili_code/src/logger_real.py`), same CSV format | done, tested with fakes; the script itself ran on hardware |
 | `hardware/configured.py` | Reads the sensors defined on the device page (I2C/SPI/UART/GPIO) through the FREE-WILi, each at its own rate; `--simulate` counterpart (ADR 0010) | done, tested with fakes, not yet on hardware |
 | `logging/` | `logging.Handler` -> protocol `log` messages | done |
 | `commands/` | Allowlisted command dispatcher (`ping`, `get_uptime`) | done; no shell command, ever |
