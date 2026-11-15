@@ -180,6 +180,17 @@ class DeviceLogEntryOut(BaseModel):
     message: str
 
 
+class DeviceLogRecordOut(DeviceLogEntryOut):
+    #: The device message that carried this line; null for ingest-derived events.
+    message_id: str | None
+
+
+class DeviceLogHistoryOut(BaseModel):
+    entries: list[DeviceLogRecordOut]
+    #: Pass as ``cursor`` to get the next page; null when there are no more entries.
+    next_cursor: str | None
+
+
 class JobCreate(BaseModel):
     job_type: JobType
     device_id: str | None = None

@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from application.ports import DeviceLogEntry, TelemetrySample
+from application.ports import DeviceLogEntry, DeviceLogRecord, LogPosition, TelemetrySample
 from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project, ProjectMembership, ProjectRole
@@ -439,6 +439,31 @@ class PostgresRawMessageStore(_Repo):
         )
 
 
+#: Keyset page over device_logs + device_events. Each branch filters ``at`` itself so it can
+#: use its ``(device_id, at)`` index; the exact ``(at, source, id)`` cursor test runs outside.
+_LOG_HISTORY_SQL = """
+SELECT id, at, kind, level, message, message_id, source FROM (
+    SELECT id, at, 'log' AS kind, level, message, message_id, 0 AS source
+      FROM device_logs
+     WHERE device_id = %s
+       AND (%s::timestamptz IS NULL OR at >= %s)
+       AND (%s::timestamptz IS NULL OR at < %s)
+    UNION ALL
+    SELECT id, at, 'event' AS kind, severity AS level,
+           name || COALESCE(': ' || NULLIF(detail, ''), '') AS message,
+           message_id, 1 AS source
+      FROM device_events
+     WHERE device_id = %s
+       AND (%s::timestamptz IS NULL OR at >= %s)
+       AND (%s::timestamptz IS NULL OR at < %s)
+) merged
+WHERE %s::bigint IS NULL
+   OR (at, source, id) > (%s::timestamptz, %s::int, %s::bigint)
+ORDER BY at, source, id
+LIMIT %s
+"""
+
+
 class PostgresTelemetryRepository(_Repo):
     def add_telemetry(
         self, *, device_id: str, message_id: str, at: datetime, metrics: dict[str, object]
@@ -504,5 +529,44 @@ class PostgresTelemetryRepository(_Repo):
         )
         return [
             DeviceLogEntry(at=r["at"], kind=r["kind"], level=r["level"], message=r["message"])
+            for r in rows
+        ]
+
+    def log_history(
+        self,
+        device_id: str,
+        *,
+        since: datetime | None,
+        until: datetime | None,
+        after: LogPosition | None,
+        limit: int,
+    ) -> list[DeviceLogRecord]:
+        """Keyset-paged merge of device_logs and device_events, ordered (at, source, id).
+
+        The time bounds (and the cursor's ``at``) are applied inside each branch so both
+        use their ``(device_id, at)`` index; the exact cursor comparison runs outside.
+        """
+        if limit <= 0:
+            return []
+        lower = since
+        if after is not None and (lower is None or after.at > lower):
+            lower = after.at
+        bounds = (lower, lower, until, until)
+        cursor = (
+            (after.row_id, after.at, after.source, after.row_id)
+            if after is not None
+            else (None, None, None, None)
+        )
+        rows = self._all(_LOG_HISTORY_SQL, (device_id, *bounds, device_id, *bounds, *cursor, limit))
+        return [
+            DeviceLogRecord(
+                at=r["at"],
+                kind=r["kind"],
+                level=r["level"],
+                message=r["message"],
+                message_id=r["message_id"],
+                source=int(r["source"]),
+                row_id=int(r["id"]),
+            )
             for r in rows
         ]

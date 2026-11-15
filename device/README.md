@@ -33,6 +33,8 @@ builderwars run --cloud --device-id dev_... /dev/ttyACM0   # stream the board li
 builderwars run --cloud --device-id dev_...                # same with simulated sensors
 builderwars upload dev-local --device-id dev_...           # upload a saved log CSV
 builderwars run -n 60 > run.jsonl; builderwars upload run.jsonl --device-id dev_...
+builderwars logs dev_...                                   # cloud logs -> ./dev_...-logs.csv
+builderwars logs "Bench board" --since 2026-11-14 -o bench.csv   # by name, a time window
 builderwars whoami / builderwars logout
 ```
 
@@ -46,6 +48,13 @@ builderwars whoami / builderwars logout
   (`dev-local`, `sim-001`) are re-addressed to the device you upload to.
 - If the network or the API is down, `run --cloud` keeps sampling and buffers messages in memory
   (the last 1000), then sends them when it can.
+- `builderwars logs <device>` downloads everything the cloud stored for the device (log lines
+  and device events, oldest first) into a CSV with the columns `timestamp, device_id, kind,
+  level, message, message_id`. Any project member can run it, viewers included. `--since` /
+  `--until` take a date or date-time (local time unless it ends in `Z` or has an offset),
+  `-o -` writes to stdout, and an existing file is only replaced with `--force`. Without a
+  device it lists the log CSVs on this computer, like `show`. It reads
+  `GET /devices/{id}/logs/history`, paged 1000 entries at a time.
 - Not yet: commands from the dashboard (ping, uptime) don't reach a board in this mode.
 
 ## Local development (no board, no AWS)

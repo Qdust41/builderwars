@@ -115,6 +115,36 @@ class DeviceLogEntry:
     message: str
 
 
+@dataclass(frozen=True, slots=True)
+class DeviceLogRecord:
+    """One row of a device's full log history (log lines and events), for export.
+
+    Rows are ordered by ``(at, source, row_id)``: ``source`` is 0 for a log line and 1 for
+    an event, ``row_id`` is the storage row id. That triple is the keyset paging cursor.
+    """
+
+    at: datetime
+    kind: str
+    level: str
+    message: str
+    message_id: str | None
+    source: int
+    row_id: int
+
+    @property
+    def position(self) -> LogPosition:
+        return LogPosition(at=self.at, source=self.source, row_id=self.row_id)
+
+
+@dataclass(frozen=True, slots=True)
+class LogPosition:
+    """Where a log history page ended; the next page starts strictly after it."""
+
+    at: datetime
+    source: int
+    row_id: int
+
+
 class TelemetryRepository(Protocol):
     """Normalised telemetry/log records. Storage choice depends on volume (open decision #6).
 
@@ -124,6 +154,19 @@ class TelemetryRepository(Protocol):
     def recent_telemetry(self, device_id: str, *, limit: int) -> list[TelemetrySample]: ...
 
     def recent_logs(self, device_id: str, *, limit: int) -> list[DeviceLogEntry]: ...
+
+    def log_history(
+        self,
+        device_id: str,
+        *,
+        since: datetime | None,
+        until: datetime | None,
+        after: LogPosition | None,
+        limit: int,
+    ) -> list[DeviceLogRecord]:
+        """Up to ``limit`` log lines and events oldest first, ``since <= at < until``,
+        strictly after ``after``."""
+        ...
 
     def add_telemetry(
         self, *, device_id: str, message_id: str, at: datetime, metrics: dict[str, object]

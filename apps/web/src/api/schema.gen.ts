@@ -100,6 +100,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{device_id}/logs/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Device Log History
+         * @description A device's full log and event history, oldest first, paged with ``next_cursor``.
+         *
+         *     Used by ``builderwars logs export``; any project member can read it. Timestamps without
+         *     a timezone are taken as UTC.
+         */
+        get: operations["get_device_log_history_devices__device_id__logs_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{device_id}/messages": {
         parameters: {
             query?: never;
@@ -500,6 +523,32 @@ export interface components {
             level: string;
             /** Message */
             message: string;
+        };
+        /** DeviceLogHistoryOut */
+        DeviceLogHistoryOut: {
+            /** Entries */
+            entries: components["schemas"]["DeviceLogRecordOut"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** DeviceLogRecordOut */
+        DeviceLogRecordOut: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "log" | "event";
+            /** Level */
+            level: string;
+            /** Message */
+            message: string;
+            /** Message Id */
+            message_id: string | null;
         };
         /** DeviceMessageResultOut */
         DeviceMessageResultOut: {
@@ -906,6 +955,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceLogEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_device_log_history_devices__device_id__logs_history_get: {
+        parameters: {
+            query?: {
+                /** @description only entries at or after this */
+                since?: string | null;
+                /** @description only entries before this */
+                until?: string | null;
+                /** @description next_cursor from the previous page */
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceLogHistoryOut"];
                 };
             };
             /** @description Validation Error */

@@ -6,16 +6,18 @@
     builderwars ports                   # list boards and serial ports with permission status
     builderwars run /dev/ttyACM0        # full host runtime on that board, messages to stdout
     builderwars sim --count 40          # simulated board, messages to stdout
-    builderwars show                    # list stored log CSVs (alias: logs)
+    builderwars show                    # list the log CSVs stored on this computer
     builderwars to-sql sim-001          # asks [Y/n], writes sim-001.sql next to the CSV
     builderwars login                   # sign in to your Builderwars account
     builderwars devices                 # your registered devices and their ids
     builderwars run --cloud --device-id dev_...   # stream a board live to the dashboard
     builderwars upload run.jsonl --device-id dev_...  # upload saved telemetry/logs
+    builderwars logs dev_...            # download a device's cloud logs to dev_...-logs.csv
 
 The device runtime and simulator append every log message they send to the cloud to a local
 CSV under ``~/.builderwars/logs/<device-id>.csv`` (override with ``BUILDERWARS_LOG_CSV``);
 ``to-sql`` turns one into a self-contained ``.sql`` dump for PostgreSQL or SQLite.
+``logs`` downloads what the cloud stored for a device (as the signed-in user) into a CSV.
 
 Exit codes: 0 ok, 1 board test failed, 2 usage/setup error, 130 interrupted.
 ``builderwars-logs`` is the same program (kept for compatibility).
@@ -716,6 +718,100 @@ def cmd_upload(args: argparse.Namespace) -> int:
     return EXIT_FAILED if totals["rejected"] or read.skipped else EXIT_OK
 
 
+def _parse_when(value: str) -> datetime:
+    """ISO date or date-time; ``Z`` suffix allowed; no timezone means local time."""
+    text = value.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not a date/time; use e.g. 2026-11-14 or 2026-11-14T09:30"
+        ) from None
+    return parsed if parsed.tzinfo is not None else parsed.astimezone()
+
+
+def _resolve_device(session: Any, wanted: str) -> tuple[str, str]:
+    """Accept a device id or a device name; return ``(id, name)``."""
+    from urllib.parse import quote
+
+    from board_runtime.cloud import AccountError, ApiError
+
+    if wanted.startswith("dev_"):
+        try:
+            device = session.request("GET", f"/devices/{quote(wanted, safe='')}")
+            return device["id"], device.get("display_name") or wanted
+        except ApiError as exc:
+            if exc.status != 404:
+                raise
+    matches: list[tuple[str, str, str]] = []
+    for project in session.request("GET", "/projects") or []:
+        path = f"/projects/{quote(project['id'], safe='')}/devices"
+        for device in session.request("GET", path) or []:
+            if wanted in (device["id"], device["display_name"]) or (
+                device["display_name"].casefold() == wanted.casefold()
+            ):
+                matches.append((device["id"], device["display_name"], project["name"]))
+    if not matches:
+        raise AccountError(
+            f"no device {wanted!r} in your projects", "`builderwars devices` lists the ones you see"
+        )
+    if len(matches) > 1:
+        listed = ", ".join(f"{d} ({n}, {p})" for d, n, p in matches)
+        raise AccountError(
+            f"{len(matches)} devices are named {wanted!r}: {listed}", "pass the device id instead"
+        )
+    return matches[0][0], matches[0][1]
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    if not args.device:
+        print("Logs stored on this computer (pass a device to download its cloud logs):")
+        return cmd_show(args)
+
+    from board_runtime.cloud import AccountError, export_logs_csv, iter_log_history, write_log_csv
+
+    if args.since and args.until and args.since >= args.until:
+        _error("--since must be before --until")
+        return EXIT_USAGE
+    try:
+        session = _session(args.state_dir)
+        device_id, name = _resolve_device(session, args.device)
+        if args.output == "-":
+            count = write_log_csv(
+                sys.stdout,
+                device_id,
+                iter_log_history(session, device_id, since=args.since, until=args.until),
+            )
+            print(f"{count} entries from {name} ({device_id})", file=sys.stderr)
+            return EXIT_OK
+        output = Path(args.output) if args.output else Path(f"{device_id}-logs.csv")
+        if output.exists() and not args.force:
+            _error(f"{output} already exists", "pass --force to overwrite it, or -o another path")
+            return EXIT_USAGE
+
+        def progress(total: int) -> None:
+            print(f"\rdownloaded {total} entries", end="", file=sys.stderr, flush=True)
+
+        try:
+            count = export_logs_csv(
+                session, device_id, output, since=args.since, until=args.until, on_page=progress
+            )
+        finally:
+            print(file=sys.stderr)
+    except AccountError as exc:
+        return _account_error(exc)
+    except OSError as exc:
+        _error(f"cannot write the CSV: {exc}")
+        return EXIT_USAGE
+    noun = "entry" if count == 1 else "entries"
+    print(f"Wrote {output} ({count} {noun} from {name}, {device_id}).")
+    if count == 0:
+        print("The cloud has no logs for this device yet (in that time range).")
+    return EXIT_OK
+
+
 # -- entry point ---------------------------------------------------------------------------
 COMMANDS = (
     "test",
@@ -833,7 +929,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sim.set_defaults(func=cmd_sim)
 
     p_show = sub.add_parser(
-        "show", aliases=["logs"], parents=[common], help="list stored log CSVs with row counts"
+        "show", parents=[common], help="list the log CSVs stored on this computer"
     )
     p_show.set_defaults(func=cmd_show)
 
@@ -891,6 +987,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--device-id", required=True, help="registered device id, e.g. dev_... (see `devices`)"
     )
     p_upload.set_defaults(func=cmd_upload)
+
+    p_logs = sub.add_parser(
+        "logs",
+        parents=[common],
+        help="download a device's logs from the cloud into a CSV (`login` first)",
+        description=(
+            "Download every log line and device event the cloud stored for a device, oldest "
+            "first, as the signed-in user, and write them to a CSV with the columns "
+            "timestamp, device_id, kind, level, message, message_id. Without a device it "
+            "lists the log CSVs stored on this computer (like `show`)."
+        ),
+    )
+    p_logs.add_argument(
+        "device", nargs="?", help="device id (dev_...) or device name; see `builderwars devices`"
+    )
+    p_logs.add_argument(
+        "-o", "--output", help="CSV path (default: ./<device-id>-logs.csv; - for stdout)"
+    )
+    p_logs.add_argument(
+        "--since", type=_parse_when, help="only entries at or after this (e.g. 2026-11-14)"
+    )
+    p_logs.add_argument(
+        "--until", type=_parse_when, help="only entries before this (e.g. 2026-11-15T12:00)"
+    )
+    p_logs.add_argument("--force", action="store_true", help="overwrite an existing CSV")
+    p_logs.set_defaults(func=cmd_logs)
     return parser
 
 
