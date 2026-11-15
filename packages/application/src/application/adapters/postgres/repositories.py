@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from psycopg import errors as pg_errors
@@ -17,6 +17,13 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from application.ports import DeviceLogEntry, DeviceLogRecord, LogPosition, TelemetrySample
+from domain.autofix import (
+    AutoFixLevel,
+    AutoFixRun,
+    AutoFixRunStatus,
+    AutoFixSettings,
+    AutoFixTriggerKind,
+)
 from domain.common import ConflictError
 from domain.devices import (
     CommandStatus,
@@ -765,3 +772,177 @@ class PostgresTelemetryRepository(_Repo):
             )
             for r in rows
         ]
+
+
+# --- auto-fix (ADR 0012) ------------------------------------------------------------------------
+
+
+def _autofix_settings(row: Row) -> AutoFixSettings:
+    return AutoFixSettings(
+        project_id=row["project_id"],
+        llm_base_url=row["llm_base_url"],
+        llm_model=row["llm_model"],
+        github_repo=row["github_repo"],
+        updated_by=row["updated_by"],
+        enabled=row["enabled"],
+        auto_trigger=row["auto_trigger"],
+        min_level=AutoFixLevel(row["min_level"]),
+        base_branch=row["base_branch"],
+        max_runs_per_day=row["max_runs_per_day"],
+        dedupe_hours=row["dedupe_hours"],
+        instructions=row["instructions"],
+        has_llm_api_key=row["has_llm_api_key"],
+        has_github_token=row["has_github_token"],
+        updated_at=row["updated_at"],
+    )
+
+
+class PostgresAutoFixSettingsRepository(_Repo):
+    def get(self, project_id: str) -> AutoFixSettings | None:
+        row = self._one("SELECT * FROM autofix_settings WHERE project_id = %s", (project_id,))
+        return _autofix_settings(row) if row else None
+
+    def save(self, settings: AutoFixSettings) -> None:
+        self._exec(
+            "INSERT INTO autofix_settings (project_id, llm_base_url, llm_model, github_repo,"
+            " base_branch, enabled, auto_trigger, min_level, max_runs_per_day, dedupe_hours,"
+            " instructions, has_llm_api_key, has_github_token, updated_by, updated_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " ON CONFLICT (project_id) DO UPDATE SET"
+            " llm_base_url = EXCLUDED.llm_base_url, llm_model = EXCLUDED.llm_model,"
+            " github_repo = EXCLUDED.github_repo, base_branch = EXCLUDED.base_branch,"
+            " enabled = EXCLUDED.enabled, auto_trigger = EXCLUDED.auto_trigger,"
+            " min_level = EXCLUDED.min_level, max_runs_per_day = EXCLUDED.max_runs_per_day,"
+            " dedupe_hours = EXCLUDED.dedupe_hours, instructions = EXCLUDED.instructions,"
+            " has_llm_api_key = EXCLUDED.has_llm_api_key,"
+            " has_github_token = EXCLUDED.has_github_token,"
+            " updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at",
+            (
+                settings.project_id,
+                settings.llm_base_url,
+                settings.llm_model,
+                settings.github_repo,
+                settings.base_branch,
+                settings.enabled,
+                settings.auto_trigger,
+                settings.min_level.value,
+                settings.max_runs_per_day,
+                settings.dedupe_hours,
+                settings.instructions,
+                settings.has_llm_api_key,
+                settings.has_github_token,
+                settings.updated_by,
+                settings.updated_at,
+            ),
+        )
+
+    def delete(self, project_id: str) -> None:
+        self._exec("DELETE FROM autofix_settings WHERE project_id = %s", (project_id,))
+
+
+def _autofix_run(row: Row) -> AutoFixRun:
+    return AutoFixRun(
+        id=row["id"],
+        project_id=row["project_id"],
+        device_id=row["device_id"],
+        trigger=AutoFixTriggerKind(row["trigger"]),
+        signature=row["signature"],
+        error_level=row["error_level"],
+        error_message=row["error_message"],
+        requested_by=row["requested_by"],
+        status=AutoFixRunStatus(row["status"]),
+        created_at=row["created_at"],
+        started_at=row["started_at"],
+        completed_at=row["completed_at"],
+        model=row["model"],
+        github_repo=row["github_repo"],
+        branch=row["branch"],
+        pr_number=row["pr_number"],
+        pr_url=row["pr_url"],
+        summary=row["summary"],
+        files_changed=tuple(row["files_changed"] or ()),
+    )
+
+
+_AUTOFIX_RUN_COLUMNS = (
+    "id, project_id, device_id, trigger, signature, error_level, error_message, requested_by,"
+    " status, created_at, started_at, completed_at, model, github_repo, branch, pr_number,"
+    " pr_url, summary, files_changed"
+)
+
+
+class PostgresAutoFixRunRepository(_Repo):
+    @staticmethod
+    def _params(run: AutoFixRun) -> tuple[object, ...]:
+        return (
+            run.id,
+            run.project_id,
+            run.device_id,
+            run.trigger.value,
+            run.signature,
+            run.error_level,
+            run.error_message,
+            run.requested_by,
+            run.status.value,
+            run.created_at,
+            run.started_at,
+            run.completed_at,
+            run.model,
+            run.github_repo,
+            run.branch,
+            run.pr_number,
+            run.pr_url,
+            run.summary,
+            list(run.files_changed),
+        )
+
+    _INSERT = (
+        f"INSERT INTO autofix_runs ({_AUTOFIX_RUN_COLUMNS})"  # noqa: S608 - constant columns
+        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+    )
+
+    def add(self, run: AutoFixRun) -> None:
+        self._exec(self._INSERT, self._params(run))
+
+    def save(self, run: AutoFixRun) -> None:
+        self._exec(
+            self._INSERT + " ON CONFLICT (id) DO UPDATE SET"
+            " status = EXCLUDED.status, started_at = EXCLUDED.started_at,"
+            " completed_at = EXCLUDED.completed_at, model = EXCLUDED.model,"
+            " github_repo = EXCLUDED.github_repo, branch = EXCLUDED.branch,"
+            " pr_number = EXCLUDED.pr_number, pr_url = EXCLUDED.pr_url,"
+            " summary = EXCLUDED.summary, files_changed = EXCLUDED.files_changed",
+            self._params(run),
+        )
+
+    def get(self, run_id: str) -> AutoFixRun | None:
+        row = self._one("SELECT * FROM autofix_runs WHERE id = %s", (run_id,))
+        return _autofix_run(row) if row else None
+
+    def list_for_project(self, project_id: str, *, limit: int) -> list[AutoFixRun]:
+        rows = self._all(
+            "SELECT * FROM autofix_runs WHERE project_id = %s"
+            " ORDER BY created_at DESC, id DESC LIMIT %s",
+            (project_id, limit),
+        )
+        return [_autofix_run(r) for r in rows]
+
+    def count_since(self, project_id: str, since: datetime) -> int:
+        row = self._one(
+            "SELECT count(*) AS n FROM autofix_runs WHERE project_id = %s AND created_at >= %s",
+            (project_id, since),
+        )
+        return int(row["n"]) if row else 0
+
+    def claim_signature(
+        self, project_id: str, signature: str, *, now: datetime, window: timedelta
+    ) -> bool:
+        row = self._one(
+            "INSERT INTO autofix_signatures (project_id, signature, last_run_at)"
+            " VALUES (%s, %s, %s)"
+            " ON CONFLICT (project_id, signature) DO UPDATE SET last_run_at = EXCLUDED.last_run_at"
+            " WHERE autofix_signatures.last_run_at <= %s"
+            " RETURNING 1 AS claimed",
+            (project_id, signature, now, now - window),
+        )
+        return row is not None

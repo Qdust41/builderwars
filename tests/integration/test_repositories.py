@@ -11,6 +11,13 @@ from typing import Any
 import pytest
 
 from application.adapters import memory
+from domain.autofix import (
+    AutoFixLevel,
+    AutoFixRun,
+    AutoFixRunStatus,
+    AutoFixSettings,
+    AutoFixTriggerKind,
+)
 from domain.common import ConflictError
 from domain.devices import (
     CommandStatus,
@@ -46,6 +53,8 @@ def repos(backend: str, request: pytest.FixtureRequest) -> Any:
         setups=memory.InMemoryDeviceSetupRepository(),
         sensors=(sensors := memory.InMemorySensorRepository()),
         boards=memory.InMemoryTargetBoardRepository(sensors),
+        autofix_settings=memory.InMemoryAutoFixSettingsRepository(),
+        autofix_runs=memory.InMemoryAutoFixRunRepository(),
     )
 
 
@@ -279,3 +288,77 @@ def test_boards_and_sensors_round_trip_and_cascade(repos: Any) -> None:
     repos.sensors.add(_sensor(device.id, a.id, "again"))
     repos.sensors.delete(repos.sensors.list_for_device(device.id)[0].id)
     assert repos.sensors.list_for_device(device.id) == []
+
+
+def test_autofix_settings_round_trip_and_delete(repos: Any) -> None:
+    project = _project(repos)
+    settings = AutoFixSettings(
+        project_id=project.id,
+        llm_base_url="https://api.openai.com/v1",
+        llm_model="gpt-test",
+        github_repo="acme/rig",
+        updated_by="alice",
+        min_level=AutoFixLevel.CRITICAL,
+        base_branch="develop",
+        instructions="board code in host/",
+        has_github_token=True,
+        updated_at=T0,
+    )
+    assert repos.autofix_settings.get(project.id) is None
+    repos.autofix_settings.save(settings)
+    assert repos.autofix_settings.get(project.id) == settings
+    changed = replace(settings, enabled=False, max_runs_per_day=9, base_branch=None)
+    repos.autofix_settings.save(changed)
+    assert repos.autofix_settings.get(project.id) == changed
+    repos.autofix_settings.delete(project.id)
+    assert repos.autofix_settings.get(project.id) is None
+
+
+def test_autofix_runs_round_trip_count_and_claim(repos: Any) -> None:
+    project = _project(repos)
+    device = _device(repos, project.id)
+    runs = repos.autofix_runs
+    first = AutoFixRun(
+        project_id=project.id,
+        trigger=AutoFixTriggerKind.ERROR_LOG,
+        signature="sig-a",
+        error_level="error",
+        error_message="boom",
+        device_id=device.id,
+        created_at=T0,
+    )
+    runs.add(first)
+    second = replace(
+        first,
+        id="fix_second",
+        trigger=AutoFixTriggerKind.MANUAL,
+        requested_by="bob",
+        created_at=T0 + timedelta(hours=2),
+    )
+    runs.add(second)
+    done = replace(
+        first.transition(AutoFixRunStatus.RUNNING, model="m", github_repo="acme/rig"),
+        status=AutoFixRunStatus.PR_OPENED,
+        completed_at=T0 + timedelta(minutes=1),
+        branch="autofix/x",
+        pr_number=4,
+        pr_url="https://github.com/acme/rig/pull/4",
+        summary="fixed",
+        files_changed=("a.py", "b.py"),
+    )
+    runs.save(done)
+    assert runs.get(first.id) == done
+    assert [r.id for r in runs.list_for_project(project.id, limit=10)] == [second.id, first.id]
+    assert runs.list_for_project(project.id, limit=1) == [second]
+    assert runs.count_since(project.id, T0) == 2
+    assert runs.count_since(project.id, T0 + timedelta(hours=1)) == 1
+
+    window = timedelta(hours=24)
+    assert runs.claim_signature(project.id, "sig-a", now=T0, window=window)
+    assert not runs.claim_signature(project.id, "sig-a", now=T0 + timedelta(hours=1), window=window)
+    assert runs.claim_signature(project.id, "sig-b", now=T0 + timedelta(hours=1), window=window)
+    assert runs.claim_signature(project.id, "sig-a", now=T0 + timedelta(hours=25), window=window)
+    # A manual run claims with a zero window: always allowed, and it resets the window.
+    later = T0 + timedelta(hours=26)
+    assert runs.claim_signature(project.id, "sig-a", now=later, window=timedelta(0))
+    assert not runs.claim_signature(project.id, "sig-a", now=later, window=window)

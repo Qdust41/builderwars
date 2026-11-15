@@ -11,7 +11,7 @@ SDKs (ADR 0001, ADR 0003).
 | `domain/` | `bw-domain` / `domain` | Framework-free models and rules: projects, roles, devices, sessions, jobs. |
 | `application/` | `bw-application` / `application` | Services and ports, plus in-memory and PostgreSQL adapters (`application.adapters.postgres`, migrations included; ADR 0006). |
 | `aws/` | `bw-aws-adapters` / `aws_adapters` | AWS implementations of the ports: S3, SQS, IoT data plane, AppSync Events publisher. |
-| `ai/` | `bw-ai-platform` / `ai_platform` | Controlled AI tool boundary: tool definitions, approval gate, redaction, provider config. No client yet (spec 08). |
+| `ai/` | `bw-ai-platform` / `ai_platform` | Controlled AI boundary: tool definitions, approval gate, redaction, provider config, an OpenAI-compatible chat client, and the auto-fix worker (logs + GitHub repo -> LLM -> pull request, ADR 0012). |
 
 Protocol details: [docs/device-protocol.md](../docs/device-protocol.md). After changing a
 protocol model or realtime event, run `uv run python scripts/export_contracts.py`.

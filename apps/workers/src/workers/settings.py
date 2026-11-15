@@ -32,6 +32,10 @@ class WorkerSettings(BaseSettings):
     # (telemetry, logs, command updates) for the live dashboard; Lambda sets AWS_REGION.
     events_http_dns: str | None = None
     aws_region: str | None = None
+    # Auto-fix (ADR 0012). The queue the ingest worker hands error-triggered runs to, and the
+    # Secrets Manager name prefix of each project's LLM key + GitHub token.
+    autofix_queue_url: str | None = None
+    autofix_secret_prefix: str | None = None
 
 
 class UnsafeConfigurationError(RuntimeError):

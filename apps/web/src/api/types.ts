@@ -41,3 +41,9 @@ export type SPIBus = Schemas["SPIBus"];
 export type UARTBus = Schemas["UARTBus"];
 export type GPIOBus = Schemas["GPIOBus"];
 export type SensorPreset = Schemas["SensorPreset"];
+
+// Auto-fix: an OpenAI-compatible endpoint + GitHub repo per project; errors become PRs.
+export type AutoFixSettings = Schemas["AutoFixSettingsOut"];
+export type AutoFixSettingsInput = Schemas["AutoFixSettingsIn"];
+export type AutoFixRun = Schemas["AutoFixRunOut"];
+export type AutoFixRunStatus = Schemas["AutoFixRunStatus"];

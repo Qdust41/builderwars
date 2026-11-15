@@ -12,6 +12,15 @@ from application.services import MAX_MESSAGES_PER_UPLOAD, IngestOutcome, Project
 from application.services.device_setup import SetupView, sensor_spec
 from device_protocol.sensors import SensorProtocol, SensorSpec
 from device_protocol.setup import BridgeReport, HostReport
+from domain.autofix import (
+    DEFAULT_DEDUPE_HOURS,
+    DEFAULT_MAX_RUNS_PER_DAY,
+    AutoFixLevel,
+    AutoFixRun,
+    AutoFixRunStatus,
+    AutoFixSettings,
+    AutoFixTriggerKind,
+)
 from domain.devices import (
     MAX_TARGET_BOARDS,
     CommandStatus,
@@ -377,3 +386,99 @@ class DeviceSetupOut(BaseModel):
             if view.run_active and setup.run_started_at and setup.run_seen_at and setup.run_by
             else None,
         )
+
+
+# --- auto-fix (ADR 0012) ----------------------------------------------------------------------
+
+
+class AutoFixSettingsIn(BaseModel):
+    """Link an OpenAI-compatible endpoint and a GitHub repository to the project.
+
+    ``llm_api_key`` / ``github_token``: leave out to keep what is stored, ``""`` to clear,
+    or a value to replace. They are write-only: responses only say whether each is set.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    llm_base_url: str = Field(
+        min_length=8,
+        max_length=500,
+        description="Everything before /chat/completions, e.g. https://api.openai.com/v1",
+    )
+    llm_model: str = Field(min_length=1, max_length=200)
+    github_repo: str = Field(min_length=3, max_length=140, description="owner/name")
+    base_branch: str | None = Field(
+        default=None, max_length=200, description="Defaults to the repository's default branch"
+    )
+    enabled: bool = True
+    auto_trigger: bool = Field(
+        default=True, description="Start runs from uploaded error logs (false: manual only)"
+    )
+    min_level: AutoFixLevel = AutoFixLevel.ERROR
+    max_runs_per_day: int = Field(default=DEFAULT_MAX_RUNS_PER_DAY, ge=1, le=50)
+    dedupe_hours: int = Field(default=DEFAULT_DEDUPE_HOURS, ge=1, le=720)
+    instructions: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="Notes for the model, e.g. where the board code lives",
+    )
+    llm_api_key: str | None = Field(default=None, max_length=4000)
+    github_token: str | None = Field(default=None, max_length=1000)
+
+
+class AutoFixSettingsOut(_Out):
+    project_id: str
+    enabled: bool
+    llm_base_url: str
+    llm_model: str
+    github_repo: str
+    base_branch: str | None
+    auto_trigger: bool
+    min_level: AutoFixLevel
+    max_runs_per_day: int
+    dedupe_hours: int
+    instructions: str | None
+    has_llm_api_key: bool
+    has_github_token: bool
+    ready: bool
+    updated_by: str
+    updated_at: datetime
+
+    @classmethod
+    def of(cls, settings: AutoFixSettings) -> AutoFixSettingsOut:
+        return cls.model_validate(settings)
+
+
+class AutoFixRunCreate(BaseModel):
+    """Ask for a fix now. Without ``message``, the device's latest error log is used."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str | None = None
+    message: str | None = Field(default=None, max_length=4096)
+    level: Literal["error", "critical", "warning"] = "error"
+
+
+class AutoFixRunOut(_Out):
+    id: str
+    project_id: str
+    device_id: str | None
+    trigger: AutoFixTriggerKind
+    status: AutoFixRunStatus
+    error_level: str
+    error_message: str
+    requested_by: str | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    model: str | None
+    github_repo: str | None
+    branch: str | None
+    pr_number: int | None
+    pr_url: str | None
+    summary: str | None
+    files_changed: list[str]
+
+    @classmethod
+    def of(cls, run: AutoFixRun) -> AutoFixRunOut:
+        return cls.model_validate(run)

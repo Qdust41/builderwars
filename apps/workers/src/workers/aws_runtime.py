@@ -13,19 +13,27 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from ai_platform.autofix import AutoFixWorker, default_clients
 from application.adapters import memory, postgres
-from application.ports import DeviceCommandRepository, JobRepository
+from application.ports import (
+    AutoFixRunRepository,
+    AutoFixSettingsRepository,
+    DeviceCommandRepository,
+    JobRepository,
+)
 from application.ports.repositories import (
     DeviceRepository,
     ProcessedMessageStore,
     SequenceTracker,
     TelemetryRepository,
 )
-from application.services import DeviceEventPublisher, DeviceMessageIngestService
+from application.services import AutoFixTrigger, DeviceEventPublisher, DeviceMessageIngestService
 from aws_adapters import (
     AppSyncEventsPublisher,
     IotDataCommandPublisher,
     S3RawMessageStore,
+    SecretsManagerAutoFixSecretStore,
+    SqsAutoFixQueue,
     database_url_from_secret,
 )
 from domain.jobs import JobType
@@ -49,6 +57,8 @@ class WorkerRepositories:
     telemetry: TelemetryRepository
     commands: DeviceCommandRepository
     jobs: JobRepository
+    autofix_settings: AutoFixSettingsRepository
+    autofix_runs: AutoFixRunRepository
     close: Callable[[], None] = field(default=lambda: None)
 
 
@@ -83,6 +93,8 @@ def open_repositories(settings: WorkerSettings) -> WorkerRepositories:
             telemetry=repos.telemetry,
             commands=repos.commands,
             jobs=repos.jobs,
+            autofix_settings=repos.autofix_settings,
+            autofix_runs=repos.autofix_runs,
             close=repos.close,
         )
     return WorkerRepositories(  # LOCAL/TEST ONLY (validated above)
@@ -92,6 +104,8 @@ def open_repositories(settings: WorkerSettings) -> WorkerRepositories:
         telemetry=memory.InMemoryTelemetryRepository(),
         commands=memory.InMemoryDeviceCommandRepository(),
         jobs=memory.InMemoryJobRepository(),
+        autofix_settings=memory.InMemoryAutoFixSettingsRepository(),
+        autofix_runs=memory.InMemoryAutoFixRunRepository(),
     )
 
 
@@ -128,8 +142,37 @@ def build_device_ingest(
         sequences=repos.sequences,
         commands=repos.commands,
         events=device_events(settings),
+        errors=autofix_trigger(settings, repos, client_factory),
     )
     return DeviceMessageHandler(ingest)
+
+
+def autofix_trigger(
+    settings: WorkerSettings, repos: WorkerRepositories, client_factory: ClientFactory
+) -> AutoFixTrigger | None:
+    """Starts auto-fix runs from ingested errors, or ``None`` when AUTOFIX_QUEUE_URL is unset."""
+    if not settings.autofix_queue_url:
+        return None
+    return AutoFixTrigger(
+        settings=repos.autofix_settings,
+        runs=repos.autofix_runs,
+        queue=SqsAutoFixQueue(client_factory("sqs"), settings.autofix_queue_url),
+        devices=repos.devices,
+    )
+
+
+def build_autofix_worker(
+    settings: WorkerSettings, repos: WorkerRepositories, client_factory: ClientFactory
+) -> AutoFixWorker:
+    prefix = _require(settings.autofix_secret_prefix, "AUTOFIX_SECRET_PREFIX")
+    return AutoFixWorker(
+        runs=repos.autofix_runs,
+        settings=repos.autofix_settings,
+        secrets=SecretsManagerAutoFixSecretStore(client_factory("secretsmanager"), prefix),
+        telemetry=repos.telemetry,
+        # Deployed workers only call public endpoints (no localhost / VPC / link-local).
+        clients=default_clients(allow_private_endpoints=settings.app_env in {"local", "test"}),
+    )
 
 
 def build_command_dispatch(

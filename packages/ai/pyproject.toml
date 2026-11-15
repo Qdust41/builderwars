@@ -1,9 +1,10 @@
 [project]
 name = "bw-ai-platform"
 version = "0.1.0"
-description = "Controlled AI tool boundary (interfaces and stubs only)"
+description = "Controlled AI boundary and the auto-fix worker (LLM-proposed pull requests)"
 requires-python = ">=3.12"
 dependencies = [
+    "bw-application",
     "bw-domain",
     "pydantic>=2.9",
 ]
@@ -16,4 +17,5 @@ build-backend = "hatchling.build"
 packages = ["src/ai_platform"]
 
 [tool.uv.sources]
+bw-application = { workspace = true }
 bw-domain = { workspace = true }

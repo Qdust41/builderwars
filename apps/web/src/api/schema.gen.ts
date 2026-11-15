@@ -427,6 +427,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/autofix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Autofix Settings */
+        get: operations["get_autofix_settings_projects__project_id__autofix_get"];
+        /**
+         * Save Autofix Settings
+         * @description Owner/admin. Keys are stored in Secrets Manager and never returned.
+         */
+        put: operations["save_autofix_settings_projects__project_id__autofix_put"];
+        post?: never;
+        /**
+         * Delete Autofix Settings
+         * @description Owner/admin. Unlinks the endpoint and repository and deletes the stored keys.
+         */
+        delete: operations["delete_autofix_settings_projects__project_id__autofix_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/autofix/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Autofix Runs
+         * @description The 50 most recent runs, newest first.
+         */
+        get: operations["list_autofix_runs_projects__project_id__autofix_runs_get"];
+        put?: never;
+        /**
+         * Request Autofix
+         * @description Members and up. Counts toward the daily cap; ignores the dedupe window.
+         */
+        post: operations["request_autofix_projects__project_id__autofix_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/autofix/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Autofix Run */
+        get: operations["get_autofix_run_projects__project_id__autofix_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/devices": {
         parameters: {
             query?: never;
@@ -603,6 +669,173 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AutoFixLevel
+         * @description The lowest log level that starts a run automatically.
+         * @enum {string}
+         */
+        AutoFixLevel: "error" | "critical";
+        /**
+         * AutoFixRunCreate
+         * @description Ask for a fix now. Without ``message``, the device's latest error log is used.
+         */
+        AutoFixRunCreate: {
+            /** Device Id */
+            device_id?: string | null;
+            /**
+             * Level
+             * @default error
+             * @enum {string}
+             */
+            level: "error" | "critical" | "warning";
+            /** Message */
+            message?: string | null;
+        };
+        /** AutoFixRunOut */
+        AutoFixRunOut: {
+            /** Branch */
+            branch: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Device Id */
+            device_id: string | null;
+            /** Error Level */
+            error_level: string;
+            /** Error Message */
+            error_message: string;
+            /** Files Changed */
+            files_changed: string[];
+            /** Github Repo */
+            github_repo: string | null;
+            /** Id */
+            id: string;
+            /** Model */
+            model: string | null;
+            /** Pr Number */
+            pr_number: number | null;
+            /** Pr Url */
+            pr_url: string | null;
+            /** Project Id */
+            project_id: string;
+            /** Requested By */
+            requested_by: string | null;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["AutoFixRunStatus"];
+            /** Summary */
+            summary: string | null;
+            trigger: components["schemas"]["AutoFixTriggerKind"];
+        };
+        /**
+         * AutoFixRunStatus
+         * @enum {string}
+         */
+        AutoFixRunStatus: "queued" | "running" | "pr_opened" | "no_fix" | "failed";
+        /**
+         * AutoFixSettingsIn
+         * @description Link an OpenAI-compatible endpoint and a GitHub repository to the project.
+         *
+         *     ``llm_api_key`` / ``github_token``: leave out to keep what is stored, ``""`` to clear,
+         *     or a value to replace. They are write-only: responses only say whether each is set.
+         */
+        AutoFixSettingsIn: {
+            /**
+             * Auto Trigger
+             * @description Start runs from uploaded error logs (false: manual only)
+             * @default true
+             */
+            auto_trigger: boolean;
+            /**
+             * Base Branch
+             * @description Defaults to the repository's default branch
+             */
+            base_branch?: string | null;
+            /**
+             * Dedupe Hours
+             * @default 24
+             */
+            dedupe_hours: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Github Repo
+             * @description owner/name
+             */
+            github_repo: string;
+            /** Github Token */
+            github_token?: string | null;
+            /**
+             * Instructions
+             * @description Notes for the model, e.g. where the board code lives
+             */
+            instructions?: string | null;
+            /** Llm Api Key */
+            llm_api_key?: string | null;
+            /**
+             * Llm Base Url
+             * @description Everything before /chat/completions, e.g. https://api.openai.com/v1
+             */
+            llm_base_url: string;
+            /** Llm Model */
+            llm_model: string;
+            /**
+             * Max Runs Per Day
+             * @default 5
+             */
+            max_runs_per_day: number;
+            /** @default error */
+            min_level: components["schemas"]["AutoFixLevel"];
+        };
+        /** AutoFixSettingsOut */
+        AutoFixSettingsOut: {
+            /** Auto Trigger */
+            auto_trigger: boolean;
+            /** Base Branch */
+            base_branch: string | null;
+            /** Dedupe Hours */
+            dedupe_hours: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Github Repo */
+            github_repo: string;
+            /** Has Github Token */
+            has_github_token: boolean;
+            /** Has Llm Api Key */
+            has_llm_api_key: boolean;
+            /** Instructions */
+            instructions: string | null;
+            /** Llm Base Url */
+            llm_base_url: string;
+            /** Llm Model */
+            llm_model: string;
+            /** Max Runs Per Day */
+            max_runs_per_day: number;
+            min_level: components["schemas"]["AutoFixLevel"];
+            /** Project Id */
+            project_id: string;
+            /** Ready */
+            ready: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string;
+        };
+        /**
+         * AutoFixTriggerKind
+         * @enum {string}
+         */
+        AutoFixTriggerKind: "error_log" | "manual";
         /**
          * BridgeReport
          * @description The FREE-WILi between the laptop and the target board.
@@ -2285,6 +2518,217 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_autofix_settings_projects__project_id__autofix_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoFixSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_autofix_settings_projects__project_id__autofix_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoFixSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoFixSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_autofix_settings_projects__project_id__autofix_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_autofix_runs_projects__project_id__autofix_runs_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoFixRunOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_autofix_projects__project_id__autofix_runs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoFixRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoFixRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_autofix_run_projects__project_id__autofix_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoFixRunOut"];
                 };
             };
             /** @description Validation Error */

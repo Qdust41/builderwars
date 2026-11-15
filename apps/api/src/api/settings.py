@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     commands_queue_url: str | None = None
     events_http_dns: str | None = None  # AppSync Events HTTP endpoint host
     aws_region: str | None = None  # Lambda sets AWS_REGION
+    # Auto-fix (ADR 0012): the run queue, and the Secrets Manager name prefix under which each
+    # project's LLM API key + GitHub token are stored. Without them (AWS) auto-fix is off.
+    autofix_queue_url: str | None = None
+    autofix_secret_prefix: str | None = None
 
     # AUTH_MODE=cognito. Ids, not secrets: the stack passes them as Lambda environment.
     cognito_region: str = "us-east-1"

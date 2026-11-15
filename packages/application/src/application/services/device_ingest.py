@@ -11,6 +11,8 @@ Pipeline for each message (at-least-once delivery, so this must be idempotent):
    records a ``sequence_gap`` event but never rejects the message.
 6. Store the raw message, write normalised records, apply command results, update the device.
 7. Notify viewers of the device (realtime, best effort) — only for registered devices.
+8. Hand new error/critical logs and error events to the auto-fix trigger (ADR 0012), which
+   decides on its own whether to start a run and never fails ingest.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 from application.ports import (
     DeviceCommandRepository,
@@ -51,6 +54,15 @@ from domain.devices import CommandStatus, ConnectionStatus
 log = logging.getLogger(__name__)
 
 
+class DeviceErrorObserver(Protocol):
+    """Told about each newly stored error (``AutoFixTrigger``). Must not raise."""
+
+    def on_device_error(self, *, device_id: str, level: str, message: str) -> object: ...
+
+
+_ERROR_LEVELS = frozenset({"error", "critical"})
+
+
 class IngestOutcome(StrEnum):
     PROCESSED = "processed"
     DUPLICATE = "duplicate"
@@ -78,6 +90,7 @@ class DeviceMessageIngestService:
         sequences: SequenceTracker,
         commands: DeviceCommandRepository | None = None,
         events: DeviceEventPublisher | None = None,
+        errors: DeviceErrorObserver | None = None,
     ) -> None:
         self._devices = devices
         self._processed = processed
@@ -86,6 +99,7 @@ class DeviceMessageIngestService:
         self._sequences = sequences
         self._commands = commands
         self._events = events
+        self._errors = errors
 
     def ingest(self, *, topic: str, body: bytes, received_at: datetime) -> IngestResult:
         result = self._ingest(topic=topic, body=body, received_at=received_at)
@@ -160,12 +174,25 @@ class DeviceMessageIngestService:
         self._record(envelope, decoded.payload)
         self._touch_device(envelope, decoded.payload)
         self._notify(envelope, decoded.payload)
+        self._watch_errors(envelope, decoded.payload)
         return IngestResult(
             IngestOutcome.PROCESSED,
             device_id=topic_device_id,
             message_id=str(envelope.message_id),
             sequence_gap=gap,
         )
+
+    def _watch_errors(self, envelope: DeviceEnvelope, payload: object) -> None:
+        if self._errors is None:
+            return
+        if isinstance(payload, LogPayload) and payload.level.value in _ERROR_LEVELS:
+            level, message = payload.level.value, payload.message
+        elif isinstance(payload, EventPayload) and payload.severity.value in _ERROR_LEVELS:
+            level = payload.severity.value
+            message = f"{payload.name}: {payload.detail}" if payload.detail else payload.name
+        else:
+            return
+        self._errors.on_device_error(device_id=envelope.device_id, level=level, message=message)
 
     def _record(self, envelope: DeviceEnvelope, payload: object) -> None:
         message_id = str(envelope.message_id)

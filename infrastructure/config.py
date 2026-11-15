@@ -35,6 +35,11 @@ class EnvConfig:
     def resource_name(self, suffix: str) -> str:
         return f"builderwars-{self.name}-{suffix}"
 
+    @property
+    def autofix_secret_prefix(self) -> str:
+        """Secrets Manager names of each project's auto-fix keys: ``<prefix><project_id>``."""
+        return f"builderwars/{self.name}/autofix/"
+
 
 # Decisions #11/#12: us-east-1 (via CDK_DEFAULT_REGION), free tier. RDS (db.t4g.micro) in prod
 # only; no staging. Raw-data retention 30 (dev) / 365 (prod) days (decision #6).

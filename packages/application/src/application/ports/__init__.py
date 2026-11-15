@@ -5,6 +5,13 @@ Concrete adapters live elsewhere: ``application.adapters.memory`` for local deve
 IoT Core and AppSync Events.
 """
 
+from application.ports.autofix import (
+    AutoFixQueue,
+    AutoFixRunRepository,
+    AutoFixSecrets,
+    AutoFixSecretStore,
+    AutoFixSettingsRepository,
+)
 from application.ports.messaging import (
     CommandQueue,
     DeviceCommandPublisher,
@@ -33,6 +40,11 @@ from application.ports.repositories import (
 )
 
 __all__ = [
+    "AutoFixQueue",
+    "AutoFixRunRepository",
+    "AutoFixSecretStore",
+    "AutoFixSecrets",
+    "AutoFixSettingsRepository",
     "CommandQueue",
     "DeviceCommandPublisher",
     "DeviceCommandRepository",

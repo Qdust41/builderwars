@@ -5,7 +5,7 @@ With a database (prod) they use PostgreSQL through the RDS secret; without one (
 to start, because in-memory repositories are not allowed outside local/test.
 
 Database connections: every SQS event source is capped at ``MAX_CONCURRENCY`` concurrent
-invocations, and each container holds one connection, so the workers use at most ~6 of the
+invocations, and each container holds one connection, so the workers use at most ~8 of the
 db.t4g.micro's connections.
 
 TODO: Fargate task definitions for long-running job types with isolated, least-privilege roles.
@@ -27,7 +27,8 @@ from aws_cdk import aws_sqs as sqs
 from config import EnvConfig
 from constructs import Construct
 
-from stacks.messaging import CONSUMER_TIMEOUT
+from stacks.api import autofix_secret_arns
+from stacks.messaging import AUTOFIX_TIMEOUT, CONSUMER_TIMEOUT
 from stacks.packaging import python_app_code
 
 MAX_CONCURRENCY = 2  # the SQS event source minimum
@@ -43,6 +44,7 @@ class WorkersStack(Stack):
         ingest_queue: sqs.IQueue,
         jobs_queue: sqs.IQueue,
         commands_queue: sqs.IQueue,
+        autofix_queue: sqs.IQueue,
         device_data_bucket: s3.IBucket,
         artifacts_bucket: s3.IBucket,
         iot_data_endpoint: str,
@@ -60,6 +62,9 @@ class WorkersStack(Stack):
         self._publish_device_events(ingest_fn, events_api)
         device_data_bucket.grant_put(ingest_fn, "raw/*")
         device_data_bucket.grant_put(ingest_fn, "rejected/*")
+        # Error logs arriving over MQTT may start auto-fix runs (ADR 0012).
+        ingest_fn.add_environment("AUTOFIX_QUEUE_URL", autofix_queue.queue_url)
+        autofix_queue.grant_send_messages(ingest_fn)
         ingest_fn.add_event_source(
             sources.SqsEventSource(
                 ingest_queue,
@@ -98,6 +103,27 @@ class WorkersStack(Stack):
         jobs_fn.add_event_source(
             sources.SqsEventSource(
                 jobs_queue,
+                batch_size=1,
+                report_batch_item_failures=True,
+                max_concurrency=MAX_CONCURRENCY,
+            )
+        )
+
+        # Auto-fix: logs + repository -> LLM -> pull request. Reads each project's keys (only
+        # under this environment's prefix); calls the project's LLM endpoint and GitHub.
+        autofix_fn = self._function(
+            "AutoFix", "workers.main.autofix_lambda_handler", timeout=AUTOFIX_TIMEOUT
+        )
+        autofix_fn.add_environment("AUTOFIX_SECRET_PREFIX", config.autofix_secret_prefix)
+        autofix_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[autofix_secret_arns(config)],
+            )
+        )
+        autofix_fn.add_event_source(
+            sources.SqsEventSource(
+                autofix_queue,
                 batch_size=1,
                 report_batch_item_failures=True,
                 max_concurrency=MAX_CONCURRENCY,

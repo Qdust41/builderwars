@@ -13,6 +13,7 @@ import pytest
 from botocore.stub import ANY, Stubber
 
 from application.adapters import memory
+from domain.autofix import AutoFixRun, AutoFixRunStatus, AutoFixTriggerKind
 from domain.devices import CommandStatus, DeviceCommand
 from domain.jobs import Job, JobStatus, JobType
 from workers import main
@@ -150,12 +151,44 @@ def test_job_lambda_fails_jobs_without_an_executor(clients: Clients) -> None:
     assert stored.status is JobStatus.FAILED
 
 
+def test_autofix_lambda_closes_runs_for_projects_without_settings(
+    clients: Clients, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTOFIX_SECRET_PREFIX", "builderwars/test/autofix/")
+    runs = main.lambda_runtime("autofix")[1].autofix_runs
+    run = AutoFixRun(
+        project_id="p",
+        trigger=AutoFixTriggerKind.MANUAL,
+        signature="s",
+        error_level="error",
+        error_message="boom",
+    )
+    runs.add(run)
+    event = _sqs_event({"run_id": run.id}, {"nope": 1})
+    assert main.autofix_lambda_handler(event, None) == {"batchItemFailures": []}
+    stored = runs.get(run.id)
+    assert stored is not None
+    assert stored.status is AutoFixRunStatus.FAILED
+    assert stored.summary == "auto-fix was turned off for this project"
+
+
+def test_ingest_lambda_starts_autofix_runs_when_the_queue_is_set(
+    clients: Clients, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTOFIX_QUEUE_URL", "https://sqs.example/autofix")
+    handler, repos = main.lambda_runtime("ingest")
+    assert handler._ingest._errors is not None
+    assert repos.autofix_settings is not None
+
+
 def test_workers_refuse_to_start_without_their_aws_settings(
     clients: Clients, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("IOT_DATA_ENDPOINT")
     with pytest.raises(UnsafeConfigurationError, match="IOT_DATA_ENDPOINT"):
         main.command_dispatch_lambda_handler(_sqs_event({"command_id": "c"}), None)
+    with pytest.raises(UnsafeConfigurationError, match="AUTOFIX_SECRET_PREFIX"):
+        main.autofix_lambda_handler(_sqs_event({"run_id": "r"}), None)
 
 
 def test_workers_refuse_memory_repositories_in_prod(

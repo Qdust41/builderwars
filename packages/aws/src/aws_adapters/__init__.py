@@ -6,6 +6,7 @@ of AWS imports; only the deployable apps (``api``, ``workers``) depend on this p
 """
 
 from aws_adapters.appsync import AppSyncEventsPublisher
+from aws_adapters.autofix import SecretsManagerAutoFixSecretStore, SqsAutoFixQueue
 from aws_adapters.iot import IotDataCommandPublisher
 from aws_adapters.s3 import S3RawMessageStore
 from aws_adapters.secrets import database_url_from_secret
@@ -15,6 +16,8 @@ __all__ = [
     "AppSyncEventsPublisher",
     "IotDataCommandPublisher",
     "S3RawMessageStore",
+    "SecretsManagerAutoFixSecretStore",
+    "SqsAutoFixQueue",
     "SqsCommandQueue",
     "SqsJobQueue",
     "database_url_from_secret",

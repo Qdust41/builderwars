@@ -16,6 +16,8 @@ from constructs import Construct
 
 MAX_RECEIVES = 5
 CONSUMER_TIMEOUT = Duration.seconds(30)
+# Auto-fix runs make two LLM calls plus a handful of GitHub calls (ADR 0012).
+AUTOFIX_TIMEOUT = Duration.minutes(10)
 
 
 class MessagingStack(Stack):
@@ -26,8 +28,14 @@ class MessagingStack(Stack):
         # Device commands (decision #5). Standard queue: per-device FIFO order is enforced by
         # the command records, and expiry is 30 s, so FIFO-queue cost/complexity isn't needed.
         self.commands_queue, self.commands_dlq = self._queue_with_dlq("DeviceCommands", config)
+        # Auto-fix runs (one message per run, carrying only the run id).
+        self.autofix_queue, self.autofix_dlq = self._queue_with_dlq(
+            "AutoFix", config, consumer_timeout=AUTOFIX_TIMEOUT
+        )
 
-    def _queue_with_dlq(self, name: str, config: EnvConfig) -> tuple[sqs.Queue, sqs.Queue]:
+    def _queue_with_dlq(
+        self, name: str, config: EnvConfig, *, consumer_timeout: Duration = CONSUMER_TIMEOUT
+    ) -> tuple[sqs.Queue, sqs.Queue]:
         dlq = sqs.Queue(
             self,
             f"{name}Dlq",
@@ -42,7 +50,7 @@ class MessagingStack(Stack):
             encryption=sqs.QueueEncryption.SQS_MANAGED,
             enforce_ssl=True,
             # AWS guidance: >= 6x the consumer Lambda timeout.
-            visibility_timeout=Duration.seconds(CONSUMER_TIMEOUT.to_seconds() * 6),
+            visibility_timeout=Duration.seconds(consumer_timeout.to_seconds() * 6),
             retention_period=Duration.days(4),
             dead_letter_queue=sqs.DeadLetterQueue(queue=dlq, max_receive_count=MAX_RECEIVES),
             removal_policy=config.removal_policy,

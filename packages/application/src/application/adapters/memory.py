@@ -10,12 +10,19 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import cast
 
-from application.ports import DeviceLogEntry, DeviceLogRecord, LogPosition, TelemetrySample
+from application.ports import (
+    AutoFixSecrets,
+    DeviceLogEntry,
+    DeviceLogRecord,
+    LogPosition,
+    TelemetrySample,
+)
 from application.realtime import RealtimeEvent
 from device_protocol import DeviceEnvelope
+from domain.autofix import AutoFixRun, AutoFixSettings
 from domain.common import ConflictError
 from domain.devices import Device, DeviceCommand, DeviceSetup, Sensor, TargetBoard
 from domain.jobs import Job
@@ -437,3 +444,77 @@ class RecordingCommandPublisher:
 
     def publish_command(self, envelope: DeviceEnvelope) -> None:
         self.commands.append(envelope)
+
+
+class InMemoryAutoFixSettingsRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, AutoFixSettings] = {}
+
+    def get(self, project_id: str) -> AutoFixSettings | None:
+        return self._items.get(project_id)
+
+    def save(self, settings: AutoFixSettings) -> None:
+        self._items[settings.project_id] = settings
+
+    def delete(self, project_id: str) -> None:
+        self._items.pop(project_id, None)
+
+
+class InMemoryAutoFixRunRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, AutoFixRun] = {}
+        self._signatures: dict[tuple[str, str], datetime] = {}
+        self._lock = threading.Lock()
+
+    def add(self, run: AutoFixRun) -> None:
+        self._items[run.id] = run
+
+    def save(self, run: AutoFixRun) -> None:
+        self._items[run.id] = run
+
+    def get(self, run_id: str) -> AutoFixRun | None:
+        return self._items.get(run_id)
+
+    def list_for_project(self, project_id: str, *, limit: int) -> list[AutoFixRun]:
+        runs = [r for r in self._items.values() if r.project_id == project_id]
+        runs.sort(key=lambda r: (r.created_at, r.id), reverse=True)
+        return runs[:limit]
+
+    def count_since(self, project_id: str, since: datetime) -> int:
+        return sum(
+            1 for r in self._items.values() if r.project_id == project_id and r.created_at >= since
+        )
+
+    def claim_signature(
+        self, project_id: str, signature: str, *, now: datetime, window: timedelta
+    ) -> bool:
+        with self._lock:
+            last = self._signatures.get((project_id, signature))
+            if last is not None and last > now - window:
+                return False
+            self._signatures[(project_id, signature)] = now
+            return True
+
+
+class InMemoryAutoFixSecretStore:
+    """LOCAL/TEST ONLY: keys held in process memory."""
+
+    def __init__(self) -> None:
+        self._items: dict[str, AutoFixSecrets] = {}
+
+    def get(self, project_id: str) -> AutoFixSecrets:
+        return self._items.get(project_id, AutoFixSecrets())
+
+    def put(self, project_id: str, secrets: AutoFixSecrets) -> None:
+        self._items[project_id] = secrets
+
+    def delete(self, project_id: str) -> None:
+        self._items.pop(project_id, None)
+
+
+@dataclass
+class InMemoryAutoFixQueue:
+    run_ids: list[str] = field(default_factory=list)
+
+    def enqueue_autofix(self, run_id: str) -> None:
+        self.run_ids.append(run_id)

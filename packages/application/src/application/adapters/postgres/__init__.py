@@ -23,6 +23,8 @@ from application.adapters.postgres.migrate import (
     migrate,
 )
 from application.adapters.postgres.repositories import (
+    PostgresAutoFixRunRepository,
+    PostgresAutoFixSettingsRepository,
     PostgresDeviceCommandRepository,
     PostgresDeviceRepository,
     PostgresDeviceSetupRepository,
@@ -83,6 +85,8 @@ class PostgresRepositories:
     setups: PostgresDeviceSetupRepository
     boards: PostgresTargetBoardRepository
     sensors: PostgresSensorRepository
+    autofix_settings: PostgresAutoFixSettingsRepository
+    autofix_runs: PostgresAutoFixRunRepository
 
     @classmethod
     def from_pool(cls, pool: ConnectionPool) -> PostgresRepositories:
@@ -101,6 +105,8 @@ class PostgresRepositories:
             setups=PostgresDeviceSetupRepository(pool),
             boards=PostgresTargetBoardRepository(pool),
             sensors=PostgresSensorRepository(pool),
+            autofix_settings=PostgresAutoFixSettingsRepository(pool),
+            autofix_runs=PostgresAutoFixRunRepository(pool),
         )
 
     def close(self) -> None:
@@ -108,6 +114,8 @@ class PostgresRepositories:
 
 
 __all__ = [
+    "PostgresAutoFixRunRepository",
+    "PostgresAutoFixSettingsRepository",
     "PostgresDeviceCommandRepository",
     "PostgresDeviceRepository",
     "PostgresDeviceSetupRepository",

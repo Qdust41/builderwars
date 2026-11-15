@@ -1,4 +1,7 @@
 import type {
+  AutoFixRun,
+  AutoFixSettings,
+  AutoFixSettingsInput,
   CommandArg,
   Device,
   DeviceChannel,
@@ -158,6 +161,29 @@ export class ApiClient {
     );
   /** Common parts (TMP102, INA219, ...) with datasheet settings. */
   listSensorPresets = () => this.request<SensorPreset[]>("GET", "/sensor-presets");
+  /** 404 (ApiError) until an owner/admin links an LLM endpoint and a GitHub repo. */
+  getAutoFix = (projectId: string) =>
+    this.request<AutoFixSettings>("GET", `/projects/${encodeURIComponent(projectId)}/autofix`);
+  /** Omit a key to keep it, send "" to clear it. Keys are never returned. */
+  saveAutoFix = (projectId: string, settings: AutoFixSettingsInput) =>
+    this.request<AutoFixSettings>(
+      "PUT",
+      `/projects/${encodeURIComponent(projectId)}/autofix`,
+      settings,
+    );
+  deleteAutoFix = (projectId: string) =>
+    this.request<void>("DELETE", `/projects/${encodeURIComponent(projectId)}/autofix`);
+  listAutoFixRuns = (projectId: string) =>
+    this.request<AutoFixRun[]>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/autofix/runs`,
+    );
+  /** Without `message`, the device's latest error log is used. */
+  requestAutoFix = (projectId: string, deviceId: string, message?: string) =>
+    this.request<AutoFixRun>("POST", `/projects/${encodeURIComponent(projectId)}/autofix/runs`, {
+      device_id: deviceId,
+      message: message ?? null,
+    });
   createJob = (projectId: string, jobType: JobType) =>
     this.request<Job>("POST", `/projects/${encodeURIComponent(projectId)}/jobs`, {
       job_type: jobType,
