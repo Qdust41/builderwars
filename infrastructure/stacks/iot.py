@@ -18,6 +18,7 @@ from aws_cdk import Aws, CfnOutput, Stack
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_iot as iot
 from aws_cdk import aws_sqs as sqs
+from aws_cdk import custom_resources as cr
 from config import EnvConfig
 from constructs import Construct
 
@@ -111,3 +112,24 @@ class IotStack(Stack):
         )
         # TODO: lifecycle events ($aws/events/presence/+/+) -> ingest, for online/offline status.
         CfnOutput(self, "DevicePolicyName", value=policy.ref)
+
+        # The account's ATS data endpoint (for the command dispatcher's iot-data client) is only
+        # known inside the account, so it is looked up at deploy time, never hard-coded.
+        describe = cr.AwsSdkCall(
+            service="Iot",
+            action="describeEndpoint",
+            parameters={"endpointType": "iot:Data-ATS"},
+            physical_resource_id=cr.PhysicalResourceId.of("iot-data-ats-endpoint"),
+        )
+        endpoint = cr.AwsCustomResource(
+            self,
+            "DataEndpoint",
+            on_create=describe,
+            on_update=describe,
+            policy=cr.AwsCustomResourcePolicy.from_statements(
+                [iam.PolicyStatement(actions=["iot:DescribeEndpoint"], resources=["*"])]
+            ),
+            install_latest_aws_sdk=False,
+        )
+        self.data_endpoint: str = endpoint.get_response_field("endpointAddress")
+        CfnOutput(self, "DataEndpointAddress", value=self.data_endpoint)

@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
+import boto3
 from fastapi import Depends, Header, HTTPException, Request, status
 from psycopg_pool import ConnectionPool
+from pydantic import SecretStr
 
 from api.auth import CognitoTokenVerifier, InvalidTokenError, JwksUrlKeySource
 from api.settings import (
@@ -20,7 +23,7 @@ from api.settings import (
     validate_settings,
 )
 from application.adapters import memory, postgres
-from application.ports import UserDirectory
+from application.ports import CommandQueue, JobQueue, RealtimePublisher, UserDirectory
 from application.ports.repositories import (
     DeviceCommandRepository,
     DeviceRepository,
@@ -37,7 +40,15 @@ from application.services import (
     ProjectService,
     SessionService,
 )
+from aws_adapters import (
+    AppSyncEventsPublisher,
+    SqsCommandQueue,
+    SqsJobQueue,
+    database_url_from_secret,
+)
 from domain.users import User
+
+ClientFactory = Callable[..., Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,19 +121,69 @@ def _postgres_repositories(settings: Settings) -> tuple[_Repositories, Connectio
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _Messaging:
+    job_queue: JobQueue
+    command_queue: CommandQueue
+    realtime: RealtimePublisher
+
+
+def _local_messaging() -> _Messaging:
+    """LOCAL/TEST ONLY: queues and realtime events stay in process."""
+    return _Messaging(
+        job_queue=memory.InMemoryJobQueue(),
+        command_queue=memory.InMemoryCommandQueue(),
+        realtime=memory.RecordingRealtimePublisher(),
+    )
+
+
+def _aws_messaging(settings: Settings, client_factory: ClientFactory) -> _Messaging:
+    # validate_settings guarantees these outside local/test.
+    assert settings.jobs_queue_url
+    assert settings.commands_queue_url
+    assert settings.events_http_dns
+    assert settings.aws_region
+    sqs = client_factory("sqs")
+    return _Messaging(
+        job_queue=SqsJobQueue(sqs, settings.jobs_queue_url),
+        command_queue=SqsCommandQueue(sqs, settings.commands_queue_url),
+        realtime=AppSyncEventsPublisher(
+            http_dns=settings.events_http_dns,
+            region=settings.aws_region,
+            credentials=boto3.Session().get_credentials,
+        ),
+    )
+
+
+def resolve_database_url(settings: Settings, client_factory: ClientFactory) -> Settings:
+    """Fill DATABASE_URL from DATABASE_SECRET_ARN (the RDS secret) when only the ARN is set."""
+    if settings.database_url is None and settings.database_secret_arn:
+        url = database_url_from_secret(
+            client_factory("secretsmanager"), settings.database_secret_arn
+        )
+        settings = settings.model_copy(update={"database_url": SecretStr(url)})
+    return settings
+
+
 def build_container(
     settings: Settings,
     *,
     token_verifier: CognitoTokenVerifier | None = None,
     users: UserDirectory | None = None,
+    client_factory: ClientFactory = boto3.client,
+    messaging: _Messaging | None = None,
 ) -> Container:
-    """``token_verifier`` and ``users`` override the Cognito adapters (tests, local JWKS)."""
-    validate_settings(settings)
-    if settings.app_env not in LOCAL_ONLY_ENVS:
-        # TODO(workstream C): SQS job/command queues and the AppSync realtime publisher. Until
-        # they exist a deployed API would accept jobs and commands that nothing ever runs.
-        raise NotImplementedError(
-            "queue and realtime adapters for deployed environments are not implemented yet"
+    """Choose adapters. In-memory everything locally; SQS + AppSync Events elsewhere.
+
+    ``token_verifier``, ``users`` and ``messaging`` override the Cognito, queue and realtime
+    adapters (tests, local JWKS).
+    """
+    settings = validate_settings(resolve_database_url(settings, client_factory))
+    if messaging is None:
+        messaging = (
+            _local_messaging()
+            if settings.app_env in LOCAL_ONLY_ENVS
+            else _aws_messaging(settings, client_factory)
         )
 
     pool: ConnectionPool | None = None
@@ -153,13 +214,9 @@ def build_container(
         authorizer=authorizer,
         projects=ProjectService(repos.projects, repos.memberships, authorizer, users),
         devices=DeviceService(repos.devices, authorizer),
-        sessions=SessionService(
-            repos.sessions, repos.devices, authorizer, memory.RecordingRealtimePublisher()
-        ),
-        jobs=JobService(repos.jobs, repos.devices, memory.InMemoryJobQueue(), authorizer),
-        commands=CommandService(
-            repos.commands, repos.devices, memory.InMemoryCommandQueue(), authorizer
-        ),
+        sessions=SessionService(repos.sessions, repos.devices, authorizer, messaging.realtime),
+        jobs=JobService(repos.jobs, repos.devices, messaging.job_queue, authorizer),
+        commands=CommandService(repos.commands, repos.devices, messaging.command_queue, authorizer),
         pool=pool,
     )
 
