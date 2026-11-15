@@ -1,13 +1,16 @@
 """Auto-fix credentials in Secrets Manager and the auto-fix run queue (ADR 0012).
 
 One secret per project, named ``{prefix}{project_id}`` (prefix ``builderwars/<env>/autofix/``),
-holding ``{"llm_api_key": ..., "github_token": ...}``. Only the API writes it and only the
-auto-fix worker reads it (infrastructure/stacks); the API never returns the values.
+holding ``{"llm_api_key": ..., "github_token": ...}``; both optional, since the GitHub token
+usually comes from the one app-wide secret (``shared_autofix_secrets``). Only the API writes
+project secrets and only the auto-fix worker reads them (infrastructure/stacks); the API never
+returns the values.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -66,6 +69,22 @@ class SecretsManagerAutoFixSecretStore:
         except ClientError as exc:
             if _code(exc) != "ResourceNotFoundException":
                 raise
+
+
+def shared_autofix_secrets(client: Any, secret_id: str) -> Callable[[], AutoFixSecrets]:
+    """The app-wide credentials: one secret, ``{"github_token": ...}``, created by the Workers
+    stack and filled at deploy time from the ``AUTOFIX_GITHUB_TOKEN`` GitHub Actions secret.
+    Read on every run, so a rotated token is picked up without a redeploy of the code."""
+
+    def load() -> AutoFixSecrets:
+        response = client.get_secret_value(SecretId=secret_id)
+        data = json.loads(response.get("SecretString") or "{}")
+        return AutoFixSecrets(
+            llm_api_key=data.get("llm_api_key") or None,
+            github_token=data.get("github_token") or None,
+        )
+
+    return load
 
 
 class SqsAutoFixQueue:

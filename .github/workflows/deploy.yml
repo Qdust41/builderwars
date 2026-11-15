@@ -94,11 +94,21 @@ jobs:
       - name: Diff (for the run log)
         run: npx --yes "aws-cdk@${CDK_VERSION}" diff -c env=prod --all
 
+      # AUTOFIX_GITHUB_TOKEN (repository secret, optional): the one GitHub token auto-fix uses
+      # for every project. Passed as a NoEcho stack parameter, so it lands in Secrets Manager
+      # without appearing in the template, the console or this log. Unset keeps the stored token.
       - name: Deploy
-        run: >-
-          npx --yes "aws-cdk@${CDK_VERSION}" deploy -c env=prod --all
-          --require-approval never
-          --outputs-file "${RUNNER_TEMP}/prod-outputs.json"
+        env:
+          AUTOFIX_GITHUB_TOKEN: ${{ secrets.AUTOFIX_GITHUB_TOKEN }}
+        run: |
+          params=()
+          if [ -n "$AUTOFIX_GITHUB_TOKEN" ]; then
+            params+=(--parameters "Builderwars-prod-Workers:AutoFixGithubToken=${AUTOFIX_GITHUB_TOKEN}")
+          fi
+          npx --yes "aws-cdk@${CDK_VERSION}" deploy -c env=prod --all \
+            --require-approval never \
+            --outputs-file "${RUNNER_TEMP}/prod-outputs.json" \
+            "${params[@]}"
 
       # The API and workers refuse to start until the schema is current. Harmless when nothing
       # is pending ({"applied": []}).

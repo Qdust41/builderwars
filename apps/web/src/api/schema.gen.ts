@@ -770,7 +770,10 @@ export interface components {
              * @description owner/name
              */
             github_repo: string;
-            /** Github Token */
+            /**
+             * Github Token
+             * @description Only to override the app-wide token for this project
+             */
             github_token?: string | null;
             /**
              * Instructions
@@ -806,7 +809,10 @@ export interface components {
             enabled: boolean;
             /** Github Repo */
             github_repo: string;
-            /** Has Github Token */
+            /**
+             * Has Github Token
+             * @description This project has its own GitHub token
+             */
             has_github_token: boolean;
             /** Has Llm Api Key */
             has_llm_api_key: boolean;
@@ -821,8 +827,6 @@ export interface components {
             min_level: components["schemas"]["AutoFixLevel"];
             /** Project Id */
             project_id: string;
-            /** Ready */
-            ready: boolean;
             /**
              * Updated At
              * Format: date-time
@@ -830,6 +834,11 @@ export interface components {
             updated_at: string;
             /** Updated By */
             updated_by: string;
+            /**
+             * Uses Shared Github Token
+             * @description Runs use the app-wide token (AUTOFIX_GITHUB_TOKEN, set at deploy time)
+             */
+            uses_shared_github_token: boolean;
         };
         /**
          * AutoFixTriggerKind

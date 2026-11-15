@@ -195,10 +195,8 @@ class AutoFixService:
             if device is None or device.project_id != project_id:
                 raise NotFoundError("device", device_id)
         settings = self._settings.get(project_id)
-        if settings is None or not settings.ready:
-            raise AutoFixNotReadyError(
-                "auto-fix is not set up for this project (needs a GitHub token and enabled=true)"
-            )
+        if settings is None or not settings.enabled:
+            raise AutoFixNotReadyError("auto-fix is not set up or not enabled for this project")
         if not message:
             if device_id is None:
                 raise AutoFixValidationError("give a message or a device_id to take it from")
@@ -290,7 +288,7 @@ class AutoFixTrigger:
         settings = self._settings.get(device.project_id)
         if (
             settings is None
-            or not settings.ready
+            or not settings.enabled
             or not settings.auto_trigger
             or not settings.min_level.matches(level)
         ):

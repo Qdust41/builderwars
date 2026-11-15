@@ -286,6 +286,7 @@
                 "type": "null"
               }
             ],
+            "description": "Only to override the app-wide token for this project",
             "title": "Github Token"
           },
           "instructions": {
@@ -376,6 +377,7 @@
             "type": "string"
           },
           "has_github_token": {
+            "description": "This project has its own GitHub token",
             "title": "Has Github Token",
             "type": "boolean"
           },
@@ -413,10 +415,6 @@
             "title": "Project Id",
             "type": "string"
           },
-          "ready": {
-            "title": "Ready",
-            "type": "boolean"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -425,6 +423,11 @@
           "updated_by": {
             "title": "Updated By",
             "type": "string"
+          },
+          "uses_shared_github_token": {
+            "description": "Runs use the app-wide token (AUTOFIX_GITHUB_TOKEN, set at deploy time)",
+            "title": "Uses Shared Github Token",
+            "type": "boolean"
           }
         },
         "required": [
@@ -441,7 +444,7 @@
           "instructions",
           "has_llm_api_key",
           "has_github_token",
-          "ready",
+          "uses_shared_github_token",
           "updated_by",
           "updated_at"
         ],

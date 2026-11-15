@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from ai_platform.autofix import AutoFixWorker, default_clients
 from application.ports import (
     AutoFixRunRepository,
+    AutoFixSecrets,
     AutoFixSecretStore,
     AutoFixSettingsRepository,
     TelemetryRepository,
@@ -33,7 +34,9 @@ class ThreadedAutoFixQueue:
         settings: AutoFixSettingsRepository,
         secrets: AutoFixSecretStore,
         telemetry: TelemetryRepository,
+        shared_github_token: str | None = None,
     ) -> ThreadedAutoFixQueue:
+        shared = AutoFixSecrets(github_token=shared_github_token)
         return cls(
             AutoFixWorker(
                 runs=runs,
@@ -41,6 +44,7 @@ class ThreadedAutoFixQueue:
                 secrets=secrets,
                 telemetry=telemetry,
                 clients=default_clients(allow_private_endpoints=True),
+                shared=lambda: shared,
             )
         )
 

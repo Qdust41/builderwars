@@ -15,7 +15,10 @@ def default_clients(*, allow_private_endpoints: bool = False) -> ClientFactory:
 
     def build(settings: AutoFixSettings, secrets: AutoFixSecrets) -> tuple[ChatModel, CodeHost]:
         if not secrets.github_token:
-            raise HttpError("no GitHub token is stored for this project")
+            raise HttpError(
+                "no GitHub token: set the AUTOFIX_GITHUB_TOKEN repository secret and redeploy, "
+                "or give this project its own token"
+            )
         if not allow_private_endpoints:
             ensure_public_endpoint(settings.llm_base_url)
         chat = ChatCompletionsClient(

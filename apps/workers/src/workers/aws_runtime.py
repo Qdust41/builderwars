@@ -35,6 +35,7 @@ from aws_adapters import (
     SecretsManagerAutoFixSecretStore,
     SqsAutoFixQueue,
     database_url_from_secret,
+    shared_autofix_secrets,
 )
 from domain.jobs import JobType
 from workers.handlers import BackgroundJobHandler, CommandDispatchHandler, DeviceMessageHandler
@@ -165,10 +166,16 @@ def build_autofix_worker(
     settings: WorkerSettings, repos: WorkerRepositories, client_factory: ClientFactory
 ) -> AutoFixWorker:
     prefix = _require(settings.autofix_secret_prefix, "AUTOFIX_SECRET_PREFIX")
+    secretsmanager = client_factory("secretsmanager")
     return AutoFixWorker(
         runs=repos.autofix_runs,
         settings=repos.autofix_settings,
-        secrets=SecretsManagerAutoFixSecretStore(client_factory("secretsmanager"), prefix),
+        secrets=SecretsManagerAutoFixSecretStore(secretsmanager, prefix),
+        shared=(
+            shared_autofix_secrets(secretsmanager, settings.autofix_shared_secret_arn)
+            if settings.autofix_shared_secret_arn
+            else None
+        ),
         telemetry=repos.telemetry,
         # Deployed workers only call public endpoints (no localhost / VPC / link-local).
         clients=default_clients(allow_private_endpoints=settings.app_env in {"local", "test"}),

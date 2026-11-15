@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aws_cdk import Aws, Duration, Stack
+from aws_cdk import Aws, CfnParameter, Duration, SecretValue, Stack
 from aws_cdk import aws_appsync as appsync
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
@@ -115,6 +115,27 @@ class WorkersStack(Stack):
             "AutoFix", "workers.main.autofix_lambda_handler", timeout=AUTOFIX_TIMEOUT
         )
         autofix_fn.add_environment("AUTOFIX_SECRET_PREFIX", config.autofix_secret_prefix)
+        # One GitHub token for every project. The deploy workflow passes the
+        # AUTOFIX_GITHUB_TOKEN repository secret as this NoEcho parameter (never in the template
+        # or the console); a deploy without it keeps the previous value.
+        github_token = CfnParameter(
+            self,
+            "AutoFixGithubToken",
+            type="String",
+            no_echo=True,
+            default="",
+            description="GitHub token auto-fix uses for every project without its own",
+        )
+        shared = secretsmanager.Secret(
+            self,
+            "AutoFixSharedSecret",
+            secret_name=config.autofix_shared_secret_name,
+            description="builderwars auto-fix: the GitHub token shared by every project",
+            secret_object_value={"github_token": SecretValue.cfn_parameter(github_token)},
+            removal_policy=config.removal_policy,
+        )
+        shared.grant_read(autofix_fn)
+        autofix_fn.add_environment("AUTOFIX_SHARED_SECRET_ARN", shared.secret_arn)
         autofix_fn.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["secretsmanager:GetSecretValue"],

@@ -77,7 +77,14 @@ def test_settings_are_admin_only_and_never_return_keys(client: TestClient) -> No
     body = response.json()
     assert body["has_llm_api_key"] is True
     assert body["has_github_token"] is True
-    assert body["ready"] is True
+    assert body["uses_shared_github_token"] is False
+
+    # Without a project token, runs use the app-wide one.
+    shared = client.put(
+        f"/projects/{pid}/autofix", json=SETTINGS | {"github_token": ""}, headers=_as("alice")
+    ).json()
+    assert shared["has_github_token"] is False
+    assert shared["uses_shared_github_token"] is True
     assert "secret" not in response.text
 
     bad = client.put(

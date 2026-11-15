@@ -19,6 +19,7 @@ from ai_platform.autofix import (
     GitHubRepository,
     PullRequest,
     RepoFile,
+    default_clients,
     parse_json_answer,
 )
 from ai_platform.http import HttpError, HttpResponse, ensure_public_endpoint
@@ -35,7 +36,11 @@ from application.services import (
     AutoFixValidationError,
     DeviceMessageIngestService,
 )
-from aws_adapters import SecretsManagerAutoFixSecretStore, SqsAutoFixQueue
+from aws_adapters import (
+    SecretsManagerAutoFixSecretStore,
+    SqsAutoFixQueue,
+    shared_autofix_secrets,
+)
 from device_protocol import DeviceEnvelope, MessageType, encode_message, topic_for_message
 from domain.autofix import (
     AutoFixLevel,
@@ -262,7 +267,7 @@ def test_owner_saves_settings_and_keys_stay_in_the_secret_store(world: World) ->
         data=_input(llm_api_key="sk-1", github_token="ghp_1"),
     )
     assert saved.llm_base_url == "https://api.openai.com/v1"
-    assert (saved.has_llm_api_key, saved.has_github_token, saved.ready) == (True, True, True)
+    assert (saved.has_llm_api_key, saved.has_github_token) == (True, True)
     assert world.secrets.get("prj_1") == AutoFixSecrets("sk-1", "ghp_1")
 
     # Omitted keys are kept; "" clears one.
@@ -503,6 +508,46 @@ def test_worker_retries_bad_json_once_then_fails(world: World) -> None:
     assert "no JSON" in (done.summary or "")
 
 
+def test_worker_uses_the_shared_github_token_unless_the_project_has_one(world: World) -> None:
+    world.configure()
+    world.secrets.put("prj_1", AutoFixSecrets(llm_api_key="sk-project"))  # no own token
+    seen: list[AutoFixSecrets] = []
+
+    def worker(shared: AutoFixSecrets | None) -> AutoFixWorker:
+        def clients(settings: AutoFixSettings, secrets: AutoFixSecrets) -> Any:
+            seen.append(secrets)
+            raise HttpError("stop here")
+
+        return AutoFixWorker(
+            runs=world.runs,
+            settings=world.settings,
+            secrets=world.secrets,
+            telemetry=world.telemetry,
+            clients=clients,
+            shared=(lambda: shared) if shared else None,
+        )
+
+    worker(AutoFixSecrets(github_token="ghp_shared")).handle(_queued(world).id)
+    assert seen[-1] == AutoFixSecrets(llm_api_key="sk-project", github_token="ghp_shared")
+
+    world.secrets.put("prj_1", AutoFixSecrets(llm_api_key="sk-project", github_token="ghp_own"))
+    worker(AutoFixSecrets(github_token="ghp_shared")).handle(_queued(world).id)
+    assert seen[-1].github_token == "ghp_own"
+
+    # Neither: the run fails with how to fix it.
+    world.secrets.put("prj_1", AutoFixSecrets())
+    done = AutoFixWorker(
+        runs=world.runs,
+        settings=world.settings,
+        secrets=world.secrets,
+        telemetry=world.telemetry,
+        clients=default_clients(),
+    ).handle(_queued(world).id)
+    assert done is not None
+    assert done.status is AutoFixRunStatus.FAILED
+    assert "AUTOFIX_GITHUB_TOKEN" in (done.summary or "")
+
+
 def test_worker_fails_cleanly(world: World) -> None:
     run = _queued(world)
     done = _worker(world, FakeChat(), FakeRepo({})).handle(run.id)
@@ -692,4 +737,23 @@ def test_sqs_autofix_queue_sends_only_the_run_id() -> None:
             {"QueueUrl": "https://q", "MessageBody": json.dumps({"run_id": "fix_1"})},
         )
         SqsAutoFixQueue(sqs, "https://q").enqueue_autofix("fix_1")
+        stub.assert_no_pending_responses()
+
+
+def test_shared_secret_is_read_on_every_run() -> None:
+    sm = _sm()
+    load = shared_autofix_secrets(sm, "arn:shared")
+    with Stubber(sm) as stub:
+        stub.add_response(
+            "get_secret_value",
+            {"SecretString": json.dumps({"github_token": ""})},
+            {"SecretId": "arn:shared"},
+        )
+        stub.add_response(
+            "get_secret_value",
+            {"SecretString": json.dumps({"github_token": "ghp_shared"})},
+            {"SecretId": "arn:shared"},
+        )
+        assert load() == AutoFixSecrets()  # deployed without AUTOFIX_GITHUB_TOKEN yet
+        assert load() == AutoFixSecrets(github_token="ghp_shared")
         stub.assert_no_pending_responses()

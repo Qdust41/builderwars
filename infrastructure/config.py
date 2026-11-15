@@ -40,6 +40,12 @@ class EnvConfig:
         """Secrets Manager names of each project's auto-fix keys: ``<prefix><project_id>``."""
         return f"builderwars/{self.name}/autofix/"
 
+    @property
+    def autofix_shared_secret_name(self) -> str:
+        """The one GitHub token for every project. Outside ``autofix_secret_prefix``, so the
+        API (which may write project secrets) cannot read or change it."""
+        return f"builderwars/{self.name}/autofix-shared"
+
 
 # Decisions #11/#12: us-east-1 (via CDK_DEFAULT_REGION), free tier. RDS (db.t4g.micro) in prod
 # only; no staging. Raw-data retention 30 (dev) / 365 (prod) days (decision #6).

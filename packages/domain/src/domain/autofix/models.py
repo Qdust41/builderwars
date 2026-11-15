@@ -1,8 +1,9 @@
 """Auto-fix: when a board reports an error, ask an LLM for a fix and open a pull request.
 
 Per project, an owner/admin links an OpenAI-compatible endpoint (base URL + model + API key) and
-a GitHub repository (``owner/name`` + token). The keys never live here: ``AutoFixSettings`` only
-records whether each one is set; the values sit in Secrets Manager (ADR 0012).
+a GitHub repository (``owner/name``). One GitHub token serves every project (set at deploy
+time); a project may override it with its own. The keys never live here: ``AutoFixSettings``
+only records whether each one is set; the values sit in Secrets Manager (ADR 0012).
 
 A run is one attempt to fix one error. It ends in exactly one of:
 
@@ -62,13 +63,10 @@ class AutoFixSettings:
     # Free text handed to the model, e.g. "board code is in scripts/wili_code".
     instructions: str | None = None
     has_llm_api_key: bool = False
+    # A token just for this project. Without one, runs use the app-wide token
+    # (AUTOFIX_GITHUB_TOKEN, set once at deploy time).
     has_github_token: bool = False
     updated_at: datetime = field(default_factory=utcnow)
-
-    @property
-    def ready(self) -> bool:
-        """Everything a run needs is configured (a local endpoint may need no key)."""
-        return self.enabled and self.has_github_token
 
 
 class AutoFixRunStatus(StrEnum):

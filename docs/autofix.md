@@ -5,13 +5,20 @@ relevant files from your GitHub repository to an LLM, and open a pull request wi
 proposes. You review and merge it; nothing is merged or pushed to your main branch for you.
 Design and limits: [ADR 0012](decisions/0012-autofix-pull-requests.md).
 
-## 1. Make a GitHub token
+## 1. Make one GitHub token for the whole app (once)
 
 GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token:
 
-- **Repository access:** only the repository with your board code.
+- **Repository access:** every repository a project may link (or "All repositories").
 - **Permissions:** Contents: *Read and write*, Pull requests: *Read and write*. Nothing else
   (in particular not Workflows: auto-fix never edits `.github/`).
+
+Save it in this repository as an Actions secret named **`AUTOFIX_GITHUB_TOKEN`** (Settings →
+Secrets and variables → Actions → New repository secret), then redeploy (merge to `main`, or
+Actions → Deploy prod → Run workflow). The deploy stores it in Secrets Manager
+(`builderwars/prod/autofix-shared`); it never appears in the stack template, the console or the
+log. To rotate it, update the secret and redeploy. Every project uses this token unless it sets
+its own (`github_token` below).
 
 ## 2. Pick a model endpoint
 
@@ -40,7 +47,6 @@ curl -X PUT "$API/projects/$PROJECT_ID/autofix" -H "Authorization: Bearer $TOKEN
     "llm_model": "gpt-4.1",
     "llm_api_key": "sk-...",
     "github_repo": "acme/rig-firmware",
-    "github_token": "github_pat_...",
     "instructions": "Host code is in host/, board scripts in scripts/wili_code/"
   }'
 ```
@@ -54,10 +60,11 @@ curl -X PUT "$API/projects/$PROJECT_ID/autofix" -H "Authorization: Bearer $TOKEN
 | `max_runs_per_day` | `5` | Per project, rolling 24 h |
 | `dedupe_hours` | `24` | The same error starts at most one run in this window |
 | `instructions` | none | Notes for the model, e.g. where the board code lives |
-| `llm_api_key`, `github_token` | — | Write-only. Leave out to keep, `""` to clear |
+| `llm_api_key` | — | Write-only. Leave out to keep, `""` to clear |
+| `github_token` | app-wide token | Only to give this project a different token. Write-only, same rules |
 
-`GET .../autofix` shows the settings with `has_llm_api_key` / `has_github_token` instead of the
-keys. `DELETE .../autofix` unlinks everything and deletes the stored keys.
+`GET .../autofix` shows the settings with `has_llm_api_key`, `has_github_token` and
+`uses_shared_github_token` instead of the keys. `DELETE .../autofix` unlinks everything and deletes the stored keys.
 
 ## 4. Watch runs
 
@@ -75,4 +82,4 @@ APP_ENV=local uv run uvicorn api.main:app --reload
 ```
 
 Locally, runs execute in a background thread of the API (no queue or Lambda) and keys stay in
-memory. Localhost endpoints such as Ollama are allowed here and nowhere else.
+memory. Set `AUTOFIX_GITHUB_TOKEN` in the API's environment for the app-wide token. Localhost endpoints such as Ollama are allowed here and nowhere else.

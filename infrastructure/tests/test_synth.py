@@ -386,6 +386,13 @@ def test_autofix_secrets_are_scoped_to_the_env_prefix(stacks: dict[str, Template
         for statement in autofix:
             resource = json.dumps(statement["Resource"])
             assert "/autofix/*" in resource, resource
+    shared = stacks["workers"].find_resources("AWS::SecretsManager::Secret")
+    [(_, secret)] = shared.items()
+    assert secret["Properties"]["Name"].endswith("/autofix-shared")
+    assert "/autofix/" not in secret["Properties"]["Name"]  # out of the API's write prefix
+    param = stacks["workers"].to_json()["Parameters"]["AutoFixGithubToken"]
+    assert param["NoEcho"] is True
+    assert param["Default"] == ""
     worker_actions = {
         a
         for s in _statements(stacks["workers"])

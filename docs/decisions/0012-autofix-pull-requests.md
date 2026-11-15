@@ -12,10 +12,17 @@ applies** changes.
 
 ## Decision
 - **Per project, opt in.** An owner/admin links an OpenAI-compatible endpoint (base URL, model,
-  optional API key) and a GitHub repository (`owner/name`, fine-grained token, optional base
-  branch) with `PUT /projects/{id}/autofix`. Members can read the settings (never the keys),
+  optional API key) and a GitHub repository (`owner/name`, optional base branch) with
+  `PUT /projects/{id}/autofix`.
+- **One GitHub token for the whole app** (owner, 2026-11-15: "just one is preferred"). It is
+  the `AUTOFIX_GITHUB_TOKEN` GitHub Actions repository secret; the deploy passes it as the
+  NoEcho `AutoFixGithubToken` parameter of the Workers stack, which stores it in the secret
+  `builderwars/<env>/autofix-shared` (only the auto-fix worker can read it; it is outside the
+  API's write prefix). A deploy without it keeps the stored value. A project may still set its
+  own token, which then wins. Members can read the settings (never the keys),
   list runs and ask for a fix.
-- **Keys live in Secrets Manager**, one secret per project named
+- **Per-project keys live in Secrets Manager** (the LLM API key, and a project's own GitHub token
+  if it has one), one secret per configured project named
   `builderwars/<env>/autofix/<project_id>`. The API can write them (create/put/delete under that
   prefix only) and the auto-fix worker can read them; the database only stores whether each is
   set. Cost: about $0.40 a month per configured project.
@@ -46,5 +53,6 @@ applies** changes.
   PR, so the worst case is a bad PR, not an action.
 - The daily cap is checked then written in two steps, so two errors landing in the same instant
   can exceed it by one. Acceptable at this scale.
-- A GitHub App (one install, short-lived tokens) would replace per-project personal tokens if
-  this grows; the `CodeHost` port keeps that change inside `ai_platform.autofix`.
+- The shared token must be allowed on every repository a project links (a fine-grained token
+  scoped to those repositories, or to all of the owner's). A GitHub App (one install,
+  short-lived tokens) would replace it if this grows; the `CodeHost` port keeps that change inside `ai_platform.autofix`.

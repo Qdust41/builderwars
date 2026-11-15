@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # project's LLM API key + GitHub token are stored. Without them (AWS) auto-fix is off.
     autofix_queue_url: str | None = None
     autofix_secret_prefix: str | None = None
+    # LOCAL ONLY: the app-wide GitHub token for runs in the API process (in AWS the worker
+    # reads it from the Workers stack's secret instead).
+    autofix_github_token: SecretStr | None = None
 
     # AUTH_MODE=cognito. Ids, not secrets: the stack passes them as Lambda environment.
     cognito_region: str = "us-east-1"

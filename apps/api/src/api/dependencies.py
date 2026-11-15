@@ -418,6 +418,11 @@ def _autofix_adapters(
                 settings=repos.autofix_settings,
                 secrets=secrets,
                 telemetry=repos.telemetry,
+                shared_github_token=(
+                    settings.autofix_github_token.get_secret_value()
+                    if settings.autofix_github_token
+                    else None
+                ),
             ),
             secrets,
         )

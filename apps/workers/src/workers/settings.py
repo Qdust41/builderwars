@@ -36,6 +36,8 @@ class WorkerSettings(BaseSettings):
     # Secrets Manager name prefix of each project's LLM key + GitHub token.
     autofix_queue_url: str | None = None
     autofix_secret_prefix: str | None = None
+    # The app-wide GitHub token's secret (Workers stack, filled at deploy time).
+    autofix_shared_secret_arn: str | None = None
 
 
 class UnsafeConfigurationError(RuntimeError):

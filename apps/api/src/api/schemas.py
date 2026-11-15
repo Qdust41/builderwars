@@ -423,7 +423,11 @@ class AutoFixSettingsIn(BaseModel):
         description="Notes for the model, e.g. where the board code lives",
     )
     llm_api_key: str | None = Field(default=None, max_length=4000)
-    github_token: str | None = Field(default=None, max_length=1000)
+    github_token: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Only to override the app-wide token for this project",
+    )
 
 
 class AutoFixSettingsOut(_Out):
@@ -439,14 +443,21 @@ class AutoFixSettingsOut(_Out):
     dedupe_hours: int
     instructions: str | None
     has_llm_api_key: bool
-    has_github_token: bool
-    ready: bool
+    has_github_token: bool = Field(description="This project has its own GitHub token")
+    uses_shared_github_token: bool = Field(
+        description="Runs use the app-wide token (AUTOFIX_GITHUB_TOKEN, set at deploy time)"
+    )
     updated_by: str
     updated_at: datetime
 
     @classmethod
     def of(cls, settings: AutoFixSettings) -> AutoFixSettingsOut:
-        return cls.model_validate(settings)
+        return cls.model_validate(
+            {
+                **{k: getattr(settings, k) for k in AutoFixSettings.__dataclass_fields__},
+                "uses_shared_github_token": not settings.has_github_token,
+            }
+        )
 
 
 class AutoFixRunCreate(BaseModel):

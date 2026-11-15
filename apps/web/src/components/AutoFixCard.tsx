@@ -85,9 +85,7 @@ export function AutoFixCard({ projectId }: { projectId: string }) {
           <p>
             {!current.enabled
               ? "Turned off"
-              : !current.has_github_token
-                ? "Needs a GitHub token"
-                : current.auto_trigger
+              : current.auto_trigger
                   ? `Runs on ${current.min_level} logs · up to ${current.max_runs_per_day}/day`
                   : "Manual runs only"}
           </p>
@@ -269,10 +267,10 @@ function AutoFixForm({
         />
       </Field>
       <Field
-        label="GitHub token"
+        label="GitHub token (optional)"
         hint={
           keep(current?.has_github_token) ??
-          "Fine-grained token for this repo: Contents and Pull requests, read and write."
+          "Leave blank to use the app-wide token. Only set one if this repo needs a different token."
         }
       >
         <input
@@ -281,7 +279,6 @@ function AutoFixForm({
           autoComplete="off"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          required={!current?.has_github_token}
         />
       </Field>
       <Field label="Base branch" hint="Blank uses the repository's default branch.">

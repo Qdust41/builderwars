@@ -58,9 +58,10 @@ Redaction must run before anything leaves.
 - Generated firmware is never flashed or deployed automatically.
 - Auto-fix (ADR 0012) only opens pull requests: it writes a new `autofix/<run_id>` branch and
   never merges or pushes to the base branch. It may change only files the model read or new
-  files, never `.github/`, `.git/` or lock files. Its keys (per project) sit in Secrets Manager
-  under `builderwars/<env>/autofix/`; the API can write but never returns them and only the
-  auto-fix worker reads them. Device logs are redacted before they leave, and deployed workers
+  files, never `.github/`, `.git/` or lock files. Its keys sit in Secrets Manager: per-project ones
+  under `builderwars/<env>/autofix/` (the API can write but never returns them), and the one
+  app-wide GitHub token in `builderwars/<env>/autofix-shared` (set at deploy time from a GitHub
+  Actions secret via a NoEcho parameter). Only the auto-fix worker reads them. Device logs are redacted before they leave, and deployed workers
   refuse LLM endpoints on private, loopback or link-local addresses.
 
 ## Firmware
