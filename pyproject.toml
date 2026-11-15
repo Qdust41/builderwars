@@ -9,6 +9,7 @@ dependencies = [
     "bw-domain",
     "bw-application",
     "bw-ai-platform",
+    "bw-aws-adapters",
     "bw-api",
     "bw-workers",
     "bw-board-runtime",
@@ -33,6 +34,7 @@ members = [
     "packages/domain",
     "packages/application",
     "packages/ai",
+    "packages/aws",
     "apps/api",
     "apps/workers",
     "device",
@@ -43,6 +45,7 @@ bw-device-protocol = { workspace = true }
 bw-domain = { workspace = true }
 bw-application = { workspace = true }
 bw-ai-platform = { workspace = true }
+bw-aws-adapters = { workspace = true }
 bw-api = { workspace = true }
 bw-workers = { workspace = true }
 bw-board-runtime = { workspace = true }
@@ -80,7 +83,7 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = [
     "api", "workers", "domain", "application", "device_protocol", "ai_platform",
-    "board_runtime", "stacks",
+    "board_runtime", "stacks", "aws_adapters",
 ]
 
 [tool.mypy]
@@ -92,6 +95,7 @@ mypy_path = [
     "packages/domain/src",
     "packages/application/src",
     "packages/ai/src",
+    "packages/aws/src",
     "apps/api/src",
     "apps/workers/src",
     "device/src",
@@ -102,6 +106,7 @@ files = [
     "packages/domain/src",
     "packages/application/src",
     "packages/ai/src",
+    "packages/aws/src",
     "apps/api/src",
     "apps/workers/src",
     "device/src",

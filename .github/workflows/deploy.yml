@@ -1,0 +1,122 @@
+name: Deploy prod
+
+# Merging to main is the review point: once CI passes on a push to main, this deploys every
+# stack to prod (us-east-1), applies database migrations and checks /health.
+#
+# AWS access is keyless (GitHub OIDC). The IAM role `builderwars-github-deploy` trusts only
+# `repo:Qdust41/builderwars:ref:refs/heads/main`, so branches and pull requests can't assume it.
+# It may only assume the CDK bootstrap roles, read Builderwars-prod-* stacks and invoke the
+# Migrate Lambda. Set its ARN as the repository variable AWS_DEPLOY_ROLE_ARN.
+# See docs/deployment-guide.md, "Deploying from GitHub Actions".
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: # manual redeploy of main (Actions tab -> Deploy prod -> Run workflow)
+
+permissions:
+  contents: read
+  id-token: write # OIDC token for AWS
+
+# One deploy at a time; a newer merge waits for the running deploy instead of cancelling it
+# (cancelling mid-CloudFormation-update leaves a stack rolling back).
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  # The CDK CLI overrides CDK_DEFAULT_REGION with the SDK region, so set both.
+  AWS_REGION: us-east-1
+  CDK_DEFAULT_REGION: us-east-1
+  CDK_VERSION: 2.1148.1
+
+jobs:
+  deploy:
+    # Only after a green CI run for a push to main (not a PR), or a manual run on main.
+    if: >-
+      (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: infrastructure
+    steps:
+      - name: Check configuration
+        working-directory: .
+        env:
+          ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Repository variable AWS_DEPLOY_ROLE_ARN is not set (Settings -> Secrets and variables -> Actions -> Variables)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          # Deploy exactly the commit CI tested, not whatever main is by now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Lambda assets are bundled from uv.lock at synth time (lambda_bundle.py).
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+      - run: pip install -r requirements.txt
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - name: Resolve account
+        run: echo "CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_ENV"
+
+      - name: Diff (for the run log)
+        run: npx --yes "aws-cdk@${CDK_VERSION}" diff -c env=prod --all
+
+      - name: Deploy
+        run: >-
+          npx --yes "aws-cdk@${CDK_VERSION}" deploy -c env=prod --all
+          --require-approval never
+          --outputs-file "${RUNNER_TEMP}/prod-outputs.json"
+
+      # The API and workers refuse to start until the schema is current. Harmless when nothing
+      # is pending ({"applied": []}).
+      - name: Apply database migrations
+        run: |
+          fn=$(aws cloudformation describe-stack-resources --stack-name Builderwars-prod-Workers \
+            --query "StackResources[?ResourceType=='AWS::Lambda::Function' && starts_with(LogicalResourceId, 'MigrateFunction')].PhysicalResourceId | [0]" \
+            --output text)
+          if [ -z "$fn" ] || [ "$fn" = "None" ]; then
+            echo "::error::Migrate function not found in Builderwars-prod-Workers"
+            exit 1
+          fi
+          err=$(aws lambda invoke --function-name "$fn" --cli-read-timeout 300 \
+            "${RUNNER_TEMP}/migrate.json" --query FunctionError --output text)
+          cat "${RUNNER_TEMP}/migrate.json"; echo
+          if [ "$err" != "None" ]; then
+            echo "::error::Migrations failed ($err)"
+            exit 1
+          fi
+
+      - name: Smoke test
+        run: |
+          api=$(jq -r '."Builderwars-prod-Api".ApiUrl' "${RUNNER_TEMP}/prod-outputs.json")
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors "${api}/health"
+          echo
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' "${api}/projects")
+          if [ "$code" != "401" ]; then
+            echo "::error::Expected 401 from /projects without a token, got $code"
+            exit 1
+          fi

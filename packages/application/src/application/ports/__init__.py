@@ -1,7 +1,8 @@
 """Ports: interfaces the application needs from the outside world.
 
 Concrete adapters live elsewhere: ``application.adapters.memory`` for local development/tests,
-and (TODO) PostgreSQL / SQS / IoT Core / AppSync adapters for AWS.
+``application.adapters.postgres`` for storage, and ``aws_adapters`` (packages/aws) for S3, SQS,
+IoT Core and AppSync Events.
 """
 
 from application.ports.messaging import (

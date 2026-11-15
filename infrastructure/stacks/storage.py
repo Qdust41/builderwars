@@ -34,7 +34,8 @@ class StorageStack(Stack):
             ],
             **common,
         )
-        # Raw device messages and exports. Retention is provisional (open decision #6).
+        # Raw (raw/) and quarantined (rejected/) device messages, and exports. Retention is
+        # provisional (open decision #6).
         self.device_data_bucket = s3.Bucket(
             self,
             "DeviceData",
@@ -50,6 +51,10 @@ class StorageStack(Stack):
                     if config.raw_data_expiry_days > 30
                     else [],
                     expiration=Duration.days(config.raw_data_expiry_days),
+                ),
+                # Quarantined (rejected) device messages, kept as long as raw ones.
+                s3.LifecycleRule(
+                    prefix="rejected/", expiration=Duration.days(config.raw_data_expiry_days)
                 ),
                 s3.LifecycleRule(abort_incomplete_multipart_upload_after=Duration.days(7)),
             ],
