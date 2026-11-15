@@ -24,8 +24,17 @@ class HealthOut(BaseModel):
     environment: str
 
 
+# Any signed-in account may create a project and becomes its owner (ADR 0005).
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("project name must not be blank")
+        return stripped
 
 
 class ProjectOut(_Out):
