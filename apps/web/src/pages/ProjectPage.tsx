@@ -2,6 +2,7 @@ import { ChevronRight, Cpu, History, Play, Plus, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import { AutoFixCard } from "../components/AutoFixCard";
 import {
   EmptyState,
   ErrorBanner,
@@ -149,47 +150,50 @@ export function ProjectPage() {
           </div>
         </section>
 
-        <section className="card h-fit">
-          <div className="card-head">
-            <h2 className="card-title">Sessions</h2>
-          </div>
-          {sessions.error ? (
-            <div className="p-5">
-              <ErrorBanner>{errorText(sessions.error)}</ErrorBanner>
+        <div className="space-y-6">
+          <section className="card h-fit">
+            <div className="card-head">
+              <h2 className="card-title">Sessions</h2>
             </div>
-          ) : sessions.loading && !sessions.data ? (
-            <div className="p-5">
-              <Skeleton className="h-10" />
-            </div>
-          ) : sessionList.length === 0 ? (
-            <EmptyState icon={<History className="size-5" />} title="No sessions">
-              <p>Start a session to follow a build together in real time.</p>
-            </EmptyState>
-          ) : (
-            <ul className="divide-y divide-line">
-              {sessionList.map((s) => (
-                <li key={s.id}>
-                  <Link
-                    to={`/sessions/${s.id}`}
-                    className="flex items-center justify-between gap-3 px-5 py-3 text-sm transition-colors hover:bg-surface-2"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-mono text-xs text-fg-2">{s.id}</span>
-                      <span className="block text-xs text-muted">Started {timeAgo(s.created_at)}</span>
-                    </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                        s.status === "active" ? "bg-good-soft text-good" : "bg-surface-2 text-muted"
-                      }`}
+            {sessions.error ? (
+              <div className="p-5">
+                <ErrorBanner>{errorText(sessions.error)}</ErrorBanner>
+              </div>
+            ) : sessions.loading && !sessions.data ? (
+              <div className="p-5">
+                <Skeleton className="h-10" />
+              </div>
+            ) : sessionList.length === 0 ? (
+              <EmptyState icon={<History className="size-5" />} title="No sessions">
+                <p>Start a session to follow a build together in real time.</p>
+              </EmptyState>
+            ) : (
+              <ul className="divide-y divide-line">
+                {sessionList.map((s) => (
+                  <li key={s.id}>
+                    <Link
+                      to={`/sessions/${s.id}`}
+                      className="flex items-center justify-between gap-3 px-5 py-3 text-sm transition-colors hover:bg-surface-2"
                     >
-                      {s.status}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                      <span className="min-w-0">
+                        <span className="block truncate font-mono text-xs text-fg-2">{s.id}</span>
+                        <span className="block text-xs text-muted">Started {timeAgo(s.created_at)}</span>
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                          s.status === "active" ? "bg-good-soft text-good" : "bg-surface-2 text-muted"
+                        }`}
+                      >
+                        {s.status}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <AutoFixCard projectId={projectId} />
+        </div>
       </div>
     </>
   );

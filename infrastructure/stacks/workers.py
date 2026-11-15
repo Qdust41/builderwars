@@ -5,7 +5,7 @@ With a database (prod) they use PostgreSQL through the RDS secret; without one (
 to start, because in-memory repositories are not allowed outside local/test.
 
 Database connections: every SQS event source is capped at ``MAX_CONCURRENCY`` concurrent
-invocations, and each container holds one connection, so the workers use at most ~6 of the
+invocations, and each container holds one connection, so the workers use at most ~8 of the
 db.t4g.micro's connections.
 
 TODO: Fargate task definitions for long-running job types with isolated, least-privilege roles.
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aws_cdk import Aws, Duration, Stack
+from aws_cdk import Aws, CfnParameter, Duration, SecretValue, Stack
 from aws_cdk import aws_appsync as appsync
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
@@ -27,7 +27,7 @@ from aws_cdk import aws_sqs as sqs
 from config import EnvConfig
 from constructs import Construct
 
-from stacks.messaging import CONSUMER_TIMEOUT
+from stacks.messaging import AUTOFIX_TIMEOUT, CONSUMER_TIMEOUT
 from stacks.packaging import python_app_code
 
 MAX_CONCURRENCY = 2  # the SQS event source minimum
@@ -43,6 +43,7 @@ class WorkersStack(Stack):
         ingest_queue: sqs.IQueue,
         jobs_queue: sqs.IQueue,
         commands_queue: sqs.IQueue,
+        autofix_queue: sqs.IQueue,
         device_data_bucket: s3.IBucket,
         artifacts_bucket: s3.IBucket,
         iot_data_endpoint: str,
@@ -60,6 +61,9 @@ class WorkersStack(Stack):
         self._publish_device_events(ingest_fn, events_api)
         device_data_bucket.grant_put(ingest_fn, "raw/*")
         device_data_bucket.grant_put(ingest_fn, "rejected/*")
+        # Error logs arriving over MQTT may start auto-fix runs (ADR 0012).
+        ingest_fn.add_environment("AUTOFIX_QUEUE_URL", autofix_queue.queue_url)
+        autofix_queue.grant_send_messages(ingest_fn)
         ingest_fn.add_event_source(
             sources.SqsEventSource(
                 ingest_queue,
@@ -98,6 +102,57 @@ class WorkersStack(Stack):
         jobs_fn.add_event_source(
             sources.SqsEventSource(
                 jobs_queue,
+                batch_size=1,
+                report_batch_item_failures=True,
+                max_concurrency=MAX_CONCURRENCY,
+            )
+        )
+
+        # Auto-fix (ADR 0012): logs + repository -> LLM -> pull request. The model is app-wide,
+        # from GitHub Actions at deploy time: variables AUTOFIX_LLM_BASE_URL / AUTOFIX_LLM_MODEL
+        # and the AUTOFIX_LLM_API_KEY secret, passed as these parameters (the key as NoEcho, so it
+        # is never in the template or the console). A deploy that leaves them out keeps the
+        # previous values. Each project's GitHub repo and token live in its autofix_settings row.
+        autofix_fn = self._function(
+            "AutoFix", "workers.main.autofix_lambda_handler", timeout=AUTOFIX_TIMEOUT
+        )
+        llm_base_url = CfnParameter(
+            self,
+            "AutoFixLlmBaseUrl",
+            type="String",
+            default="",
+            description="OpenAI-compatible base URL auto-fix calls (empty: auto-fix off)",
+        )
+        llm_model = CfnParameter(
+            self,
+            "AutoFixLlmModel",
+            type="String",
+            default="",
+            description="Model name auto-fix asks for",
+        )
+        llm_api_key = CfnParameter(
+            self,
+            "AutoFixLlmApiKey",
+            type="String",
+            no_echo=True,
+            default="",
+            description="API key for the auto-fix model endpoint",
+        )
+        llm_secret = secretsmanager.Secret(
+            self,
+            "AutoFixLlmSecret",
+            secret_name=config.autofix_llm_secret_name,
+            description="builderwars auto-fix: the API key of the app-wide model endpoint",
+            secret_object_value={"llm_api_key": SecretValue.cfn_parameter(llm_api_key)},
+            removal_policy=config.removal_policy,
+        )
+        llm_secret.grant_read(autofix_fn)
+        autofix_fn.add_environment("AUTOFIX_LLM_BASE_URL", llm_base_url.value_as_string)
+        autofix_fn.add_environment("AUTOFIX_LLM_MODEL", llm_model.value_as_string)
+        autofix_fn.add_environment("AUTOFIX_LLM_SECRET_ARN", llm_secret.secret_arn)
+        autofix_fn.add_event_source(
+            sources.SqsEventSource(
+                autofix_queue,
                 batch_size=1,
                 report_batch_item_failures=True,
                 max_concurrency=MAX_CONCURRENCY,

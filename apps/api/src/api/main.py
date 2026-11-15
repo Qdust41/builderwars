@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from api.dependencies import Container, build_container
 from api.routes import (
+    autofix,
     device_setup,
     devices,
     events,
@@ -24,7 +25,7 @@ from api.routes import (
     sessions,
 )
 from api.settings import Settings
-from application.services import CommandQueueFullError
+from application.services import AutoFixValidationError, CommandQueueFullError
 from domain.common import (
     ConflictError,
     InvalidStateTransitionError,
@@ -49,7 +50,7 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Dev-User"],
     )
 
@@ -64,6 +65,10 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     @app.exception_handler(CommandQueueFullError)
     async def _queue_full(_: Request, exc: CommandQueueFullError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
+
+    @app.exception_handler(AutoFixValidationError)
+    async def _invalid(_: Request, exc: AutoFixValidationError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
     @app.exception_handler(ConflictError)
     async def _already(_: Request, exc: ConflictError) -> JSONResponse:
@@ -84,6 +89,7 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
         sessions.router,
         events.router,
         jobs.router,
+        autofix.router,
     ):
         app.include_router(router)
     if app.state.container.local is not None:

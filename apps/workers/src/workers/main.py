@@ -3,7 +3,8 @@
 Local:   uv run python -m workers.main messages.jsonl   (or pipe JSON lines on stdin)
          REPOSITORY_BACKEND=postgres DATABASE_URL=... stores into PostgreSQL instead of memory.
 Lambda:  workers.main.device_message_lambda_handler / command_dispatch_lambda_handler /
-         job_lambda_handler / migrate_lambda_handler (wired in workers.aws_runtime)
+         job_lambda_handler / autofix_lambda_handler / migrate_lambda_handler
+         (wired in workers.aws_runtime)
 """
 
 from __future__ import annotations
@@ -15,8 +16,9 @@ from collections.abc import Callable
 from typing import Any
 
 import boto3
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
+from ai_platform.autofix import AutoFixWorker
 from application.adapters import memory, postgres
 from application.services import DeviceMessageIngestService
 from workers import aws_runtime
@@ -125,6 +127,7 @@ _BUILDERS: dict[str, Callable[..., Any]] = {
     "ingest": aws_runtime.build_device_ingest,
     "commands": aws_runtime.build_command_dispatch,
     "jobs": aws_runtime.build_job_worker,
+    "autofix": aws_runtime.build_autofix_worker,
 }
 
 
@@ -154,6 +157,20 @@ def device_message_lambda_handler(event: dict[str, Any], context: object) -> dic
 def job_lambda_handler(event: dict[str, Any], context: object) -> dict[str, Any]:
     handler: BackgroundJobHandler = lambda_runtime("jobs")[0]
     return process_sqs_batch(event, _acknowledge_invalid(JobMessage.model_validate, handler.handle))
+
+
+class AutoFixMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    run_id: str
+
+
+def autofix_lambda_handler(event: dict[str, Any], context: object) -> dict[str, Any]:
+    """One auto-fix run per message: logs + repository -> LLM -> pull request (ADR 0012)."""
+    worker: AutoFixWorker = lambda_runtime("autofix")[0]
+    return process_sqs_batch(
+        event,
+        _acknowledge_invalid(AutoFixMessage.model_validate, lambda m: worker.handle(m.run_id)),
+    )
 
 
 def command_dispatch_lambda_handler(event: dict[str, Any], context: object) -> dict[str, Any]:
@@ -208,7 +225,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 __all__ = [
+    "AutoFixMessage",
     "IncomingDeviceMessage",
+    "autofix_lambda_handler",
     "build_local_device_handler",
     "build_postgres_device_handler",
     "command_dispatch_lambda_handler",

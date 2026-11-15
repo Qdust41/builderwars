@@ -1,6 +1,421 @@
 {
   "components": {
     "schemas": {
+      "AutoFixLevel": {
+        "description": "The lowest log level that starts a run automatically.",
+        "enum": [
+          "error",
+          "critical"
+        ],
+        "title": "AutoFixLevel",
+        "type": "string"
+      },
+      "AutoFixRunCreate": {
+        "additionalProperties": false,
+        "description": "Ask for a fix now. Without ``message``, the device's latest error log is used.",
+        "properties": {
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "level": {
+            "default": "error",
+            "enum": [
+              "error",
+              "critical",
+              "warning"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "title": "AutoFixRunCreate",
+        "type": "object"
+      },
+      "AutoFixRunOut": {
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "error_level": {
+            "title": "Error Level",
+            "type": "string"
+          },
+          "error_message": {
+            "title": "Error Message",
+            "type": "string"
+          },
+          "files_changed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files Changed",
+            "type": "array"
+          },
+          "github_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Repo"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "pr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Url"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AutoFixRunStatus"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AutoFixTriggerKind"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "device_id",
+          "trigger",
+          "status",
+          "error_level",
+          "error_message",
+          "requested_by",
+          "created_at",
+          "started_at",
+          "completed_at",
+          "model",
+          "github_repo",
+          "branch",
+          "pr_number",
+          "pr_url",
+          "summary",
+          "files_changed"
+        ],
+        "title": "AutoFixRunOut",
+        "type": "object"
+      },
+      "AutoFixRunStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "pr_opened",
+          "no_fix",
+          "failed"
+        ],
+        "title": "AutoFixRunStatus",
+        "type": "string"
+      },
+      "AutoFixSettingsIn": {
+        "additionalProperties": false,
+        "description": "Link a GitHub repository to the project. The model is app-wide (deploy-time settings).\n\n``github_token``: leave out to keep the stored token, ``\"\"`` to clear it, or a value to\nreplace it. It is write-only: responses only say whether one is set.",
+        "properties": {
+          "auto_trigger": {
+            "default": true,
+            "description": "Start runs from uploaded error logs (false: manual only)",
+            "title": "Auto Trigger",
+            "type": "boolean"
+          },
+          "base_branch": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Defaults to the repository's default branch",
+            "title": "Base Branch"
+          },
+          "dedupe_hours": {
+            "default": 24,
+            "maximum": 720.0,
+            "minimum": 1.0,
+            "title": "Dedupe Hours",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "github_repo": {
+            "description": "owner/name",
+            "maxLength": 140,
+            "minLength": 3,
+            "title": "Github Repo",
+            "type": "string"
+          },
+          "github_token": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fine-grained token for this repo: Contents + Pull requests, read and write",
+            "title": "Github Token"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Notes for the model, e.g. where the board code lives",
+            "title": "Instructions"
+          },
+          "max_runs_per_day": {
+            "default": 5,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Max Runs Per Day",
+            "type": "integer"
+          },
+          "min_level": {
+            "$ref": "#/components/schemas/AutoFixLevel",
+            "default": "error"
+          }
+        },
+        "required": [
+          "github_repo"
+        ],
+        "title": "AutoFixSettingsIn",
+        "type": "object"
+      },
+      "AutoFixSettingsOut": {
+        "properties": {
+          "auto_trigger": {
+            "title": "Auto Trigger",
+            "type": "boolean"
+          },
+          "base_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Branch"
+          },
+          "dedupe_hours": {
+            "title": "Dedupe Hours",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "github_repo": {
+            "title": "Github Repo",
+            "type": "string"
+          },
+          "has_github_token": {
+            "title": "Has Github Token",
+            "type": "boolean"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
+          "max_runs_per_day": {
+            "title": "Max Runs Per Day",
+            "type": "integer"
+          },
+          "min_level": {
+            "$ref": "#/components/schemas/AutoFixLevel"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "ready": {
+            "description": "Enabled and has a GitHub token",
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "enabled",
+          "github_repo",
+          "has_github_token",
+          "ready",
+          "base_branch",
+          "auto_trigger",
+          "min_level",
+          "max_runs_per_day",
+          "dedupe_hours",
+          "instructions",
+          "updated_by",
+          "updated_at"
+        ],
+        "title": "AutoFixSettingsOut",
+        "type": "object"
+      },
+      "AutoFixTriggerKind": {
+        "enum": [
+          "error_log",
+          "manual"
+        ],
+        "title": "AutoFixTriggerKind",
+        "type": "string"
+      },
       "BridgeReport": {
         "description": "The FREE-WILi between the laptop and the target board.",
         "properties": {
@@ -4091,6 +4506,474 @@
         "summary": "Get Project",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/projects/{project_id}/autofix": {
+      "delete": {
+        "description": "Owner/admin. Unlinks the endpoint and repository and deletes the stored keys.",
+        "operationId": "delete_autofix_settings_projects__project_id__autofix_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Autofix Settings",
+        "tags": [
+          "autofix"
+        ]
+      },
+      "get": {
+        "operationId": "get_autofix_settings_projects__project_id__autofix_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoFixSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Autofix Settings",
+        "tags": [
+          "autofix"
+        ]
+      },
+      "put": {
+        "description": "Owner/admin. Keys are stored in Secrets Manager and never returned.",
+        "operationId": "save_autofix_settings_projects__project_id__autofix_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoFixSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoFixSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Autofix Settings",
+        "tags": [
+          "autofix"
+        ]
+      }
+    },
+    "/projects/{project_id}/autofix/runs": {
+      "get": {
+        "description": "The 50 most recent runs, newest first.",
+        "operationId": "list_autofix_runs_projects__project_id__autofix_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AutoFixRunOut"
+                  },
+                  "title": "Response List Autofix Runs Projects  Project Id  Autofix Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Autofix Runs",
+        "tags": [
+          "autofix"
+        ]
+      },
+      "post": {
+        "description": "Members and up. Counts toward the daily cap; ignores the dedupe window.",
+        "operationId": "request_autofix_projects__project_id__autofix_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoFixRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoFixRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Autofix",
+        "tags": [
+          "autofix"
+        ]
+      }
+    },
+    "/projects/{project_id}/autofix/runs/{run_id}": {
+      "get": {
+        "operationId": "get_autofix_run_projects__project_id__autofix_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoFixRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Autofix Run",
+        "tags": [
+          "autofix"
         ]
       }
     },

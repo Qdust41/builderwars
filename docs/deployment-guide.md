@@ -422,6 +422,10 @@ AWS access is keyless (GitHub OIDC). One-time setup, already done for account 51
       (Settings → Secrets and variables → Actions → Variables).
 - [ ] GitHub: protect `main` (require a pull request and the CI checks), since every merge goes
       to prod.
+- [ ] Optional, for auto-fix: repository variables `AUTOFIX_LLM_BASE_URL` and
+      `AUTOFIX_LLM_MODEL`, and repository secret `AUTOFIX_LLM_API_KEY` (the app-wide model; see
+      `docs/autofix.md`). The deploy passes them to the Workers stack as parameters (the key as
+      NoEcho); no change to the deploy role is needed. GitHub repos are linked per project.
 
 The subject is pinned to the repository's ids, so a deleted-and-recreated repository with the same
 name can't deploy. Moving the repository to another owner changes it: update the role's trust
@@ -467,7 +471,7 @@ Rough monthly figures at MVP volume (<10 boards); full table in `aws-deployment.
 | --- | --- | --- |
 | RDS `db.t4g.micro` + 20 GB | covered | ~$12-15 |
 | RDS public IPv4 address | ~$3.60 | ~$3.60 |
-| Secrets Manager (1 secret) | ~$0.40 | ~$0.40 |
+| Secrets Manager (RDS + auto-fix shared token, + 1 per project with its own LLM key) | ~$0.80 | ~$0.80 |
 | CloudWatch logs/alarms | cents | cents |
 | IoT Core, SQS, Lambda, API Gateway, S3, AppSync, Cognito | ~$0 at this volume | ~$0-2 |
 | CloudFront + ACM certificate | ~$0 (CloudFront free tier; public certificates are free) | ~$0 |

@@ -34,6 +34,7 @@ from application.realtime import RealtimeEvent
 from application.services.authorization import Authorizer
 from application.services.device_events import DeviceEventPublisher
 from application.services.device_ingest import (
+    DeviceErrorObserver,
     DeviceMessageIngestService,
     IngestOutcome,
     IngestResult,
@@ -92,6 +93,7 @@ class DeviceUploadService:
         sequences: SequenceTracker,
         commands: DeviceCommandRepository,
         realtime: RealtimePublisher,
+        errors: DeviceErrorObserver | None = None,
     ) -> None:
         self._devices = devices
         self._authorizer = authorizer
@@ -101,6 +103,7 @@ class DeviceUploadService:
         self._sequences = sequences
         self._commands = commands
         self._realtime = realtime
+        self._errors = errors
 
     def upload(
         self,
@@ -129,6 +132,7 @@ class DeviceUploadService:
             sequences=self._sequences,
             commands=self._commands,
             events=DeviceEventPublisher(collector),
+            errors=self._errors,
         )
         results = [self._one(ingest, device_id, m, received_at) for m in messages]
         publish_all(self._realtime, collector.events)

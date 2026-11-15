@@ -44,6 +44,7 @@ class ApiStack(Stack):
         user_pool_client: cognito.IUserPoolClient,
         jobs_queue: sqs.IQueue,
         commands_queue: sqs.IQueue,
+        autofix_queue: sqs.IQueue,
         artifacts_bucket: s3.IBucket,
         events_api: appsync.EventApi,
         database_secret: secretsmanager.ISecret | None = None,
@@ -77,6 +78,7 @@ class ApiStack(Stack):
                 "COMMANDS_QUEUE_URL": commands_queue.queue_url,
                 "ARTIFACTS_BUCKET": artifacts_bucket.bucket_name,
                 "EVENTS_HTTP_DNS": events_api.http_dns,
+                "AUTOFIX_QUEUE_URL": autofix_queue.queue_url,
             },
         )
         if database_secret is not None:
@@ -91,6 +93,8 @@ class ApiStack(Stack):
         # Adding members by email looks accounts up in the pool; read-only, this pool only.
         user_pool.grant(fn, "cognito-idp:ListUsers")
         events_api.grant_publish(fn)
+        # Auto-fix (ADR 0012): start runs. Per-project GitHub settings live in the database.
+        autofix_queue.grant_send_messages(fn)
 
         jwt = authorizers.HttpJwtAuthorizer(
             "CognitoJwt",

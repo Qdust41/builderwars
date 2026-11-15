@@ -12,6 +12,15 @@ from application.services import MAX_MESSAGES_PER_UPLOAD, IngestOutcome, Project
 from application.services.device_setup import SetupView, sensor_spec
 from device_protocol.sensors import SensorProtocol, SensorSpec
 from device_protocol.setup import BridgeReport, HostReport
+from domain.autofix import (
+    DEFAULT_DEDUPE_HOURS,
+    DEFAULT_MAX_RUNS_PER_DAY,
+    AutoFixLevel,
+    AutoFixRun,
+    AutoFixRunStatus,
+    AutoFixSettings,
+    AutoFixTriggerKind,
+)
 from domain.devices import (
     MAX_TARGET_BOARDS,
     CommandStatus,
@@ -377,3 +386,93 @@ class DeviceSetupOut(BaseModel):
             if view.run_active and setup.run_started_at and setup.run_seen_at and setup.run_by
             else None,
         )
+
+
+# --- auto-fix (ADR 0012) ----------------------------------------------------------------------
+
+
+class AutoFixSettingsIn(BaseModel):
+    """Link a GitHub repository to the project. The model is app-wide (deploy-time settings).
+
+    ``github_token``: leave out to keep the stored token, ``""`` to clear it, or a value to
+    replace it. It is write-only: responses only say whether one is set.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    github_repo: str = Field(min_length=3, max_length=140, description="owner/name")
+    github_token: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Fine-grained token for this repo: Contents + Pull requests, read and write",
+    )
+    base_branch: str | None = Field(
+        default=None, max_length=200, description="Defaults to the repository's default branch"
+    )
+    enabled: bool = True
+    auto_trigger: bool = Field(
+        default=True, description="Start runs from uploaded error logs (false: manual only)"
+    )
+    min_level: AutoFixLevel = AutoFixLevel.ERROR
+    max_runs_per_day: int = Field(default=DEFAULT_MAX_RUNS_PER_DAY, ge=1, le=50)
+    dedupe_hours: int = Field(default=DEFAULT_DEDUPE_HOURS, ge=1, le=720)
+    instructions: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="Notes for the model, e.g. where the board code lives",
+    )
+
+
+class AutoFixSettingsOut(_Out):
+    project_id: str
+    enabled: bool
+    github_repo: str
+    has_github_token: bool
+    ready: bool = Field(description="Enabled and has a GitHub token")
+    base_branch: str | None
+    auto_trigger: bool
+    min_level: AutoFixLevel
+    max_runs_per_day: int
+    dedupe_hours: int
+    instructions: str | None
+    updated_by: str
+    updated_at: datetime
+
+    @classmethod
+    def of(cls, settings: AutoFixSettings) -> AutoFixSettingsOut:
+        return cls.model_validate(settings)  # github_token is not a field here: never returned
+
+
+class AutoFixRunCreate(BaseModel):
+    """Ask for a fix now. Without ``message``, the device's latest error log is used."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str | None = None
+    message: str | None = Field(default=None, max_length=4096)
+    level: Literal["error", "critical", "warning"] = "error"
+
+
+class AutoFixRunOut(_Out):
+    id: str
+    project_id: str
+    device_id: str | None
+    trigger: AutoFixTriggerKind
+    status: AutoFixRunStatus
+    error_level: str
+    error_message: str
+    requested_by: str | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    model: str | None
+    github_repo: str | None
+    branch: str | None
+    pr_number: int | None
+    pr_url: str | None
+    summary: str | None
+    files_changed: list[str]
+
+    @classmethod
+    def of(cls, run: AutoFixRun) -> AutoFixRunOut:
+        return cls.model_validate(run)

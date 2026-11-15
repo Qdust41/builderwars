@@ -35,6 +35,11 @@ class EnvConfig:
     def resource_name(self, suffix: str) -> str:
         return f"builderwars-{self.name}-{suffix}"
 
+    @property
+    def autofix_llm_secret_name(self) -> str:
+        """The app-wide auto-fix model's API key (from the AUTOFIX_LLM_API_KEY Actions secret)."""
+        return f"builderwars/{self.name}/autofix-llm"
+
 
 # Decisions #11/#12: us-east-1 (via CDK_DEFAULT_REGION), free tier. RDS (db.t4g.micro) in prod
 # only; no staging. Raw-data retention 30 (dev) / 365 (prod) days (decision #6).

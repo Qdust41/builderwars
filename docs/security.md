@@ -56,6 +56,14 @@ The two identity systems are separate: a user can never act as a device and vice
 with an API key held in Secrets Manager, or Bedrock with IAM/SigV4 (data stays in AWS).
 Redaction must run before anything leaves.
 - Generated firmware is never flashed or deployed automatically.
+- Auto-fix (ADR 0012) only opens pull requests: it writes a new `autofix/<run_id>` branch and
+  never merges or pushes to the base branch. It may change only files the model read or new
+  files, never `.github/`, `.git/` or lock files. The model's API key is app-wide, in
+  `builderwars/<env>/autofix-llm` (set at deploy time from a GitHub Actions secret via a NoEcho
+  parameter; only the auto-fix worker reads it). Each project's GitHub token is stored in plain
+  text in the `autofix_settings` table for the MVP and never returned by the API; move it to a
+  secrets store or a GitHub App before real users. Device logs are redacted before they leave, and deployed workers
+  refuse LLM endpoints on private, loopback or link-local addresses.
 
 ## Firmware
 

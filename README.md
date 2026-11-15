@@ -37,7 +37,7 @@ packages/
   device_protocol/  versioned device<->cloud message contract -> bw-device-protocol
   domain/           framework-free domain models and rules    -> bw-domain
   application/      services + ports (+ in-memory and PostgreSQL adapters) -> bw-application
-  ai/               controlled AI tool boundary (stubs)       -> bw-ai-platform, `ai_platform`
+  ai/               AI boundary + auto-fix worker             -> bw-ai-platform, `ai_platform`
   aws/              AWS adapters for the ports (S3, SQS, IoT, AppSync) -> bw-aws-adapters, `aws_adapters`
 device/         host-PC runtime for the FREE-WILi + `builderwars` CLI -> bw-board-runtime, `board_runtime`
 infrastructure/ AWS CDK (Python)
@@ -314,7 +314,7 @@ Metadata lives in **PostgreSQL (RDS)**, artifacts and raw data in **S3**, and th
 | Device commands | API route, per-device queue, dispatcher and result handling exist, but commands don't reach CLI-connected boards yet. Timeout sweeper and session broadcast: TODO. |
 | Realtime | AppSync Events in prod, an in-process hub locally. The membership check on subscribe: TODO. |
 | Job execution | No executors; queued jobs fail with "not implemented". Fargate: TODO. |
-| AI | Tool definitions, approval gate, redaction, run records, provider config. No client, no executors, no default model (spec 08). |
+| AI | Auto-fix: per-project OpenAI-compatible endpoint + GitHub repo; uploaded errors start runs that open a pull request with a proposed fix ([docs/autofix.md](docs/autofix.md), ADR 0012). Tool gate, redaction and provider config otherwise still stubs (spec 08). |
 | Firmware | Model, job types and host-side sha256 check only. No build, flashing or deployment (spec 09). |
 | Ingest rate limiting | Not implemented (burst 10 msg/s, sustained 60 msg/min per device planned). |
 | Collaborative editing | Deliberately deferred (CRDT/Yjs later if needed). |

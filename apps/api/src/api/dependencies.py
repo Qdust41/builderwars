@@ -18,13 +18,23 @@ from api.auth import CognitoTokenVerifier, InvalidTokenError, JwksUrlKeySource
 from api.local_realtime import LocalRealtimeHub
 from api.settings import (
     LOCAL_ONLY_ENVS,
+    AppEnv,
     AuthMode,
     RepositoryBackend,
     Settings,
     validate_settings,
 )
 from application.adapters import memory, postgres
-from application.ports import CommandQueue, JobQueue, RealtimePublisher, UserDirectory
+from application.ports import (
+    AutoFixQueue,
+    AutoFixRunRepository,
+    AutoFixSettingsRepository,
+    CommandQueue,
+    JobQueue,
+    LlmConfig,
+    RealtimePublisher,
+    UserDirectory,
+)
 from application.ports.repositories import (
     DeviceCommandRepository,
     DeviceRepository,
@@ -42,6 +52,9 @@ from application.ports.repositories import (
 )
 from application.services import (
     Authorizer,
+    AutoFixNotReadyError,
+    AutoFixService,
+    AutoFixTrigger,
     CommandService,
     DeviceEventPublisher,
     DeviceMessageIngestService,
@@ -55,6 +68,7 @@ from application.services import (
 )
 from aws_adapters import (
     AppSyncEventsPublisher,
+    SqsAutoFixQueue,
     SqsCommandQueue,
     SqsJobQueue,
     database_url_from_secret,
@@ -97,6 +111,7 @@ class Container:
     telemetry: TelemetryQueryService
     uploads: DeviceUploadService
     setups: DeviceSetupService
+    autofix: AutoFixService
     local: LocalDevBridge | None = None
     pool: ConnectionPool | None = None  # closed on app shutdown
 
@@ -120,6 +135,8 @@ class _Repositories:
     setups: DeviceSetupRepository
     boards: TargetBoardRepository
     sensors: SensorRepository
+    autofix_settings: AutoFixSettingsRepository
+    autofix_runs: AutoFixRunRepository
 
 
 def _memory_repositories() -> _Repositories:
@@ -138,6 +155,8 @@ def _memory_repositories() -> _Repositories:
         setups=memory.InMemoryDeviceSetupRepository(),
         boards=memory.InMemoryTargetBoardRepository(sensors),
         sensors=sensors,
+        autofix_settings=memory.InMemoryAutoFixSettingsRepository(),
+        autofix_runs=memory.InMemoryAutoFixRunRepository(),
     )
 
 
@@ -167,9 +186,18 @@ def _postgres_repositories(settings: Settings) -> tuple[_Repositories, Connectio
             setups=repos.setups,
             boards=repos.boards,
             sensors=repos.sensors,
+            autofix_settings=repos.autofix_settings,
+            autofix_runs=repos.autofix_runs,
         ),
         pool,
     )
+
+
+class _AutoFixUnavailable:
+    """AWS without AUTOFIX_QUEUE_URL: auto-fix is not deployed."""
+
+    def enqueue_autofix(self, run_id: str) -> None:
+        raise AutoFixNotReadyError("auto-fix is not deployed in this environment")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +205,7 @@ class _Messaging:
     job_queue: JobQueue
     command_queue: CommandQueue
     realtime: RealtimePublisher
+    autofix_queue: AutoFixQueue | None = None  # None: in-memory (tests inspect it)
 
 
 def _local_messaging() -> _Messaging:
@@ -203,6 +232,11 @@ def _aws_messaging(settings: Settings, client_factory: ClientFactory) -> _Messag
             http_dns=settings.events_http_dns,
             region=settings.aws_region,
             credentials=boto3.Session().get_credentials,
+        ),
+        autofix_queue=(
+            SqsAutoFixQueue(sqs, settings.autofix_queue_url)
+            if settings.autofix_queue_url
+            else _AutoFixUnavailable()
         ),
     )
 
@@ -244,6 +278,13 @@ def build_container(
     else:
         repos = _memory_repositories()
     authorizer = Authorizer(repos.memberships)
+    autofix_queue = _autofix_queue(settings, messaging, repos)
+    autofix_trigger = AutoFixTrigger(
+        settings=repos.autofix_settings,
+        runs=repos.autofix_runs,
+        queue=autofix_queue,
+        devices=repos.devices,
+    )
 
     dev_users: memory.InMemoryUserDirectory | None = None
     if settings.auth_mode is AuthMode.COGNITO:
@@ -278,6 +319,7 @@ def build_container(
                 sequences=repos.sequences,
                 commands=repos.commands,
                 events=events,
+                errors=autofix_trigger,
             ),
             commands=repos.commands,
             command_queue=messaging.command_queue,
@@ -312,13 +354,50 @@ def build_container(
             sequences=repos.sequences,
             commands=repos.commands,
             realtime=messaging.realtime,
+            # Uploaded error logs may start an auto-fix run (ADR 0012).
+            errors=autofix_trigger,
         ),
         setups=DeviceSetupService(
             repos.devices, repos.setups, repos.boards, repos.sensors, authorizer, users=users
         ),
+        autofix=AutoFixService(
+            settings=repos.autofix_settings,
+            runs=repos.autofix_runs,
+            queue=autofix_queue,
+            devices=repos.devices,
+            telemetry=repos.telemetry,
+            authorizer=authorizer,
+        ),
         local=local,
         pool=pool,
     )
+
+
+def _autofix_queue(settings: Settings, messaging: _Messaging, repos: _Repositories) -> AutoFixQueue:
+    """SQS in AWS. APP_ENV=local runs each run in a background thread against the real model
+    and GitHub (AUTOFIX_LLM_* in the environment); APP_ENV=test only records run ids."""
+    if messaging.autofix_queue is not None:
+        return messaging.autofix_queue
+    if settings.app_env is AppEnv.LOCAL:
+        from api.local_autofix import ThreadedAutoFixQueue  # LOCAL ONLY
+
+        return ThreadedAutoFixQueue.for_local(
+            runs=repos.autofix_runs,
+            settings=repos.autofix_settings,
+            telemetry=repos.telemetry,
+            llm=LlmConfig(
+                base_url=settings.autofix_llm_base_url,
+                model=settings.autofix_llm_model,
+                api_key=(
+                    settings.autofix_llm_api_key.get_secret_value()
+                    if settings.autofix_llm_api_key
+                    else None
+                ),
+            )
+            if settings.autofix_llm_base_url and settings.autofix_llm_model
+            else None,
+        )
+    return memory.InMemoryAutoFixQueue()
 
 
 def _cognito_verifier(settings: Settings) -> CognitoTokenVerifier:
@@ -416,3 +495,10 @@ def get_device_setup_service(container: ContainerDep) -> DeviceSetupService:
 
 
 DeviceSetupServiceDep = Annotated[DeviceSetupService, Depends(get_device_setup_service)]
+
+
+def get_autofix_service(container: ContainerDep) -> AutoFixService:
+    return container.autofix
+
+
+AutoFixServiceDep = Annotated[AutoFixService, Depends(get_autofix_service)]

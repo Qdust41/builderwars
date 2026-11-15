@@ -255,12 +255,14 @@ name = "bw-ai-platform"
 version = "0.1.0"
 source = { editable = "packages/ai" }
 dependencies = [
+    { name = "bw-application" },
     { name = "bw-domain" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "bw-application", editable = "packages/application" },
     { name = "bw-domain", editable = "packages/domain" },
     { name = "pydantic", specifier = ">=2.9" },
 ]
@@ -271,6 +273,7 @@ version = "0.1.0"
 source = { editable = "apps/api" }
 dependencies = [
     { name = "boto3" },
+    { name = "bw-ai-platform" },
     { name = "bw-application" },
     { name = "bw-aws-adapters" },
     { name = "bw-domain" },
@@ -284,6 +287,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.35" },
+    { name = "bw-ai-platform", editable = "packages/ai" },
     { name = "bw-application", editable = "packages/application" },
     { name = "bw-aws-adapters", editable = "packages/aws" },
     { name = "bw-domain", editable = "packages/domain" },
@@ -373,6 +377,7 @@ name = "bw-workers"
 version = "0.1.0"
 source = { editable = "apps/workers" }
 dependencies = [
+    { name = "bw-ai-platform" },
     { name = "bw-application" },
     { name = "bw-aws-adapters" },
     { name = "bw-device-protocol" },
@@ -382,6 +387,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bw-ai-platform", editable = "packages/ai" },
     { name = "bw-application", editable = "packages/application" },
     { name = "bw-aws-adapters", editable = "packages/aws" },
     { name = "bw-device-protocol", editable = "packages/device_protocol" },

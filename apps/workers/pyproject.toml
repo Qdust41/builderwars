@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Background workers: device message ingest and job processing"
 requires-python = ">=3.12"
 dependencies = [
+    "bw-ai-platform",
     "bw-application",
     "bw-aws-adapters",
     "bw-device-protocol",
@@ -19,6 +20,7 @@ build-backend = "hatchling.build"
 packages = ["src/workers"]
 
 [tool.uv.sources]
+bw-ai-platform = { workspace = true }
 bw-application = { workspace = true }
 bw-aws-adapters = { workspace = true }
 bw-device-protocol = { workspace = true }

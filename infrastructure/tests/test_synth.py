@@ -52,11 +52,11 @@ def test_buckets_are_private_encrypted_and_tls_only(stacks: dict[str, Template])
 
 def test_every_queue_has_a_dlq_and_alarm(stacks: dict[str, Template]) -> None:
     messaging = stacks["messaging"]
-    messaging.resource_count_is("AWS::SQS::Queue", 6)
+    messaging.resource_count_is("AWS::SQS::Queue", 8)
     messaging.resource_properties_count_is(
-        "AWS::SQS::Queue", {"RedrivePolicy": Match.object_like({"maxReceiveCount": 5})}, 3
+        "AWS::SQS::Queue", {"RedrivePolicy": Match.object_like({"maxReceiveCount": 5})}, 4
     )
-    messaging.resource_count_is("AWS::CloudWatch::Alarm", 3)
+    messaging.resource_count_is("AWS::CloudWatch::Alarm", 4)
 
 
 def test_device_policy_is_scoped_to_its_own_thing(stacks: dict[str, Template]) -> None:
@@ -151,6 +151,7 @@ def test_prod_lambdas_read_the_database_secret() -> None:
         "workers.main.device_message_lambda_handler",
         "workers.main.command_dispatch_lambda_handler",
         "workers.main.job_lambda_handler",
+        "workers.main.autofix_lambda_handler",
         "workers.main.migrate_lambda_handler",
     }
     for handler, props in {**api, **workers}.items():
@@ -196,7 +197,7 @@ def test_iot_data_endpoint_is_looked_up_not_hardcoded(stacks: dict[str, Template
 
 def test_worker_concurrency_is_capped_for_the_database(stacks: dict[str, Template]) -> None:
     mappings = stacks["workers"].find_resources("AWS::Lambda::EventSourceMapping")
-    assert len(mappings) == 3
+    assert len(mappings) == 4
     for mapping in mappings.values():
         assert mapping["Properties"]["ScalingConfig"] == {"MaximumConcurrency": 2}
         assert mapping["Properties"]["FunctionResponseTypes"] == ["ReportBatchItemFailures"]
@@ -356,3 +357,47 @@ def test_web_domain_only_in_prod() -> None:
     )
     dev = Template.from_stack(build(new_app(), get_config("dev"))["web"])
     dev.resource_count_is("AWS::CertificateManager::Certificate", 0)
+
+
+def _statements(template: Template) -> list[dict]:
+    return [
+        statement
+        for policy in template.find_resources("AWS::IAM::Policy").values()
+        for statement in policy["Properties"]["PolicyDocument"]["Statement"]
+    ]
+
+
+def _actions(statement: dict) -> list[str]:
+    actions = statement["Action"]
+    return actions if isinstance(actions, list) else [actions]
+
+
+def test_autofix_model_comes_from_deploy_parameters(stacks: dict[str, Template]) -> None:
+    # ADR 0012: the model is app-wide (Actions variables + the AUTOFIX_LLM_API_KEY secret as a
+    # NoEcho parameter). Only the auto-fix worker reads the key; the API holds no secrets for it.
+    params = stacks["workers"].to_json()["Parameters"]
+    assert params["AutoFixLlmApiKey"]["NoEcho"] is True
+    for name in ("AutoFixLlmBaseUrl", "AutoFixLlmModel", "AutoFixLlmApiKey"):
+        assert params[name]["Default"] == ""
+    [(_, secret)] = stacks["workers"].find_resources("AWS::SecretsManager::Secret").items()
+    assert secret["Properties"]["Name"].endswith("/autofix-llm")
+
+    autofix_fn = _functions(stacks["workers"])["workers.main.autofix_lambda_handler"]
+    assert autofix_fn["Timeout"] == 600
+    env = autofix_fn["Environment"]["Variables"]
+    assert {"AUTOFIX_LLM_BASE_URL", "AUTOFIX_LLM_MODEL", "AUTOFIX_LLM_SECRET_ARN"} <= set(env)
+    worker_secret_actions = {
+        a
+        for s in _statements(stacks["workers"])
+        for a in _actions(s)
+        if a.startswith("secretsmanager:")
+    }
+    assert "secretsmanager:PutSecretValue" not in worker_secret_actions
+
+    api_env = next(iter(_functions(stacks["api"]).values()))["Environment"]["Variables"]
+    assert "AUTOFIX_QUEUE_URL" in api_env
+    assert not any(
+        "autofix" in json.dumps(s["Resource"])
+        for s in _statements(stacks["api"])
+        if any(a.startswith("secretsmanager:") for a in _actions(s))
+    )

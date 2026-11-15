@@ -41,6 +41,8 @@ migrations on every deploy (ADR 0006, ADR 0007).
 | `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | ids | needed for `AUTH_MODE=cognito`; the CDK stack sets them in AWS |
 | `DATABASE_URL` | Postgres URL | locally; in AWS the Lambda reads the RDS secret and connects over TLS |
 | `CORS_ALLOW_ORIGINS` | JSON list | only for local cross-origin use; prod is same-origin |
+| `AUTOFIX_QUEUE_URL` | URL | auto-fix in AWS (set by the stack); without it manual runs are refused there |
+| `AUTOFIX_LLM_BASE_URL`, `AUTOFIX_LLM_MODEL`, `AUTOFIX_LLM_API_KEY` | URL, name, key | LOCAL ONLY: the model local auto-fix runs call (in AWS the worker gets them from the deploy) |
 
 With `AUTH_MODE=cognito` the API verifies Cognito access tokens (ADR 0005).
 
@@ -52,6 +54,9 @@ With `AUTH_MODE=cognito` the API verifies Cognito access tokens (ADR 0005).
   events are published to AppSync.
 - `GET /devices/{id}/logs/history`: all log lines and device events for a device, oldest first,
   with `since`/`until` and a `next_cursor` (up to 1000 per page). Behind `builderwars logs`.
+- `GET/PUT/DELETE /projects/{id}/autofix`, `GET/POST /projects/{id}/autofix/runs`: link an
+  OpenAI-compatible endpoint and a GitHub repo so device errors become pull requests
+  (ADR 0012, [docs/autofix.md](../../docs/autofix.md)). Keys are write-only.
 - `/local/*` (local/test only): the in-process realtime stream and the `local-api` device
   transport (ADR 0008).
 
