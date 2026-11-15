@@ -27,8 +27,8 @@ class IdentityStack(Stack):
             user_pool_name=config.resource_name("users"),
             self_sign_up_enabled=True,
             user_verification=cognito.UserVerificationConfig(
-                email_subject="Your Builderwars verification code",
-                email_body="Your Builderwars verification code is {####}.",
+                email_subject="Your MESH verification code",
+                email_body="Your MESH verification code is {####}.",
                 email_style=cognito.VerificationEmailStyle.CODE,
             ),
             sign_in_aliases=cognito.SignInAliases(email=True),
@@ -36,7 +36,7 @@ class IdentityStack(Stack):
             auto_verify=cognito.AutoVerifiedAttrs(email=True),
             keep_original=cognito.KeepOriginalAttrs(email=True),  # until the new one is verified
             user_invitation=cognito.UserInvitationConfig(
-                email_subject="Your Builderwars account",
+                email_subject="Your MESH account",
                 email_body=(
                     "An account was created for {username}. Your temporary password is "
                     "{####}. You will be asked to choose a new one when you first sign in."
