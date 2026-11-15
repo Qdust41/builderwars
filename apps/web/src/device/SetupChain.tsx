@@ -26,6 +26,7 @@ const SOURCE_TEXT: Record<string, string> = {
   freewili: "Reading this device's sensors",
   "freewili-gpio": "No sensors defined: sending the FREE-WILi's own pins",
   simulated: "Simulated values (--simulate), no board is read",
+  "logger-real": "Logger mode (--logger real): GPIO bitfield + MPU6050 IMU",
 };
 
 /**

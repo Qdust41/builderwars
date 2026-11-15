@@ -1147,7 +1147,7 @@ export interface components {
             python_version: string;
             /**
              * Sensor Source
-             * @description 'freewili' (real board), 'simulated' (--simulate) or 'freewili-gpio' (no sensors defined: raw FREE-WILi pins)
+             * @description 'freewili' (real board), 'simulated' (--simulate), 'freewili-gpio' (no sensors defined: raw FREE-WILi pins) or 'logger-real' (--logger real: GPIO bitfield + MPU6050 via onewili)
              * @default freewili
              */
             sensor_source: string;

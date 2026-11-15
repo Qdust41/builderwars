@@ -104,9 +104,9 @@ common parts from the table ([ADR 0010](docs/decisions/0010-test-setup-and-senso
 | `builderwars login [--email E] [--api URL]` | Sign in to your Builderwars account |
 | `builderwars whoami` / `logout` | Show or forget the saved sign-in |
 | `builderwars devices` | The devices in your projects, with their ids |
-| `builderwars run [port] [--cloud] [--simulate [--sim-errors RATE]] [--take-over] [--device-id ID] [-n N] [-i SECONDS]` | Run the host runtime |
+| `builderwars run [port] [--cloud] [--simulate [--sim-errors RATE]] [--logger real [--csv PATH \| --no-csv]] [--take-over] [--device-id ID] [-n N] [-i SECONDS]` | Run the host runtime |
 | `builderwars sensors DEVICE [--read] [--port P]` | List a device's sensors; `--read` reads each once on the FREE-WILi |
-| `builderwars upload FILE --device-id ID` | Upload saved telemetry/logs to a device |
+| `builderwars upload FILE --device-id ID` | Upload saved telemetry/logs (JSON lines, log CSV or logger CSV) to a device |
 | `builderwars logs [DEVICE] [--since T] [--until T] [-o PATH] [--force]` | Download a device's cloud logs as CSV |
 | `builderwars sim` | Emit messages from a simulated board as JSON lines |
 | `builderwars show` | List the log CSVs stored on this computer |
@@ -193,13 +193,47 @@ logs like real ones (the first line says simulated faults are on). `--sim-errors
 - The dashboard shows a board as Online/Live only while a `run --cloud` is sending: it goes
   offline when the run stops, or after 75 s without anything from it.
 
+### Logger mode: `builderwars run --logger real`
+
+```bash
+builderwars run --cloud --device-id dev_... --logger real              # first FREE-WILi found
+builderwars run --cloud --device-id dev_... --logger real /dev/ttyACM0 -i 0.1   # 10 Hz, like the script
+builderwars run --logger real --no-csv -n 20                          # no cloud: JSON lines
+```
+
+Reads the board the way `scripts/wili_code/src/logger_real.py` does, through the vendor's newer
+[`onewili`](https://github.com/freewili/onewili) library on the FREE-WILi's main port only:
+the whole GPIO bitfield in one call and 14 bytes from an MPU6050 IMU at I2C 0x68. It is the
+fallback for boards where the default reader's GPIO reads time out. Everything else is the
+same as `run --cloud`: sign-in, the board lock, `--take-over`, buffering and the live
+dashboard.
+
+- The dashboard gets `gpio_raw`, `gpio_0` .. `gpio_31` (0/1), the IMU's raw counts
+  (`accel_x_raw`, `accel_y_raw`, `accel_z_raw`, `temperature_raw`, `gyro_x_raw`, `gyro_y_raw`,
+  `gyro_z_raw`) and `imu_temp_c` (MPU6050 datasheet: raw / 340 + 36.53). Sensors defined on the
+  device page are ignored in this mode.
+- If only one of the two reads fails, the other is still sent and the failure is logged once
+  (and once more when it recovers). If both fail the device goes degraded; after 3 in a row
+  the port is re-opened.
+- Every sample is also written to a CSV with the script's exact columns, by default
+  `./logger_real_<date>_<time>.csv` (`--csv PATH` to choose, `--no-csv` to skip).
+- `onewili` is not on PyPI: `pip install "onewili @ git+https://github.com/freewili/onewili#subdirectory=python"`.
+- Default rate is 1 sample/s; `-i 0.1` matches the script's 10 Hz. Wide samples are batched
+  under the 16 KB message limit, so 10 Hz sends a few small uploads every 5 s.
+
 ### Upload saved data: `builderwars upload`
 
 ```bash
 builderwars upload dev-local --device-id dev_...       # a log CSV from ~/.builderwars/logs
 builderwars run -n 60 > run.jsonl
 builderwars upload run.jsonl --device-id dev_...       # JSON lines from run or sim
+builderwars upload combined_gpio_imu.csv --device-id dev_...   # a logger_real CSV
 ```
+
+A CSV with the `logger_real` columns (from `run --logger real` or the script itself) becomes
+telemetry with the same readings `run --logger real` sends live. The script writes local time
+without a zone; it is read as this computer's time zone. Rows where both reads failed are
+skipped and listed.
 
 `FILE` is a path, or a device id whose local log CSV to upload. Uploads are idempotent:
 messages already stored (for example logs that went up live and are also in the CSV) are

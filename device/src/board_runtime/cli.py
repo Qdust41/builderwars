@@ -304,13 +304,27 @@ def format_readings(readings: dict[str, Any], previous: dict[str, Any] | None = 
 
 
 # -- board commands ---------------------------------------------------------------------------
-def _freewili_version() -> str:
+def _freewili_version(package: str = "freewili") -> str:
     try:
         from importlib.metadata import version
 
-        return version("freewili")
+        return version(package)
     except Exception:
         return "?"
+
+
+#: ``run --logger`` choices: other ways of reading the board than the defined sensors.
+LOGGERS = ("real",)
+
+
+def _logger_csv_path(args: argparse.Namespace) -> Path | None:
+    """Where ``run --logger real`` writes its CSV: ``--csv PATH``, or a timestamped file in
+    the current folder like the script's, or nowhere with ``--no-csv``."""
+    if getattr(args, "no_csv", False):
+        return None
+    if getattr(args, "csv", None):
+        return Path(args.csv).expanduser()
+    return Path(f"logger_real_{datetime.now():%Y%m%d_%H%M%S}.csv")
 
 
 def cmd_test(args: argparse.Namespace) -> int:
@@ -484,8 +498,12 @@ def _cli_version() -> str:
 def cmd_run(args: argparse.Namespace) -> int:
     port = normalize_port(args.port)
     simulate = bool(getattr(args, "simulate", False))
+    logger = getattr(args, "logger", None)
     if simulate and port:
         _error("--simulate and a port don't go together", "drop one of them")
+        return EXIT_USAGE
+    if simulate and logger:
+        _error("--simulate and --logger don't go together", "--logger reads a real board")
         return EXIT_USAGE
     env = dict(os.environ)
     env.setdefault("BUILDERWARS_STATE_DIR", str(args.state_dir))
@@ -505,6 +523,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if simulate:
         env["DEVICE_SENSORS"] = SensorKind.SIMULATED.value
         env.pop("DEVICE_PORT", None)
+    elif logger:
+        env["DEVICE_SENSORS"] = SensorKind.FREEWILI.value
     elif cloud and not env.get("DEVICE_SENSORS"):
         # Streaming to the dashboard reads the real FREE-WILi; simulation must be asked for.
         env["DEVICE_SENSORS"] = SensorKind.FREEWILI.value
@@ -559,8 +579,15 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"skipping sensor {key}: {why} (update the CLI?)", file=sys.stderr)
 
     specs = [s for s in (sensor_list.sensors if sensor_list else []) if s.enabled]
+    if logger and specs:
+        print(
+            f"--logger {logger}: ignoring the {len(specs)} sensor(s) defined on the device page; "
+            "sending the logger's GPIO + IMU readings instead",
+            file=sys.stderr,
+        )
+        specs = []
     refresh: Any = None
-    if session is not None:
+    if session is not None and not logger:
         from board_runtime.cloud import fetch_sensors
 
         # Sensors and boards added on the device page while this runs are picked up (30 s).
@@ -578,6 +605,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         early_source = (
             "simulated"
             if config.sensors is not SensorKind.FREEWILI
+            else f"logger-{logger}"
+            if logger
             else ("freewili" if specs else "freewili-gpio")
         )
         try:
@@ -599,7 +628,40 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     sensors: Any = None
     board_info: BoardInfo | None = None
-    if config.sensors is SensorKind.FREEWILI:
+    library = "freewili"
+    if logger:
+        from board_runtime.hardware.logger_real import LoggerRealSensors, OneWiliNotInstalledError
+
+        library = "onewili"
+        csv_path = _logger_csv_path(args)
+        logger_sensors = LoggerRealSensors(port=config.serial_port, csv_path=csv_path)
+        try:
+            logger_sensors.connect()  # fail fast, as for the default reader
+        except OneWiliNotInstalledError as exc:
+            _release(session, config.device_id, run_id)
+            _error(str(exc), exc.hint)
+            return EXIT_USAGE
+        except BoardUnavailableError as exc:
+            _release(session, config.device_id, run_id)
+            _error(str(exc), exc.hint)
+            return EXIT_FAILED
+        sensors = logger_sensors
+        source = f"logger-{logger}"
+        board_info = BoardInfo(
+            name="FREE-WILi",
+            serial="?",
+            kind="onewili",
+            main_port=logger_sensors.main_port,
+            display_port=None,
+        )
+        print(
+            f"connected to the FREE-WILi with onewili ({logger_sensors.main_port or 'auto'}); "
+            "reading the GPIO bitfield + MPU6050 at I2C 0x68 (logger_real.py)",
+            file=sys.stderr,
+        )
+        if csv_path is not None:
+            print(f"also writing every sample to {csv_path.resolve()}", file=sys.stderr)
+    elif config.sensors is SensorKind.FREEWILI:
         # After --take-over the old run may hold the port for a few more seconds.
         board = FreeWiliSensors(port=config.serial_port, busy_wait_s=20.0 if take_over else 8.0)
         try:
@@ -672,7 +734,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 session,
                 config.device_id,
                 host_report(cli_version=_cli_version(), sensor_source=source),
-                bridge_report(board_info, library_version=_freewili_version()),
+                bridge_report(board_info, library_version=_freewili_version(library)),
                 run_id=run_id,
             )
         except Exception as exc:  # the lock is already ours; this is only the page's card
@@ -1229,6 +1291,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="with --simulate: how often to make up faults (sensor read errors, USB drop-outs, "
         "board error logs), 0..1 (default 0.05; 0 turns them off)",
     )
+    p_run.add_argument(
+        "--logger",
+        choices=LOGGERS,
+        default=None,
+        help="read the board another way instead of the device page's sensors. 'real': like "
+        "scripts/wili_code/src/logger_real.py (onewili library): the whole GPIO bitfield + an "
+        "MPU6050 IMU at I2C 0x68, also written to that script's CSV format",
+    )
+    p_run.add_argument(
+        "--csv",
+        metavar="PATH",
+        help="--logger: CSV to write (default: ./logger_real_<time>.csv)",
+    )
+    p_run.add_argument("--no-csv", action="store_true", help="--logger: don't write a CSV")
     p_run.add_argument(
         "--take-over",
         action="store_true",
