@@ -183,7 +183,8 @@ def test_appsync_publish_is_sigv4_signed_to_the_session_channel() -> None:
     [(url, body, headers)] = sender.calls
     assert url == "https://abc.appsync-api.us-east-1.amazonaws.com/event"
     payload = json.loads(body)
-    assert payload["channel"] == "/projects/prj_1/sessions/ses_1"
+    # AppSync channel segments allow only [A-Za-z0-9-], so ids spell "_" as "-" (ADR 0008).
+    assert payload["channel"] == "/projects/prj-1/sessions/ses-1"
     assert json.loads(payload["events"][0])["event_id"] == str(event.event_id)
     assert headers["Authorization"].startswith("AWS4-HMAC-SHA256 ")
     assert "/appsync/aws4_request" in headers["Authorization"]

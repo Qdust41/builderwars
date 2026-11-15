@@ -71,6 +71,11 @@ DEVICE_ID=dev-local-001 BUILDERWARS_STATE_DIR=/tmp/bw-state uv run python -m boa
 
 # Frontend on http://localhost:5173 (proxies /api -> :8000)
 cd apps/web && npm install && npm run dev
+
+# Live device dashboard: register a device in the web app, then point the host runtime at the
+# local API (see apps/web/README.md)
+DEVICE_ID=<dev_...> DEVICE_TRANSPORT=local-api BUILDERWARS_STATE_DIR=/tmp/bw-state \
+  uv run python -m board_runtime.main
 ```
 
 Interactive API docs: http://localhost:8000/docs. Local auth is the `X-Dev-User` header; the
@@ -136,7 +141,8 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 | Device commands | API route, per-device queue (32 pending, 30 s expiry), dispatcher handler and result handling; SQS command queue and IoT data-plane publisher in AWS (`packages/aws`). Timeout sweeper and session broadcast: TODO. |
 | Workers in AWS | Ingest (raw/rejected bodies to S3), command dispatcher and job worker Lambdas are wired (`workers.aws_runtime`); not yet deployed. |
 | Job execution | No executors; queued jobs fail with "not implemented". Fargate: TODO. |
-| Realtime | Recording publisher locally; SigV4-signed AppSync Events publisher in AWS; membership check on subscribe: TODO. |
+| Realtime | Locally, an in-process hub streams events to the browser (`/local/realtime`). In AWS, a SigV4-signed AppSync Events publisher; web AppSync Events client built (Cognito ID token). Device events from ingest/dispatcher in AWS and the membership check on subscribe: TODO. |
+| Web app | Device dashboard (live telemetry charts, log stream, commands) works locally; Cognito sign-in page (`VITE_AUTH_MODE=cognito`). Hosting, password reset and member management UI: TODO. |
 | AI | Tool definitions, approval gate, redaction, run records, provider config (OpenAI-compatible / Bedrock). No client, no executors, no default model (spec 08). |
 | Firmware | Model, job types and host-side sha256 check only. No build, flashing or deployment (spec 09). |
 | Ingest rate limiting | Not implemented (burst 10 msg/s, sustained 60 msg/min per device planned). |

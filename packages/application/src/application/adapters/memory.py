@@ -8,10 +8,12 @@ used in a deployed environment.
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import cast
 
+from application.ports import DeviceLogEntry, TelemetrySample
 from application.realtime import RealtimeEvent
 from device_protocol import DeviceEnvelope
 from domain.devices import Device, DeviceCommand
@@ -225,6 +227,43 @@ class InMemoryTelemetryRepository:
             }
         )
 
+    def recent_telemetry(self, device_id: str, *, limit: int) -> list[TelemetrySample]:
+        rows = [r for r in self.telemetry if r["device_id"] == device_id]
+        rows.sort(key=lambda r: _at(r))
+        return (
+            [
+                TelemetrySample(at=_at(r), readings=dict(cast(dict[str, object], r["metrics"])))
+                for r in rows[-limit:]
+            ]
+            if limit > 0
+            else []
+        )
+
+    def recent_logs(self, device_id: str, *, limit: int) -> list[DeviceLogEntry]:
+        entries = [
+            DeviceLogEntry(at=_at(r), kind="log", level=str(r["level"]), message=str(r["message"]))
+            for r in self.logs
+            if r["device_id"] == device_id
+        ]
+        for r in self.events:
+            if r["device_id"] != device_id:
+                continue
+            detail = f": {r['detail']}" if r["detail"] else ""
+            entries.append(
+                DeviceLogEntry(
+                    at=_at(r),
+                    kind="event",
+                    level=str(r["severity"]),
+                    message=f"{r['name']}{detail}",
+                )
+            )
+        entries.sort(key=lambda e: e.at)
+        return entries[-limit:] if limit > 0 else []
+
+
+def _at(row: dict[str, object]) -> datetime:
+    return cast(datetime, row["at"])
+
 
 @dataclass
 class InMemoryJobQueue:
@@ -237,9 +276,18 @@ class InMemoryJobQueue:
 @dataclass
 class InMemoryCommandQueue:
     command_ids: list[str] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def enqueue_command(self, command_id: str) -> None:
-        self.command_ids.append(command_id)
+        with self._lock:
+            self.command_ids.append(command_id)
+
+    def take(self, predicate: Callable[[str], bool]) -> list[str]:
+        """Remove and return the queued ids matching ``predicate``, in FIFO order."""
+        with self._lock:
+            taken = [cid for cid in self.command_ids if predicate(cid)]
+            self.command_ids[:] = [cid for cid in self.command_ids if cid not in taken]
+            return taken
 
 
 @dataclass

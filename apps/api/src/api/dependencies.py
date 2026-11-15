@@ -15,6 +15,7 @@ from psycopg_pool import ConnectionPool
 from pydantic import SecretStr
 
 from api.auth import CognitoTokenVerifier, InvalidTokenError, JwksUrlKeySource
+from api.local_realtime import LocalRealtimeHub
 from api.settings import (
     LOCAL_ONLY_ENVS,
     AuthMode,
@@ -29,16 +30,23 @@ from application.ports.repositories import (
     DeviceRepository,
     JobRepository,
     MembershipRepository,
+    ProcessedMessageStore,
     ProjectRepository,
+    RawDeviceMessageStore,
+    SequenceTracker,
     SessionRepository,
+    TelemetryRepository,
 )
 from application.services import (
     Authorizer,
     CommandService,
+    DeviceEventPublisher,
+    DeviceMessageIngestService,
     DeviceService,
     JobService,
     ProjectService,
     SessionService,
+    TelemetryQueryService,
 )
 from aws_adapters import (
     AppSyncEventsPublisher,
@@ -57,6 +65,18 @@ class CurrentUser:
 
 
 @dataclass(frozen=True, slots=True)
+class LocalDevBridge:
+    """LOCAL ONLY: stands in for IoT Core, SQS and AppSync so a simulated host can talk to
+    this API process (see ``api.routes.local_dev``). Never built for deployed environments."""
+
+    realtime: LocalRealtimeHub
+    events: DeviceEventPublisher
+    ingest: DeviceMessageIngestService
+    commands: DeviceCommandRepository
+    command_queue: memory.InMemoryCommandQueue
+
+
+@dataclass(frozen=True, slots=True)
 class Container:
     settings: Settings
     token_verifier: CognitoTokenVerifier | None
@@ -69,6 +89,8 @@ class Container:
     sessions: SessionService
     jobs: JobService
     commands: CommandService
+    telemetry: TelemetryQueryService
+    local: LocalDevBridge | None = None
     pool: ConnectionPool | None = None  # closed on app shutdown
 
     def close(self) -> None:
@@ -84,6 +106,10 @@ class _Repositories:
     sessions: SessionRepository
     jobs: JobRepository
     commands: DeviceCommandRepository
+    telemetry: TelemetryRepository
+    processed: ProcessedMessageStore
+    sequences: SequenceTracker
+    raw_messages: RawDeviceMessageStore
 
 
 def _memory_repositories() -> _Repositories:
@@ -94,6 +120,10 @@ def _memory_repositories() -> _Repositories:
         sessions=memory.InMemorySessionRepository(),
         jobs=memory.InMemoryJobRepository(),
         commands=memory.InMemoryDeviceCommandRepository(),
+        telemetry=memory.InMemoryTelemetryRepository(),
+        processed=memory.InMemoryProcessedMessageStore(),
+        sequences=memory.InMemorySequenceTracker(),
+        raw_messages=memory.InMemoryRawMessageStore(),
     )
 
 
@@ -116,6 +146,10 @@ def _postgres_repositories(settings: Settings) -> tuple[_Repositories, Connectio
             sessions=repos.sessions,
             jobs=repos.jobs,
             commands=repos.commands,
+            telemetry=repos.telemetry,
+            processed=repos.processed,
+            sequences=repos.sequences,
+            raw_messages=repos.raw_messages,
         ),
         pool,
     )
@@ -133,7 +167,8 @@ def _local_messaging() -> _Messaging:
     return _Messaging(
         job_queue=memory.InMemoryJobQueue(),
         command_queue=memory.InMemoryCommandQueue(),
-        realtime=memory.RecordingRealtimePublisher(),
+        # The browser's event stream for local dev reads from this hub (/local/realtime).
+        realtime=LocalRealtimeHub(),
     )
 
 
@@ -206,6 +241,30 @@ def build_container(
     elif users is None:
         users = dev_users = memory.InMemoryUserDirectory()
 
+    # LOCAL ONLY: the bridge for a simulated host and the browser's event stream (ADR 0008).
+    # Only when the in-process hub and queue are in use (tests may inject other messaging).
+    local: LocalDevBridge | None = None
+    if (
+        settings.app_env in LOCAL_ONLY_ENVS
+        and isinstance(messaging.realtime, LocalRealtimeHub)
+        and isinstance(messaging.command_queue, memory.InMemoryCommandQueue)
+    ):
+        events = DeviceEventPublisher(messaging.realtime)
+        local = LocalDevBridge(
+            realtime=messaging.realtime,
+            events=events,
+            ingest=DeviceMessageIngestService(
+                devices=repos.devices,
+                processed=repos.processed,
+                raw_store=repos.raw_messages,
+                telemetry=repos.telemetry,
+                sequences=repos.sequences,
+                commands=repos.commands,
+                events=events,
+            ),
+            commands=repos.commands,
+            command_queue=messaging.command_queue,
+        )
     return Container(
         settings=settings,
         token_verifier=token_verifier,
@@ -217,6 +276,8 @@ def build_container(
         sessions=SessionService(repos.sessions, repos.devices, authorizer, messaging.realtime),
         jobs=JobService(repos.jobs, repos.devices, messaging.job_queue, authorizer),
         commands=CommandService(repos.commands, repos.devices, messaging.command_queue, authorizer),
+        telemetry=TelemetryQueryService(repos.devices, repos.telemetry, authorizer),
+        local=local,
         pool=pool,
     )
 
@@ -294,8 +355,13 @@ def get_command_service(container: ContainerDep) -> CommandService:
     return container.commands
 
 
+def get_telemetry_service(container: ContainerDep) -> TelemetryQueryService:
+    return container.telemetry
+
+
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 DeviceServiceDep = Annotated[DeviceService, Depends(get_device_service)]
 SessionServiceDep = Annotated[SessionService, Depends(get_session_service)]
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 CommandServiceDep = Annotated[CommandService, Depends(get_command_service)]
+TelemetryServiceDep = Annotated[TelemetryQueryService, Depends(get_telemetry_service)]

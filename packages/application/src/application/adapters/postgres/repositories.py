@@ -15,6 +15,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
+from application.ports import DeviceLogEntry, TelemetrySample
 from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project, ProjectMembership, ProjectRole
@@ -472,3 +473,36 @@ class PostgresTelemetryRepository(_Repo):
             " VALUES (%s, %s, %s, %s, %s, %s)",
             (device_id, message_id, at, name, severity, detail),
         )
+
+    def recent_telemetry(self, device_id: str, *, limit: int) -> list[TelemetrySample]:
+        if limit <= 0:
+            return []
+        rows = self._all(
+            "SELECT at, metrics FROM ("
+            "  SELECT id, at, metrics FROM device_telemetry WHERE device_id = %s"
+            "  ORDER BY at DESC, id DESC LIMIT %s"
+            ") newest ORDER BY at, id",
+            (device_id, limit),
+        )
+        return [TelemetrySample(at=r["at"], readings=dict(r["metrics"])) for r in rows]
+
+    def recent_logs(self, device_id: str, *, limit: int) -> list[DeviceLogEntry]:
+        """Log lines and device events merged, as ``DeviceLogEntry`` explains."""
+        if limit <= 0:
+            return []
+        rows = self._all(
+            "SELECT at, kind, level, message FROM ("
+            "  SELECT id, at, 'log' AS kind, level, message, 0 AS src"
+            "    FROM device_logs WHERE device_id = %s"
+            "  UNION ALL"
+            "  SELECT id, at, 'event' AS kind, severity AS level,"
+            "         name || COALESCE(': ' || NULLIF(detail, ''), '') AS message, 1 AS src"
+            "    FROM device_events WHERE device_id = %s"
+            "  ORDER BY at DESC, src DESC, id DESC LIMIT %s"
+            ") newest ORDER BY at, src, id",
+            (device_id, device_id, limit),
+        )
+        return [
+            DeviceLogEntry(at=r["at"], kind=r["kind"], level=r["level"], message=r["message"])
+            for r in rows
+        ]

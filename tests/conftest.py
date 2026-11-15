@@ -12,6 +12,7 @@ from application.adapters import memory
 from application.services import (
     Authorizer,
     CommandService,
+    DeviceEventPublisher,
     DeviceMessageIngestService,
     DeviceService,
     JobService,
@@ -107,6 +108,12 @@ class PgTelemetryView:
     def add_event(self, **kw: Any) -> None:
         self._repo.add_event(**kw)
 
+    def recent_telemetry(self, device_id: str, *, limit: int) -> Any:
+        return self._repo.recent_telemetry(device_id, limit=limit)
+
+    def recent_logs(self, device_id: str, *, limit: int) -> Any:
+        return self._repo.recent_logs(device_id, limit=limit)
+
     def _rows(self, table: str, columns: str) -> list[dict[str, object]]:
         return [dict(r) for r in self._repo._all(f"SELECT {columns} FROM {table} ORDER BY id")]
 
@@ -190,6 +197,7 @@ class IngestWorld:
     raw: Any  # .items / .quarantined, as memory.InMemoryRawMessageStore
     telemetry: Any  # .telemetry / .logs / .events, as memory.InMemoryTelemetryRepository
     commands: Any
+    realtime: memory.RecordingRealtimePublisher
 
 
 @pytest.fixture
@@ -210,6 +218,7 @@ def ingest(backend: str, request: pytest.FixtureRequest) -> IngestWorld:
         telemetry = memory.InMemoryTelemetryRepository()
         processed = memory.InMemoryProcessedMessageStore()
         sequences = memory.InMemorySequenceTracker()
+    realtime = memory.RecordingRealtimePublisher()
     service = DeviceMessageIngestService(
         devices=devices,
         processed=processed,
@@ -217,5 +226,6 @@ def ingest(backend: str, request: pytest.FixtureRequest) -> IngestWorld:
         telemetry=telemetry,
         sequences=sequences,
         commands=commands,
+        events=DeviceEventPublisher(realtime),
     )
-    return IngestWorld(service, projects, devices, raw, telemetry, commands)
+    return IngestWorld(service, projects, devices, raw, telemetry, commands, realtime)

@@ -181,6 +181,17 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 - Acceptance: two browsers viewing one project see each other's presence and command
   results within ~2 s; killing one browser degrades the other to a presence notice, not an
   error.
+- Device channel (ADR 0008, built): `projects/{project}/devices/{device}` carries
+  `device.telemetry`, `device.log` and `device.command.updated` for everyone viewing a device.
+  Channel ids use `-` for `_` (AppSync segments are `[A-Za-z0-9-]`). The device page loads
+  `GET /devices/{id}/telemetry` and `/logs`, subscribes to the channel from
+  `GET /devices/{id}/channel`, and refetches on every (re)subscribe.
+- Web client (built): `apps/web/src/realtime/appsync.ts` speaks the `aws-appsync-event-ws`
+  protocol (one socket, many subscriptions, keepalive timeout, resubscribe on reconnect).
+  It authorises with the Cognito ID token from web sign-in. Locally the browser reads
+  `GET /local/realtime` (server-sent events) instead.
+- Web sign-in (built): email + password page with account creation and code confirmation
+  (Amplify Auth, SRP, `VITE_AUTH_MODE=cognito`). Not built: password reset, hosted UI.
 
 ## 07 — Device command path
 

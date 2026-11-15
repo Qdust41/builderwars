@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.dependencies import Container, build_container
-from api.routes import devices, events, health, jobs, projects, sessions
+from api.routes import devices, events, health, jobs, local_dev, projects, sessions
 from api.settings import Settings
 from application.services import CommandQueueFullError
 from domain.common import (
@@ -73,6 +73,9 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
         jobs.router,
     ):
         app.include_router(router)
+    if app.state.container.local is not None:
+        # LOCAL ONLY: simulated host + browser bridge; never mounted with real AWS adapters.
+        app.include_router(local_dev.router)
     return app
 
 

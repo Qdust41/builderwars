@@ -34,3 +34,18 @@ describe("ApiClient", () => {
     expect(calls[0][0]).toBe("/devices/a%2Fb");
   });
 });
+
+describe("dashboard reads", () => {
+  it("builds telemetry, log and channel URLs", async () => {
+    const calls: [string, RequestInit | undefined][] = [];
+    const client = new ApiClient("/api", devUserAuth("a"), fakeFetch(200, [], calls));
+    await client.getTelemetry("dev_1", 50);
+    await client.getLogs("dev_1");
+    await client.getDeviceChannel("dev_1");
+    expect(calls.map((c) => c[0])).toEqual([
+      "/api/devices/dev_1/telemetry?limit=50",
+      "/api/devices/dev_1/logs?limit=200",
+      "/api/devices/dev_1/channel",
+    ]);
+  });
+});

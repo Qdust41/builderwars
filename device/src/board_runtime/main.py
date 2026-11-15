@@ -2,7 +2,9 @@
 
     DEVICE_ID=dev-local-001 uv run python -m board_runtime.main --samples 12
 
-With ``DEVICE_TRANSPORT=stdout`` (default) messages are printed as JSON lines.
+With ``DEVICE_TRANSPORT=stdout`` (default) messages are printed as JSON lines. With
+``DEVICE_TRANSPORT=local-api`` they go to a local API (``LOCAL_API_URL``), which also delivers
+commands back, so the web dashboard shows live telemetry without AWS.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from board_runtime.commands import CommandDispatcher
 from board_runtime.config import DeviceConfig, SensorKind, TransportKind
 from board_runtime.connectivity import (
     BoundedMemoryBuffer,
+    LocalApiTransport,
     OfflineBuffer,
     StdoutTransport,
     Transport,
@@ -32,6 +35,7 @@ from board_runtime.hardware import (
     SensorReader,
     SimulatedSensors,
 )
+from board_runtime.logging import DeviceLogForwarder
 from board_runtime.messages import MessageFactory
 from board_runtime.sequence import FileSequenceStore, SequenceStore
 from device_protocol import MessageType, MessageValidationError, decode_message, topic_for
@@ -40,6 +44,9 @@ from device_protocol.schemas import CommandPayload, DeviceState, EventSeverity
 from device_protocol.topics import TopicChannel
 
 log = logging.getLogger(__name__)
+# Application events worth showing in the cloud log stream. ``main`` forwards this logger (not
+# the transport's) to the cloud, so a send failure can never log its way into a loop.
+app_log = logging.getLogger("board_runtime.app")
 
 
 class BoardRuntime:
@@ -167,6 +174,7 @@ class BoardRuntime:
             return
         result = self.dispatcher.dispatch(decoded.payload)
         self.send(MessageType.COMMAND_RESULT, result.model_dump(mode="json"))
+        app_log.info("command %s: %s", decoded.payload.name, result.status.value)
 
 
 def default_dispatcher(runtime: BoardRuntime) -> CommandDispatcher:
@@ -180,6 +188,8 @@ def default_dispatcher(runtime: BoardRuntime) -> CommandDispatcher:
 def build_transport(config: DeviceConfig) -> Transport:
     if config.transport is TransportKind.MQTT:
         return MqttTransport(config)
+    if config.transport is TransportKind.LOCAL_API:
+        return LocalApiTransport(config.local_api_url, config.device_id)
     return StdoutTransport()
 
 
@@ -199,7 +209,11 @@ def main(argv: list[str] | None = None) -> None:
     runtime = BoardRuntime(
         config, build_transport(config), build_sensors(config), sequence=sequence
     )
+    forwarder = DeviceLogForwarder(runtime.send_log)
+    app_log.addHandler(forwarder)
+    app_log.setLevel(logging.INFO)
     runtime.start()
+    app_log.info("host runtime started (sensors=%s)", config.sensors.value)
     count = 0
     last_heartbeat = time.monotonic()
     try:
@@ -214,7 +228,9 @@ def main(argv: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        app_log.info("host runtime stopping")
         runtime.stop()
+        app_log.removeHandler(forwarder)
 
 
 if __name__ == "__main__":
