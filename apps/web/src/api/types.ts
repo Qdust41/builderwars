@@ -1,74 +1,43 @@
-// Mirrors contracts/api/openapi.json. TODO: generate these types from the OpenAPI file
-// (e.g. openapi-typescript) instead of maintaining them by hand.
-export type ConnectionStatus = "unknown" | "online" | "offline";
-export type JobType =
-  | "ai_run"
-  | "firmware_build"
-  | "firmware_deploy"
-  | "firmware_rollback"
-  | "test_run"
-  | "data_analysis";
-export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+// API types, taken from the generated `schema.gen.ts` (from contracts/api/openapi.json).
+// Regenerate with `npm run gen:api` after `scripts/export_contracts.py`; never edit by hand.
+import type { components } from "./schema.gen";
 
-export interface Project {
-  id: string;
-  name: string;
-  owner_user_id: string;
-  created_at: string;
-  updated_at: string;
-}
+type Schemas = components["schemas"];
 
-export interface Device {
-  id: string;
-  project_id: string;
-  display_name: string;
-  hardware_model: string;
-  extensions: string[];
-  firmware_version: string | null;
-  connection_status: ConnectionStatus;
-  last_seen_at: string | null;
-  created_at: string;
-}
+export type ConnectionStatus = Schemas["ConnectionStatus"];
+export type JobType = Schemas["JobType"];
+export type JobStatus = Schemas["JobStatus"];
+export type CommandStatus = Schemas["CommandStatus"];
+export type SessionStatus = Schemas["SessionStatus"];
+export type RealtimeEventType = Schemas["RealtimeEventType"];
 
-export interface Session {
-  id: string;
-  project_id: string;
-  device_id: string | null;
-  created_by: string;
-  status: "active" | "ended";
-  created_at: string;
-}
+export type Health = Schemas["HealthOut"];
+export type Project = Schemas["ProjectOut"];
+export type Device = Schemas["DeviceOut"];
+export type Session = Schemas["SessionOut"];
+export type SessionChannel = Schemas["SessionChannelOut"];
+export type DeviceChannel = Schemas["DeviceChannelOut"];
+export type Job = Schemas["JobOut"];
+export type DeviceCommand = Schemas["CommandOut"];
+export type CommandArg = DeviceCommand["args"][string];
+export type TelemetrySample = Schemas["TelemetrySampleOut"];
+export type TelemetryValue = TelemetrySample["readings"][string];
+export type DeviceLogEntry = Schemas["DeviceLogEntryOut"];
 
-export interface SessionChannel {
-  session_id: string;
-  channel: string;
-  event_types: string[];
-}
-
-export interface Job {
-  id: string;
-  project_id: string;
-  device_id: string | null;
-  job_type: JobType;
-  status: JobStatus;
-  error_summary: string | null;
-  created_at: string;
-}
-
-export type CommandStatus = "queued" | "sent" | "succeeded" | "failed" | "rejected" | "timed_out";
-export type CommandArg = number | boolean | string;
-
-export interface DeviceCommand {
-  id: string;
-  project_id: string;
-  device_id: string;
-  name: string;
-  args: Record<string, CommandArg>;
-  requested_by: string;
-  status: CommandStatus;
-  created_at: string;
-  expires_at: string | null;
-  completed_at: string | null;
-  detail: string | null;
-  output: Record<string, CommandArg>;
-}
+// Test setup: laptop -> FREE-WILi -> up to 4 target boards, and their sensors.
+export type DeviceSetup = Schemas["DeviceSetupOut"];
+export type HostReport = Schemas["HostReport"];
+export type BridgeReport = Schemas["BridgeReport"];
+export type TargetBoard = Schemas["TargetBoardOut"];
+export type TargetBoardInput = Schemas["TargetBoardIn"];
+export type Sensor = Schemas["SensorOut"];
+export type SensorInput = Schemas["SensorIn"];
+export type SensorBus = SensorInput["bus"];
+export type SensorDecode = Schemas["SensorDecode"];
+export type SensorDataType = SensorDecode["data_type"];
+export type SensorProtocol = SensorBus["protocol"];
+export type I2CBus = Schemas["I2CBus"];
+export type SPIBus = Schemas["SPIBus"];
+export type UARTBus = Schemas["UARTBus"];
+export type GPIOBus = Schemas["GPIOBus"];
+export type SensorPreset = Schemas["SensorPreset"];

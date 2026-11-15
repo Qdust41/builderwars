@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +20,7 @@ class AuthMode(StrEnum):
 
 class RepositoryBackend(StrEnum):
     MEMORY = "memory"  # in-process fakes. LOCAL/TEST ONLY.
-    POSTGRES = "postgres"  # TODO: not implemented yet
+    POSTGRES = "postgres"  # needs DATABASE_URL and a migrated schema
 
 
 LOCAL_ONLY_ENVS = frozenset({AppEnv.LOCAL, AppEnv.TEST})
@@ -32,6 +33,16 @@ class Settings(BaseSettings):
     auth_mode: AuthMode = AuthMode.DEV_HEADER
     repository_backend: RepositoryBackend = RepositoryBackend.MEMORY
     cors_allow_origins: list[str] = ["http://localhost:5173"]
+    # postgresql://user:password@host:5432/db. Required when REPOSITORY_BACKEND=postgres.
+    database_url: SecretStr | None = None
+    database_pool_max_size: int = 5
+    # AWS only (set by infrastructure/stacks/api.py). DATABASE_SECRET_ARN is the RDS-generated
+    # secret, resolved into DATABASE_URL at cold start when DATABASE_URL is not set (ADR 0007).
+    database_secret_arn: str | None = None
+    jobs_queue_url: str | None = None
+    commands_queue_url: str | None = None
+    events_http_dns: str | None = None  # AppSync Events HTTP endpoint host
+    aws_region: str | None = None  # Lambda sets AWS_REGION
 
     # AUTH_MODE=cognito. Ids, not secrets: the stack passes them as Lambda environment.
     cognito_region: str = "us-east-1"
@@ -70,6 +81,22 @@ def validate_settings(settings: Settings) -> Settings:
             raise UnsafeConfigurationError(
                 f"REPOSITORY_BACKEND=memory is not allowed when APP_ENV={settings.app_env.value}"
             )
+        # Without these a deployed API would accept jobs, commands and session events that
+        # nothing ever delivers.
+        missing = [
+            name
+            for name, value in (
+                ("JOBS_QUEUE_URL", settings.jobs_queue_url),
+                ("COMMANDS_QUEUE_URL", settings.commands_queue_url),
+                ("EVENTS_HTTP_DNS", settings.events_http_dns),
+                ("AWS_REGION", settings.aws_region),
+            )
+            if not value
+        ]
+        if missing:
+            raise UnsafeConfigurationError(
+                f"{', '.join(missing)} must be set when APP_ENV={settings.app_env.value}"
+            )
     if settings.auth_mode is AuthMode.COGNITO:
         missing = [
             name
@@ -80,4 +107,6 @@ def validate_settings(settings: Settings) -> Settings:
             raise MissingConfigurationError(
                 "AUTH_MODE=cognito needs " + ", ".join(n.upper() for n in missing)
             )
+    if settings.repository_backend is RepositoryBackend.POSTGRES and settings.database_url is None:
+        raise UnsafeConfigurationError("REPOSITORY_BACKEND=postgres needs DATABASE_URL")
     return settings

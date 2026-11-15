@@ -11,7 +11,7 @@ import pytest
 from board_runtime.cli import main
 from board_runtime.logging import CSV_COLUMNS
 
-NASTY = "it's a \"test\"\nline two — ünïcode ✓"
+NASTY = 'it\'s a "test"\nline two — ünïcode ✓'
 
 
 def _write_csv(path: Path, messages: list[tuple[str, str, str]]) -> None:
@@ -41,7 +41,7 @@ def _sql_roundtrip(sql: str) -> list[tuple]:
     con.executescript(sql)
     rows = con.execute(
         "SELECT message_id, schema_version, device_id, timestamp, sequence_number, "
-        "firmware_version, hardware_model, level, logger, message FROM device_logs"
+        "firmware_version, hardware_model, level, logger, message FROM host_device_logs"
         " ORDER BY message_id"
     ).fetchall()
     con.close()
@@ -69,8 +69,9 @@ def test_to_sql_writes_executable_dump_with_escaping(tmp_path: Path) -> None:
     assert by_message["plain message"][4] == "0"
     assert by_message[NASTY][4] is None  # blank sequence -> NULL
     assert by_message["semi;colon AND 'single' and \"double\""][7] == "error"
-    assert "BEGIN;" in sql and sql.rstrip().endswith("COMMIT;")
-    assert sql.count("CREATE TABLE IF NOT EXISTS device_logs") == 1
+    assert "BEGIN;" in sql
+    assert sql.rstrip().endswith("COMMIT;")
+    assert sql.count("CREATE TABLE IF NOT EXISTS host_device_logs") == 1
 
 
 def test_to_sql_prompt_no_skips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,7 +82,9 @@ def test_to_sql_prompt_no_skips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert not csv_path.with_suffix(".sql").exists()
 
 
-def test_to_sql_prompt_blank_defaults_to_yes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_to_sql_prompt_blank_defaults_to_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     csv_path = tmp_path / "dev.csv"
     _write_csv(csv_path, [("info", "app", "hi")])
     monkeypatch.setattr("builtins.input", lambda _prompt: "")
@@ -89,7 +92,9 @@ def test_to_sql_prompt_blank_defaults_to_yes(tmp_path: Path, monkeypatch: pytest
     assert csv_path.with_suffix(".sql").exists()
 
 
-def test_to_sql_prompt_eof_is_an_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+def test_to_sql_prompt_eof_is_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
     csv_path = tmp_path / "dev.csv"
     _write_csv(csv_path, [("info", "app", "hi")])
 
@@ -129,9 +134,91 @@ def test_show_lists_csv_files(tmp_path: Path, capsys: pytest.CaptureFixture) -> 
     _write_csv(tmp_path / "logs" / "sim-001.csv", [("info", "app", "hi")])
     assert main(["--state-dir", str(tmp_path), "show"]) == 0
     out = capsys.readouterr().out
-    assert "sim-001.csv" in out and "rows=1" in out
+    assert "sim-001.csv" in out
+    assert "rows=1" in out
 
 
 def test_show_empty_dir(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     assert main(["--state-dir", str(tmp_path), "show"]) == 0
     assert "No log CSVs" in capsys.readouterr().out
+
+
+def test_to_sql_dump_never_touches_the_cloud_device_logs_table(tmp_path: Path) -> None:
+    """The cloud DB already has a differently shaped ``device_logs``; the dump must not hit it."""
+    csv_path = tmp_path / "dev.csv"
+    out = tmp_path / "upload.sql"
+    _write_csv(csv_path, [("info", "app", "one"), ("error", "app", "two")])
+    assert main(["to-sql", str(csv_path), "-o", str(out), "--yes"]) == 0
+    sql = out.read_text(encoding="utf-8")
+
+    con = sqlite3.connect(":memory:")
+    con.execute(  # shape of the PostgreSQL migration's table
+        "CREATE TABLE device_logs (id INTEGER PRIMARY KEY, device_id TEXT NOT NULL,"
+        " message_id TEXT NOT NULL, at TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL)"
+    )
+    con.executescript(sql)
+    con.executescript(sql)  # loading the same dump twice skips rows already present
+    assert con.execute("SELECT count(*) FROM device_logs").fetchone() == (0,)
+    assert con.execute("SELECT count(*) FROM host_device_logs").fetchone() == (2,)
+    con.close()
+
+
+def test_sim_respects_log_csv_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    monkeypatch.setenv("BUILDERWARS_LOG_CSV", "off")
+    assert main(["--state-dir", str(tmp_path), "sim", "--count", "1"]) == 0
+    assert not (tmp_path / "logs").exists()
+    assert "also written" not in capsys.readouterr().err
+
+
+def test_sim_writes_csv_under_state_dir_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("BUILDERWARS_LOG_CSV", raising=False)
+    assert main(["--state-dir", str(tmp_path), "sim", "--count", "1"]) == 0
+    assert (tmp_path / "logs" / "sim-001.csv").is_file()
+
+
+def test_run_over_mqtt_requires_a_real_device_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    monkeypatch.delenv("DEVICE_ID", raising=False)
+    monkeypatch.setenv("DEVICE_TRANSPORT", "mqtt")
+    assert main(["--state-dir", str(tmp_path), "run", "-n", "1"]) == 2
+    assert "registered device id" in capsys.readouterr().err
+
+
+def test_i2c_address_clash_across_boards_is_warned() -> None:
+    from board_runtime.cli import i2c_address_clashes
+    from device_protocol.sensors import SensorSpec
+
+    def spec(key: str, address: int) -> SensorSpec:
+        return SensorSpec.model_validate(
+            {"key": key, "name": key, "bus": {"protocol": "i2c", "address": address, "reg": 0}}
+        )
+
+    specs = [spec("a", 0x48), spec("b", 0x48), spec("c", 0x40), spec("d", 0x40)]
+    boards = {"a": "Motor", "b": "Power", "c": "Motor", "d": "Motor"}
+    warnings = i2c_address_clashes(specs, boards)
+    assert len(warnings) == 1
+    assert "0x48" in warnings[0]
+    assert "Motor, Power" in warnings[0]
+
+
+def test_device_id_in_a_terminal_means_the_cloud_when_signed_in(tmp_path, monkeypatch) -> None:
+    import argparse
+    import sys
+
+    from board_runtime.cli import _implied_cloud
+    from board_runtime.cloud import Account
+
+    args = argparse.Namespace(device_id="dev_1", state_dir=tmp_path)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    assert not _implied_cloud(args, {})  # not signed in
+    Account(api_url="http://localhost:8000", email="me", auth_mode="dev-header").save(tmp_path)
+    assert _implied_cloud(args, {})
+    assert not _implied_cloud(args, {"DEVICE_TRANSPORT": "stdout"})
+    assert not _implied_cloud(argparse.Namespace(device_id=None, state_dir=tmp_path), {})
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False)  # `run ... > file.jsonl`
+    assert not _implied_cloud(args, {})

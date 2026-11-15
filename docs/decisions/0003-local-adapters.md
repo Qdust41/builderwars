@@ -16,4 +16,5 @@ different production data model without a new ADR. In-memory adapters cannot bac
 environment, which is why there is no deployed staging for the MVP (decision #12).
 
 ## Consequences
-Deployed environments cannot start until real adapters exist — intended.
+Deployed environments cannot start until real adapters exist — intended. PostgreSQL repositories
+now exist (ADR 0006); queue and realtime adapters are still missing.

@@ -7,67 +7,250 @@ telemetry, logs and status to the cloud; users create projects, register boards,
 shared sessions, and (later) work with an AI assistant that can propose — never silently apply —
 code and firmware changes.
 
-> **Status: scaffold.** The structure, contracts, local development loop and safety boundaries
-> are in place. Most AWS adapters, auth, persistence, firmware builds and AI execution are
-> stubs. Nothing is deployed. See [What is not implemented](#what-is-not-implemented).
+> **Status: MVP in prod.** The web dashboard runs at <https://builderwars.jimweaver.com>, with
+> sign-in, projects, devices and a live device page. Boards reach it through the `builderwars`
+> CLI, which uploads as the signed-in user. AI, firmware builds and job execution are still
+> stubs. See [What is not implemented](#what-is-not-implemented).
+
+## Where to look
+
+Each area has its own README with setup, commands and internals:
+
+| Area | Folder | README |
+| --- | --- | --- |
+| HTTP API (FastAPI on Lambda) | `apps/api/` | [apps/api/README.md](apps/api/README.md) |
+| Workers (ingest, commands, jobs) | `apps/workers/` | [apps/workers/README.md](apps/workers/README.md) |
+| Web dashboard (React + Vite) | `apps/web/` | [apps/web/README.md](apps/web/README.md) |
+| Host runtime + `builderwars` CLI internals | `device/` | [device/README.md](device/README.md) |
+| Shared Python packages | `packages/` | [packages/README.md](packages/README.md) |
+| AWS infrastructure (CDK) | `infrastructure/` | [infrastructure/README.md](infrastructure/README.md) |
+| Deploying prod end to end | `docs/` | [docs/deployment-guide.md](docs/deployment-guide.md) |
 
 ## Repository layout
 
 ```text
 apps/
-  api/          FastAPI app (Lambda + Mangum later)          -> package bw-api, import `api`
+  api/          FastAPI app (API Gateway + Lambda)           -> package bw-api, import `api`
   workers/      device-message ingest + job workers          -> bw-workers, `workers`
   web/          React + TypeScript (Vite) frontend
 packages/
   device_protocol/  versioned device<->cloud message contract -> bw-device-protocol
   domain/           framework-free domain models and rules    -> bw-domain
-  application/      services + ports (+ in-memory adapters)   -> bw-application
+  application/      services + ports (+ in-memory and PostgreSQL adapters) -> bw-application
   ai/               controlled AI tool boundary (stubs)       -> bw-ai-platform, `ai_platform`
-device/         host-PC runtime for the FREE-WILi + simulator -> bw-board-runtime, `board_runtime`
-infrastructure/ AWS CDK (Python) — synth only
+  aws/              AWS adapters for the ports (S3, SQS, IoT, AppSync) -> bw-aws-adapters, `aws_adapters`
+device/         host-PC runtime for the FREE-WILi + `builderwars` CLI -> bw-board-runtime, `board_runtime`
+infrastructure/ AWS CDK (Python)
 contracts/      GENERATED JSON Schemas / OpenAPI + device message fixtures
 tests/          unit / contract / integration / end_to_end
 docs/           architecture, protocol, security, deployment, open decisions, ADRs
-scripts/        export_contracts.py
+scripts/        export_contracts.py, build_web_prod.sh
 docker/         api / worker images (local use)
 ```
 
-Dependency direction: `api`, `workers` → `application` → `domain`, `device_protocol`.
+Dependency direction: `api`, `workers` → `aws_adapters`, `application` → `domain`, `device_protocol`.
 `board_runtime` → `device_protocol` only. Domain/application code never imports AWS SDKs.
 
-## Prerequisites
+## The `builderwars` CLI
 
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/) (0.11+) for development. The host runtime
-  that drives a real board only needs Python 3.10+ (see [device/README.md](device/README.md)).
-- Node.js 22+ and npm (frontend, and the CDK CLI if you use it)
-- Docker is optional
+`builderwars` runs on the computer your FREE-WILi board is plugged into. It checks the board,
+runs the host runtime, and sends the board's telemetry and logs to Builderwars.
 
-No AWS credentials are needed for anything below.
+**Boards have no AWS IoT certificates.** You sign in to the CLI with your own Builderwars
+account (the same email and password as the web app), and the CLI uploads as you. Anyone
+viewing the device in the web app sees the data live ([ADR 0009](docs/decisions/0009-cli-uploads-instead-of-device-certificates.md)).
 
-## Quick start
+### Install
+
+Needs CPython 3.10+. In a clone of this repo (Python 3.12 + uv), `uv sync` installs it and you
+run it as `uv run builderwars ...`. On a separate host PC (a Raspberry Pi, an older laptop):
 
 ```bash
-uv sync                                   # create .venv with every workspace package + dev tools
-cp .env.example .env                      # optional; defaults are already local-safe
-
-# API on http://localhost:8000 (in-memory data, dev-header auth)
-uv run uvicorn api.main:app --reload
-curl localhost:8000/health
-curl -X POST localhost:8000/projects -H 'X-Dev-User: alice' -H 'Content-Type: application/json' -d '{"name":"Rover"}'
-
-# Board simulator -> local worker harness (validates, deduplicates, records)
-uv run python -m board_runtime.simulator --count 40 > /tmp/messages.jsonl
-uv run python -m workers.main /tmp/messages.jsonl
-
-# Host runtime loop with simulated sensors (prints JSON lines; Ctrl-C to stop)
-DEVICE_ID=dev-local-001 BUILDERWARS_STATE_DIR=/tmp/bw-state uv run python -m board_runtime.main --samples 12
-
-# Frontend on http://localhost:5173 (proxies /api -> :8000)
-cd apps/web && npm install && npm run dev
+git clone https://github.com/Qdust41/builderwars && cd builderwars
+python3 -m venv ~/.builderwars/venv && . ~/.builderwars/venv/bin/activate
+pip install ./packages/device_protocol ./device freewili==0.0.51
+builderwars --help
 ```
 
-Interactive API docs: http://localhost:8000/docs. Local auth is the `X-Dev-User` header; the
-frontend sends `VITE_DEV_USER` (see `apps/web/.env.example`).
+`freewili` is the board vendor's library; it is only needed for a real board. To read the
+board's serial port on Linux your user must be in `dialout` (Debian/Ubuntu) or `uucp` (Arch);
+`builderwars ports` prints the exact command. To update, `git pull` and rerun the `pip install`
+line.
+
+### Quick tour
+
+```bash
+builderwars login                                        # 1. sign in (once every 30 days)
+builderwars devices                                      # 2. find your device's id
+builderwars sensors dev_... --read                       # 3. check its sensors on the board
+builderwars run --cloud --device-id dev_... /dev/ttyACM0 # 4. stream the board live; Ctrl+C stops
+builderwars logs dev_...                                 # 5. its cloud logs -> ./dev_...-logs.csv
+```
+
+Register the device first in the web app (open a project, add a device), and make sure you have
+the **member** role or higher on that project. On the device page the project owner adds the
+**target boards** wired to the FREE-WILi (up to 4) and their **sensors**: protocol (I2C, SPI,
+UART, GPIO), address or pins, what to read, how to decode it, unit and poll rate, or one of the
+common parts from the table ([ADR 0010](docs/decisions/0010-test-setup-and-sensor-definitions.md)).
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `builderwars` | What's plugged in, and what to type next |
+| `builderwars /dev/ttyACM0` | Step-by-step check of the board on that port (same as `test`) |
+| `builderwars test [--watch]` | Check the first board found; `--watch` prints GPIO/button changes live |
+| `builderwars ports` | Boards and serial ports, and whether you can open them |
+| `builderwars login [--email E] [--api URL]` | Sign in to your Builderwars account |
+| `builderwars whoami` / `logout` | Show or forget the saved sign-in |
+| `builderwars devices` | The devices in your projects, with their ids |
+| `builderwars run [port] [--cloud] [--simulate [--sim-errors RATE]] [--take-over] [--device-id ID] [-n N] [-i SECONDS]` | Run the host runtime |
+| `builderwars sensors DEVICE [--read] [--port P]` | List a device's sensors; `--read` reads each once on the FREE-WILi |
+| `builderwars upload FILE --device-id ID` | Upload saved telemetry/logs to a device |
+| `builderwars logs [DEVICE] [--since T] [--until T] [-o PATH] [--force]` | Download a device's cloud logs as CSV |
+| `builderwars sim` | Emit messages from a simulated board as JSON lines |
+| `builderwars show` | List the log CSVs stored on this computer |
+| `builderwars to-sql CSV` | Turn one local log CSV (or a device id's CSV) into a `.sql` dump; never load it into prod |
+
+Global options go before the command: `--state-dir DIR` (default `~/.builderwars`) and `--debug`
+(full tracebacks). Exit codes: 0 success, 1 board check failed, 2 usage or setup error.
+
+### Sign in: `builderwars login`
+
+```bash
+builderwars login                    # asks for email + password; prod API by default
+builderwars login --email me@example.com
+builderwars whoami
+```
+
+- The password goes to Cognito only and is never saved. `~/.builderwars/account.json` (mode
+  0600) keeps a refresh token for 30 days; after that, `login` again.
+- The API defaults to prod (`https://builderwars.jimweaver.com/api`). `--api URL` or
+  `BUILDERWARS_API_URL` picks another deployment, and the CLI remembers the last one used.
+  `--api http://localhost:8000` uses a local API, where login only asks for a dev user name.
+
+### Find a device: `builderwars devices`
+
+Lists every device in the projects you belong to, with its id (`dev_` + 32 hex characters) and
+name. Commands that take `--device-id` need that id; `logs` also accepts the device's name.
+
+### Stream live: `builderwars run --cloud`
+
+```bash
+builderwars run --cloud --device-id dev_... /dev/ttyACM0   # this FREE-WILi
+builderwars run --cloud --device-id dev_...                # the first FREE-WILi found
+builderwars run --cloud --device-id dev_... --simulate     # no hardware: made-up values
+builderwars run --cloud --device-id dev_... --simulate --sim-errors 0   # ... without made-up faults
+builderwars run --cloud --device-id dev_... --take-over    # stop another run holding the board
+builderwars run --cloud --device-id dev_... -n 60 -i 0.5   # stop after 60 samples, 2 per second
+```
+
+- **One run at a time:** a `run --cloud` locks the device's board when it starts (before it
+  opens the FREE-WILi, so a second run is told who has the board rather than failing on a busy
+  serial port), and the device
+  page shows who holds it and on which laptop. Another `run` for the same device is refused
+  ("this board is in use by ...") until the first stops (Ctrl+C, closing the terminal or `kill`
+  all release it), or goes 75 s without sending. `--take-over` takes the board anyway; the old
+  run then stops with "the board was taken over by ...". `builderwars upload` of saved data is
+  never blocked.
+
+- It downloads the **sensors defined on the device page** and reads each enabled one through the
+  FREE-WILi at its own poll rate; edits on the page are picked up within 30 s. A sensor that
+  can't be read (wrong address, no reply) is reported once in the device's logs and skipped;
+  each sensor that works logs its first value ("sensor board_temp_c reads 25.0 °C"). With no
+  sensors defined yet it sends the FREE-WILi's own pin levels, and switches to the sensors as
+  soon as some are added. The same I2C address on two target boards is warned about: the
+  FREE-WILi has one I2C bus for all of them.
+- It tells the device page which laptop it runs on and which FREE-WILi it opened.
+- **With a port** it uses that FREE-WILi (either of its two ttys works, and `ttyACM0` is
+  short for `/dev/ttyACM0`); **without one** the first FREE-WILi found. **`--simulate`** sends
+  made-up values for the defined sensors instead, handy while the board is out of action. It
+  also makes up the faults a real bench has, about 5% of the time: a sensor that stops
+  answering for a few samples, a glitchy value, the FREE-WILi dropping off USB (the device goes
+  degraded), and error logs from the board, all marked "(simulated)" and sent to the device's
+logs like real ones (the first line says simulated faults are on). `--sim-errors RATE` (0..1)
+  changes how often; 0 turns them off. The laptop card on the device page shows when a run is
+  simulated.
+- The UART baud rate and the SPI mode/clock are set on the FREE-WILi itself; the `freewili`
+  library can't change them from the laptop.
+- `--cloud` needs the registered device id (`--device-id` or `DEVICE_ID`). In a terminal,
+  `--device-id` on its own also means `--cloud` once you are signed in (redirecting stdout to
+  a file keeps the JSON-lines output).
+- "Could not exclusively lock port" means another process has the FREE-WILi's port open. The
+  CLI retries for a few seconds (ModemManager probes freshly plugged boards on Linux), then
+  says which process holds it, e.g. another `builderwars` on the same laptop.
+- If the FREE-WILi is slow to answer ("Failed to read response frame"), the run keeps its
+  ports open and asks again; only after 3 misses in a row does it close and re-open them.
+- Telemetry is batched (every 5 s or 32 samples) and logs, status and heartbeats are sent as
+  they happen. If the network or the API is down, it keeps sampling and buffers the last 1000
+  messages in memory, then sends them when it can.
+- Every log line is also appended to `~/.builderwars/logs/<device id>.csv`
+  (`BUILDERWARS_LOG_CSV=off` disables it).
+- Without `--cloud`, `run` prints JSON lines to stdout, which you can save and `upload` later.
+- Commands sent from the dashboard (ping, uptime) are picked up every 2 s while `run --cloud`
+  is going. The CLI logs "received command ... from the dashboard" and the command moves from
+  *waiting for board* to *delivered* to its result. A command nobody picks up times out after 30 s.
+- The dashboard shows a board as Online/Live only while a `run --cloud` is sending: it goes
+  offline when the run stops, or after 75 s without anything from it.
+
+### Upload saved data: `builderwars upload`
+
+```bash
+builderwars upload dev-local --device-id dev_...       # a log CSV from ~/.builderwars/logs
+builderwars run -n 60 > run.jsonl
+builderwars upload run.jsonl --device-id dev_...       # JSON lines from run or sim
+```
+
+`FILE` is a path, or a device id whose local log CSV to upload. Uploads are idempotent:
+messages already stored (for example logs that went up live and are also in the CSV) are
+counted as "already uploaded", not stored twice. Files recorded under another id (`dev-local`,
+`sim-001`) are re-addressed to the device you upload to. Viewers can't upload; you need the
+member role or higher.
+
+### Download logs: `builderwars logs <device>`
+
+```bash
+builderwars logs dev_...                                       # -> ./dev_...-logs.csv
+builderwars logs "Bench board" --since 2026-11-14 -o bench.csv # by name, from a date
+builderwars logs dev_... --since 2026-11-15T09:00 --until 2026-11-15T12:00Z
+builderwars logs dev_... -o - | grep error                     # CSV to stdout
+builderwars logs dev_... --force                               # replace an existing CSV
+builderwars logs                                               # no device: list local CSVs
+```
+
+- Writes everything the cloud stored for the device (log lines and device events, oldest
+  first) to a CSV with the columns `timestamp, device_id, kind, level, message, message_id`.
+- `DEVICE` is a device id or a device name (from `builderwars devices`).
+- `--since` (inclusive) and `--until` (exclusive) take a date or a date-time, in local time
+  unless it ends in `Z` or has an offset.
+- `-o PATH` sets the output file (default `./<device-id>-logs.csv`); `-o -` writes to stdout.
+- An existing file is only replaced with `--force`.
+- Any project member can run it, viewers included. It pages through
+  `GET /devices/{id}/logs/history`, 1000 entries at a time.
+
+More on the host runtime, its environment variables and its modules:
+[device/README.md](device/README.md).
+
+## Local development
+
+Prerequisites: Python 3.12+ and [uv](https://docs.astral.sh/uv/) 0.11+, Node.js 22+ and npm.
+Docker is optional (for PostgreSQL). No AWS credentials are needed.
+
+```bash
+uv sync                                   # .venv with every workspace package + dev tools
+cp .env.example .env                      # optional; defaults are already local-safe
+
+uv run uvicorn api.main:app --reload      # API on http://localhost:8000 (in-memory, dev auth)
+cd apps/web && npm install && npm run dev # web app on http://localhost:5173
+
+# A simulated board feeding the local dashboard (device id from the web app's device page):
+uv run builderwars login --api http://localhost:8000
+uv run builderwars run --cloud --device-id dev_...
+```
+
+Area details: [API](apps/api/README.md) (PostgreSQL, auth modes),
+[workers](apps/workers/README.md), [web](apps/web/README.md),
+[host runtime](device/README.md).
 
 ## Quality checks
 
@@ -76,42 +259,46 @@ uv run ruff check . && uv run ruff format --check .   # lint + format
 uv run mypy                                            # strict type checking of all packages
 uv run pytest                                          # unit, contract, integration, e2e
 uv run python scripts/export_contracts.py --check      # generated contracts are current
-
 cd apps/web && npm run typecheck && npm test && npm run build
-
-cd infrastructure
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python app.py                               # synth dev -> cdk.out/ (no AWS calls)
-CDK_CONTEXT_JSON='{"env":"prod"}' .venv/bin/python app.py
-.venv/bin/python -m pytest tests                      # synth assertions
-# or: npx aws-cdk@2 synth -c env=dev
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above on every pull request.
+Infrastructure synth and its tests: [infrastructure/README.md](infrastructure/README.md).
+CI (`.github/workflows/ci.yml`) runs all of these on every pull request and on `main`.
 
-After changing a protocol model, realtime event or API schema, regenerate the contracts:
-`uv run python scripts/export_contracts.py`.
+After changing a protocol model, realtime event or API schema, regenerate the contracts with
+`uv run python scripts/export_contracts.py` (and `npm run gen:api` in `apps/web`).
+
+## Deployment
+
+There is one deployed environment, **prod** (us-east-1); there is no staging. **Every merge to
+`main` deploys prod** through `.github/workflows/deploy.yml`, after CI passes: all stacks, the
+database migrations, the web app, then a health check. Pull requests and other branches never
+deploy. The full walkthrough, from an empty AWS account to a board on the dashboard, is
+[docs/deployment-guide.md](docs/deployment-guide.md).
 
 ## Architecture in one paragraph
 
 A **device** is a host PC wired over USB to a FREE-WILi 1-OG board (with a Bottlenose WiFi
-Orca); the host runs `device/` and holds the internet connection. Hosts talk MQTT/TLS to **AWS IoT Core** with per-device certificates; an IoT rule forwards
-device-to-cloud topics to **SQS**, where idempotent **workers** validate messages against the
-shared `device_protocol` contract and record them. Users talk to a **FastAPI** app (API Gateway +
-Lambda) authenticated by **Cognito**; it owns authorisation and is the only path for commands to
-devices. Session notifications flow through **AppSync Events** (backend publishes, users
+Orca); the host runs `device/` and holds the internet connection. For now the host's user signs
+in to the `builderwars` CLI, which posts the board's messages to the API
+(`POST /devices/{id}/messages`) as that user; the API feeds them into the same idempotent ingest
+pipeline, validated against the shared `device_protocol` contract. A direct MQTT/TLS path to
+**AWS IoT Core** with per-device certificates (IoT rule → **SQS** → **workers**) is built but
+parked. Users talk to a **FastAPI** app (API Gateway + Lambda) authenticated by **Cognito**; it
+owns authorisation. Live updates flow through **AppSync Events** (backend publishes, users
 subscribe). Long jobs (AI runs, builds, tests) are queued and will run on **ECS Fargate**.
-Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
-[docs/architecture.md](docs/architecture.md).
+Metadata lives in **PostgreSQL (RDS)**, artifacts and raw data in **S3**, and the web app on
+**CloudFront**. Details: [docs/architecture.md](docs/architecture.md).
 
 ## Documentation
 
+- [Deployment guide](docs/deployment-guide.md) — end to end: AWS account, deploy, sign-up, registering a device, connecting a board
 - [Architecture](docs/architecture.md) — components, boundaries, data flows
 - [Device protocol](docs/device-protocol.md) — envelope, topics, versioning, limits
 - [Security](docs/security.md) — identities, authorisation, AI and firmware controls
-- [AWS deployment (future)](docs/aws-deployment.md) — steps, costs, testing against real IoT
-- [Log ingestion spec](docs/log-ingestion-spec.md) — target shape of the cloud log store (spec only, not implemented)
-- [Product decisions](docs/open-decisions.md) — answered decisions and what the scaffold does with each
+- [AWS deployment notes](docs/aws-deployment.md) — short command list and cost table
+- [Log ingestion spec](docs/log-ingestion-spec.md) — target shape of the cloud log store
+- [Product decisions](docs/open-decisions.md) — answered decisions and what the code does with each
 - [Spec outline](docs/spec-outline.md) — the specs still to write, in order
 - [Architecture decision records](docs/decisions/)
 
@@ -119,17 +306,15 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 
 | Area | State |
 | --- | --- |
-| Persistence | In-memory only (local/test). PostgreSQL repositories: TODO. |
-| User auth | `X-Dev-User` header locally; `AUTH_MODE=cognito` verifies Cognito JWTs (ADR 0005). Project members are added by email. |
-| Device connectivity | MQTT/TLS via `awsiotsdk` implemented but not yet run against a real IoT endpoint (SDK handles reconnects). Offline buffer: RAM only. |
-| Board I/O | `FreeWiliSensors` (vendor `freewili` package) reads GPIO + buttons as placeholder readings; not yet run on a real board. Sensor set: spec 02. |
-| Device provisioning | Not implemented (no certificates created anywhere; spec 03). |
-| Device commands | API route, per-device queue (32 pending, 30 s expiry), dispatcher handler and result handling exist with in-memory adapters. AWS adapters, timeout sweeper and session broadcast: TODO. |
-| Workers in AWS | Lambda handlers raise `NotImplementedError` until AWS adapters exist. |
+| Persistence | PostgreSQL repositories for every port (ADR 0006); in-memory for local/test. In prod a `Migrate` Lambda applies migrations on every deploy. |
+| User auth | Cognito email + password with self sign-up (ADR 0005); `X-Dev-User` header locally. Project members are added by email through the API; no members screen yet. Password reset and MFA: TODO. |
+| Device connectivity | The signed-in CLI uploads through the API (ADR 0009). MQTT/TLS via `awsiotsdk` is built but parked and has not run against real IoT. Offline buffer: RAM only. |
+| Device provisioning | No certificates are created anywhere (parked with the MQTT path). |
+| Board I/O | `FreeWiliSensors` reads GPIO + buttons as placeholder readings; not yet run on a real board. Sensor set: spec 02. |
+| Device commands | API route, per-device queue, dispatcher and result handling exist, but commands don't reach CLI-connected boards yet. Timeout sweeper and session broadcast: TODO. |
+| Realtime | AppSync Events in prod, an in-process hub locally. The membership check on subscribe: TODO. |
 | Job execution | No executors; queued jobs fail with "not implemented". Fargate: TODO. |
-| Realtime | Recording publisher locally; AppSync client/publisher: TODO; membership check on subscribe: TODO. |
-| AI | Tool definitions, approval gate, redaction, run records, provider config (OpenAI-compatible / Bedrock). No client, no executors, no default model (spec 08). |
+| AI | Tool definitions, approval gate, redaction, run records, provider config. No client, no executors, no default model (spec 08). |
 | Firmware | Model, job types and host-side sha256 check only. No build, flashing or deployment (spec 09). |
 | Ingest rate limiting | Not implemented (burst 10 msg/s, sustained 60 msg/min per device planned). |
-| Lambda packaging | CDK assets are source-only; dependency bundling TODO. |
 | Collaborative editing | Deliberately deferred (CRDT/Yjs later if needed). |

@@ -139,3 +139,28 @@ def test_sharing_flow_with_401_403_404(client: TestClient) -> None:
     assert client.delete(f"/projects/{pid}/members/vera", headers=_as("alice")).status_code == 204
     assert client.get(f"/projects/{pid}", headers=_as("vera")).status_code == 404
     assert client.delete(f"/projects/{pid}/members/vera", headers=_as("alice")).status_code == 404
+
+
+@pytest.mark.parametrize("token_use", ["access", "id"])
+def test_brand_new_account_can_create_a_project_and_owns_it(
+    client: TestClient, token_use: str
+) -> None:
+    # A freshly signed-up account: in the user pool, but a member of nothing yet.
+    headers = _as("newcomer", token_use=token_use)
+    assert client.get("/projects", headers=headers).json() == []
+
+    created = client.post("/projects", json={"name": "  First board  "}, headers=headers)
+    assert created.status_code == 201
+    project = created.json()
+    assert project["name"] == "First board"
+    assert project["owner_user_id"] == "newcomer"
+
+    assert [p["id"] for p in client.get("/projects", headers=headers).json()] == [project["id"]]
+    members = client.get(f"/projects/{project['id']}/members", headers=headers).json()
+    assert [(m["user_id"], m["role"]) for m in members] == [("newcomer", "owner")]
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 201])
+def test_invalid_project_names_get_422(client: TestClient, name: str) -> None:
+    response = client.post("/projects", json={"name": name}, headers=_as("alice"))
+    assert response.status_code == 422

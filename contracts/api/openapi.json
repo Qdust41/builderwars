@@ -1,6 +1,123 @@
 {
   "components": {
     "schemas": {
+      "BridgeReport": {
+        "description": "The FREE-WILi between the laptop and the target board.",
+        "properties": {
+          "display_port": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Port"
+          },
+          "library_version": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Version"
+          },
+          "main_port": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Main Port"
+          },
+          "model": {
+            "default": "FREE-WILi",
+            "maxLength": 80,
+            "title": "Model",
+            "type": "string"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          }
+        },
+        "title": "BridgeReport",
+        "type": "object"
+      },
+      "ClientConfigOut": {
+        "description": "Public sign-in settings for command-line clients (no secrets: ids only).",
+        "properties": {
+          "auth_mode": {
+            "enum": [
+              "cognito",
+              "dev-header"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "cognito_app_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cognito App Client Id"
+          },
+          "cognito_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cognito Region"
+          },
+          "cognito_user_pool_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cognito User Pool Id"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "auth_mode"
+        ],
+        "title": "ClientConfigOut",
+        "type": "object"
+      },
       "CommandCreate": {
         "description": "Same naming rules as the protocol's ``CommandPayload``; the host's allowlist decides.",
         "properties": {
@@ -194,6 +311,49 @@
         "title": "ConnectionStatus",
         "type": "string"
       },
+      "DeviceChannelOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "event_types": {
+            "items": {
+              "$ref": "#/components/schemas/RealtimeEventType"
+            },
+            "title": "Event Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "device_id",
+          "channel",
+          "event_types"
+        ],
+        "title": "DeviceChannelOut",
+        "type": "object"
+      },
+      "DeviceCommandsClaimOut": {
+        "description": "Commands waiting for a CLI-connected board, as ``{topic, payload}`` like uploads.",
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/UploadedDeviceMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "DeviceCommandsClaimOut",
+        "type": "object"
+      },
       "DeviceCreate": {
         "properties": {
           "display_name": {
@@ -222,6 +382,219 @@
           "display_name"
         ],
         "title": "DeviceCreate",
+        "type": "object"
+      },
+      "DeviceLogEntryOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "log",
+              "event"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "level",
+          "message"
+        ],
+        "title": "DeviceLogEntryOut",
+        "type": "object"
+      },
+      "DeviceLogHistoryOut": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceLogRecordOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "entries",
+          "next_cursor"
+        ],
+        "title": "DeviceLogHistoryOut",
+        "type": "object"
+      },
+      "DeviceLogRecordOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "log",
+              "event"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "level",
+          "message",
+          "message_id"
+        ],
+        "title": "DeviceLogRecordOut",
+        "type": "object"
+      },
+      "DeviceMessageResultOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/IngestOutcome"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "DeviceMessageResultOut",
+        "type": "object"
+      },
+      "DeviceMessagesUpload": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/UploadedDeviceMessage"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The live ``builderwars run`` sending these (keeps its lock on the board; 409 run_superseded if another run took the board over). Omit for saved-data uploads.",
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "DeviceMessagesUpload",
+        "type": "object"
+      },
+      "DeviceMessagesUploadOut": {
+        "properties": {
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "integer"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceMessageResultOut"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "processed",
+          "duplicate",
+          "rejected",
+          "results"
+        ],
+        "title": "DeviceMessagesUploadOut",
         "type": "object"
       },
       "DeviceOut": {
@@ -295,6 +668,135 @@
         "title": "DeviceOut",
         "type": "object"
       },
+      "DeviceRunOut": {
+        "description": "The ``builderwars run`` that has locked the board: one run at a time.",
+        "properties": {
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "started_at",
+          "last_seen_at",
+          "user_id"
+        ],
+        "title": "DeviceRunOut",
+        "type": "object"
+      },
+      "DeviceSetupOut": {
+        "description": "The whole chain for the device page. ``host``/``bridge`` are null until the CLI has\nrun against this device; ``bridge`` is also null for a ``--simulate`` run.",
+        "properties": {
+          "boards": {
+            "items": {
+              "$ref": "#/components/schemas/TargetBoardOut"
+            },
+            "title": "Boards",
+            "type": "array"
+          },
+          "bridge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BridgeReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HostReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_boards": {
+            "title": "Max Boards",
+            "type": "integer"
+          },
+          "reported_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported At"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `builderwars run` holding the board right now, if any"
+          },
+          "sensors": {
+            "items": {
+              "$ref": "#/components/schemas/SensorOut"
+            },
+            "title": "Sensors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "device_id",
+          "host",
+          "bridge",
+          "reported_at",
+          "max_boards",
+          "boards",
+          "sensors"
+        ],
+        "title": "DeviceSetupOut",
+        "type": "object"
+      },
       "DeviceStatusOut": {
         "properties": {
           "connection_status": {
@@ -337,6 +839,30 @@
         "title": "DeviceStatusOut",
         "type": "object"
       },
+      "GPIOBus": {
+        "additionalProperties": false,
+        "description": "The level (0 or 1) of one FREE-WILi GPIO pin wired to the target board.",
+        "properties": {
+          "pin": {
+            "description": "FREE-WILi GPIO number, e.g. 26",
+            "maximum": 63.0,
+            "minimum": 0.0,
+            "title": "Pin",
+            "type": "integer"
+          },
+          "protocol": {
+            "const": "gpio",
+            "default": "gpio",
+            "title": "Protocol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pin"
+        ],
+        "title": "GPIOBus",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -367,6 +893,135 @@
         ],
         "title": "HealthOut",
         "type": "object"
+      },
+      "HostReport": {
+        "description": "The laptop running ``builderwars run``.",
+        "properties": {
+          "cli_version": {
+            "maxLength": 40,
+            "title": "Cli Version",
+            "type": "string"
+          },
+          "hostname": {
+            "maxLength": 255,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "os": {
+            "description": "e.g. 'Linux 6.8 (x86_64)'",
+            "maxLength": 120,
+            "title": "Os",
+            "type": "string"
+          },
+          "python_version": {
+            "maxLength": 40,
+            "title": "Python Version",
+            "type": "string"
+          },
+          "sensor_source": {
+            "default": "freewili",
+            "description": "'freewili' (real board), 'simulated' (--simulate) or 'freewili-gpio' (no sensors defined: raw FREE-WILi pins)",
+            "maxLength": 20,
+            "title": "Sensor Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "os",
+          "python_version",
+          "cli_version"
+        ],
+        "title": "HostReport",
+        "type": "object"
+      },
+      "I2CBus": {
+        "additionalProperties": false,
+        "description": "Read ``length`` bytes from register ``reg`` of the chip at 7-bit ``address``.",
+        "properties": {
+          "address": {
+            "description": "7-bit I2C address, e.g. 0x48",
+            "maximum": 127.0,
+            "minimum": 0.0,
+            "title": "Address",
+            "type": "integer"
+          },
+          "length": {
+            "default": 1,
+            "description": "bytes to read",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Length",
+            "type": "integer"
+          },
+          "protocol": {
+            "const": "i2c",
+            "default": "i2c",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "reg": {
+            "description": "register to read (or write), e.g. 0x00",
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Reg",
+            "type": "integer"
+          },
+          "setup_writes": {
+            "description": "written before every read, in order (e.g. start a conversion)",
+            "items": {
+              "$ref": "#/components/schemas/I2CWrite"
+            },
+            "maxItems": 8,
+            "title": "Setup Writes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "address",
+          "reg"
+        ],
+        "title": "I2CBus",
+        "type": "object"
+      },
+      "I2CWrite": {
+        "additionalProperties": false,
+        "description": "One register write sent before reading, e.g. to wake a sensor or start a conversion.",
+        "properties": {
+          "data": {
+            "items": {
+              "maximum": 255.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Data",
+            "type": "array"
+          },
+          "reg": {
+            "description": "register to read (or write), e.g. 0x00",
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Reg",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reg",
+          "data"
+        ],
+        "title": "I2CWrite",
+        "type": "object"
+      },
+      "IngestOutcome": {
+        "enum": [
+          "processed",
+          "duplicate",
+          "rejected"
+        ],
+        "title": "IngestOutcome",
+        "type": "string"
       },
       "JobCreate": {
         "properties": {
@@ -665,10 +1320,475 @@
           "ai.run.delta",
           "ai.run.completed",
           "firmware.build.started",
-          "firmware.build.completed"
+          "firmware.build.completed",
+          "device.telemetry",
+          "device.log",
+          "device.command.updated"
         ],
         "title": "RealtimeEventType",
         "type": "string"
+      },
+      "SPIBus": {
+        "additionalProperties": false,
+        "description": "Clock ``write`` out on SPI1 (chip select GPIO13) and keep ``length`` bytes of the\nanswer starting at ``read_offset`` (byte 0 usually echoes the command).",
+        "properties": {
+          "clock_hz": {
+            "anyOf": [
+              {
+                "maximum": 50000000.0,
+                "minimum": 1000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clock Hz"
+          },
+          "length": {
+            "default": 1,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Length",
+            "type": "integer"
+          },
+          "mode": {
+            "default": 0,
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "title": "Mode",
+            "type": "integer"
+          },
+          "protocol": {
+            "const": "spi",
+            "default": "spi",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "read_offset": {
+            "default": 1,
+            "maximum": 31.0,
+            "minimum": 0.0,
+            "title": "Read Offset",
+            "type": "integer"
+          },
+          "write": {
+            "description": "bytes to send",
+            "items": {
+              "maximum": 255.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Write",
+            "type": "array"
+          }
+        },
+        "required": [
+          "write"
+        ],
+        "title": "SPIBus",
+        "type": "object"
+      },
+      "SensorDecode": {
+        "additionalProperties": false,
+        "description": "Raw bytes -> number: unpack ``data_type``, then ``(raw & bit_mask) >> bit_shift``,\nthen ``value * scale + offset``. GPIO and UART skip the unpack step.",
+        "properties": {
+          "bit_mask": {
+            "anyOf": [
+              {
+                "maximum": 4294967295.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bit Mask"
+          },
+          "bit_shift": {
+            "default": 0,
+            "maximum": 31.0,
+            "minimum": 0.0,
+            "title": "Bit Shift",
+            "type": "integer"
+          },
+          "data_type": {
+            "default": "u8",
+            "enum": [
+              "u8",
+              "i8",
+              "u16_be",
+              "u16_le",
+              "i16_be",
+              "i16_le",
+              "u32_be",
+              "u32_le",
+              "i32_be",
+              "i32_le",
+              "f32_be",
+              "f32_le"
+            ],
+            "title": "Data Type",
+            "type": "string"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "maximum": 9.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "round the result",
+            "title": "Decimals"
+          },
+          "offset": {
+            "default": 0.0,
+            "title": "Offset",
+            "type": "number"
+          },
+          "scale": {
+            "default": 1.0,
+            "title": "Scale",
+            "type": "number"
+          }
+        },
+        "title": "SensorDecode",
+        "type": "object"
+      },
+      "SensorIn": {
+        "additionalProperties": false,
+        "description": "A sensor definition from the web app, on one of the device's target boards. Unlike\nthe shared ``SensorSpec`` (which the CLI reads leniently), unknown fields are an error.",
+        "properties": {
+          "board_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Board Id",
+            "type": "string"
+          },
+          "bus": {
+            "discriminator": {
+              "mapping": {
+                "gpio": "#/components/schemas/GPIOBus",
+                "i2c": "#/components/schemas/I2CBus",
+                "spi": "#/components/schemas/SPIBus",
+                "uart": "#/components/schemas/UARTBus"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/I2CBus"
+              },
+              {
+                "$ref": "#/components/schemas/SPIBus"
+              },
+              {
+                "$ref": "#/components/schemas/UARTBus"
+              },
+              {
+                "$ref": "#/components/schemas/GPIOBus"
+              }
+            ],
+            "title": "Bus"
+          },
+          "decode": {
+            "$ref": "#/components/schemas/SensorDecode"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key": {
+            "description": "reading name on the dashboard and in telemetry, e.g. board_temp_c",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "poll_interval_s": {
+            "default": 1.0,
+            "maximum": 3600.0,
+            "minimum": 0.1,
+            "title": "Poll Interval S",
+            "type": "number"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "bus",
+          "board_id"
+        ],
+        "title": "SensorIn",
+        "type": "object"
+      },
+      "SensorOut": {
+        "properties": {
+          "board_id": {
+            "title": "Board Id",
+            "type": "string"
+          },
+          "bus": {
+            "discriminator": {
+              "mapping": {
+                "gpio": "#/components/schemas/GPIOBus",
+                "i2c": "#/components/schemas/I2CBus",
+                "spi": "#/components/schemas/SPIBus",
+                "uart": "#/components/schemas/UARTBus"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/I2CBus"
+              },
+              {
+                "$ref": "#/components/schemas/SPIBus"
+              },
+              {
+                "$ref": "#/components/schemas/UARTBus"
+              },
+              {
+                "$ref": "#/components/schemas/GPIOBus"
+              }
+            ],
+            "title": "Bus"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decode": {
+            "$ref": "#/components/schemas/SensorDecode"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "reading name on the dashboard and in telemetry, e.g. board_temp_c",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "poll_interval_s": {
+            "default": 1.0,
+            "maximum": 3600.0,
+            "minimum": 0.1,
+            "title": "Poll Interval S",
+            "type": "number"
+          },
+          "protocol": {
+            "enum": [
+              "i2c",
+              "spi",
+              "uart",
+              "gpio"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "bus",
+          "id",
+          "device_id",
+          "board_id",
+          "protocol",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SensorOut",
+        "type": "object"
+      },
+      "SensorPreset": {
+        "properties": {
+          "datasheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasheet"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "manufacturer": {
+            "title": "Manufacturer",
+            "type": "string"
+          },
+          "measures": {
+            "title": "Measures",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "part": {
+            "title": "Part",
+            "type": "string"
+          },
+          "sensor": {
+            "$ref": "#/components/schemas/SensorSpec"
+          }
+        },
+        "required": [
+          "id",
+          "part",
+          "manufacturer",
+          "measures",
+          "sensor"
+        ],
+        "title": "SensorPreset",
+        "type": "object"
+      },
+      "SensorSpec": {
+        "description": "Everything the host needs to read one sensor. Unknown fields (the API adds ``id`` and\ntimestamps) are ignored so an older CLI keeps working against a newer API.",
+        "properties": {
+          "bus": {
+            "discriminator": {
+              "mapping": {
+                "gpio": "#/components/schemas/GPIOBus",
+                "i2c": "#/components/schemas/I2CBus",
+                "spi": "#/components/schemas/SPIBus",
+                "uart": "#/components/schemas/UARTBus"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/I2CBus"
+              },
+              {
+                "$ref": "#/components/schemas/SPIBus"
+              },
+              {
+                "$ref": "#/components/schemas/UARTBus"
+              },
+              {
+                "$ref": "#/components/schemas/GPIOBus"
+              }
+            ],
+            "title": "Bus"
+          },
+          "decode": {
+            "$ref": "#/components/schemas/SensorDecode"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key": {
+            "description": "reading name on the dashboard and in telemetry, e.g. board_temp_c",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "poll_interval_s": {
+            "default": 1.0,
+            "maximum": 3600.0,
+            "minimum": 0.1,
+            "title": "Poll Interval S",
+            "type": "number"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "bus"
+        ],
+        "title": "SensorSpec",
+        "type": "object"
       },
       "SessionChannelOut": {
         "properties": {
@@ -766,6 +1886,231 @@
         "title": "SessionStatus",
         "type": "string"
       },
+      "SetupReport": {
+        "description": "``PUT /devices/{id}/setup/connection``: sent by the CLI when ``run`` starts.\n``bridge`` is ``None`` when no FREE-WILi is attached (``--simulate``). With ``run_id`` the\nrun also locks the board until it stops (or goes quiet for 75 s).",
+        "properties": {
+          "bridge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BridgeReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "host": {
+            "$ref": "#/components/schemas/HostReport"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 8,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Locks the board for this run: only one run at a time (409 board_in_use)",
+            "title": "Run Id"
+          },
+          "take_over": {
+            "default": false,
+            "description": "Take the lock from a run that still holds the board",
+            "title": "Take Over",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "host"
+        ],
+        "title": "SetupReport",
+        "type": "object"
+      },
+      "TargetBoardIn": {
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Notes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TargetBoardIn",
+        "type": "object"
+      },
+      "TargetBoardOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "name",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TargetBoardOut",
+        "type": "object"
+      },
+      "TelemetrySampleOut": {
+        "properties": {
+          "readings": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Readings",
+            "type": "object"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "readings"
+        ],
+        "title": "TelemetrySampleOut",
+        "type": "object"
+      },
+      "UARTBus": {
+        "additionalProperties": false,
+        "description": "Send ``command`` on UART1 and pull a number out of the reply with ``response_pattern``\n(its first group, or the whole match). An empty command just listens.",
+        "properties": {
+          "baud": {
+            "anyOf": [
+              {
+                "maximum": 3000000.0,
+                "minimum": 300.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baud"
+          },
+          "command": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Command",
+            "type": "string"
+          },
+          "line_ending": {
+            "default": "\n",
+            "enum": [
+              "",
+              "\n",
+              "\r\n",
+              "\r"
+            ],
+            "title": "Line Ending",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "uart",
+            "default": "uart",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "response_pattern": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Pattern"
+          },
+          "timeout_s": {
+            "default": 0.5,
+            "maximum": 5.0,
+            "minimum": 0.05,
+            "title": "Timeout S",
+            "type": "number"
+          }
+        },
+        "title": "UARTBus",
+        "type": "object"
+      },
+      "UploadedDeviceMessage": {
+        "description": "One protocol message as the board would publish it: the MQTT topic and the envelope.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "topic": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "payload"
+        ],
+        "title": "UploadedDeviceMessage",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -814,6 +2159,28 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/client-config": {
+      "get": {
+        "description": "How a command-line client signs in (public, like ``/health``; ids only, no secrets).\n\nThe ``builderwars`` CLI reads this so ``builderwars login`` needs only the API address.",
+        "operationId": "client_config_client_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Client Config",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/commands/{command_id}": {
       "get": {
         "operationId": "get_command_commands__command_id__get",
@@ -962,6 +2329,1295 @@
         ]
       }
     },
+    "/devices/{device_id}/boards": {
+      "post": {
+        "description": "Add a board under test wired to this device's FREE-WILi (at most 4: 409 after).",
+        "operationId": "add_target_board_devices__device_id__boards_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetBoardIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetBoardOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Target Board",
+        "tags": [
+          "device setup"
+        ]
+      }
+    },
+    "/devices/{device_id}/boards/{board_id}": {
+      "delete": {
+        "description": "Remove a board and all of its sensors.",
+        "operationId": "delete_target_board_devices__device_id__boards__board_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "board_id",
+            "required": true,
+            "schema": {
+              "title": "Board Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Target Board",
+        "tags": [
+          "device setup"
+        ]
+      },
+      "put": {
+        "operationId": "update_target_board_devices__device_id__boards__board_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "board_id",
+            "required": true,
+            "schema": {
+              "title": "Board Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetBoardIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetBoardOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Target Board",
+        "tags": [
+          "device setup"
+        ]
+      }
+    },
+    "/devices/{device_id}/channel": {
+      "get": {
+        "description": "Realtime channel for this device's telemetry, logs and command updates (members only).",
+        "operationId": "get_device_channel_devices__device_id__channel_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceChannelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Device Channel",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/commands/claim": {
+      "post": {
+        "description": "Pending commands for a board streamed by the ``builderwars`` CLI (ADR 0009 has no MQTT\nfor it). Polled by ``run --cloud``; each message is ``{topic, payload}`` exactly as the\ndispatcher would publish it. Answer with ``command_result`` via ``/messages``.",
+        "operationId": "claim_device_commands_devices__device_id__commands_claim_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCommandsClaimOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Device Commands",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/logs": {
+      "get": {
+        "description": "The newest ``limit`` log lines and device events, oldest first.",
+        "operationId": "get_device_logs_devices__device_id__logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceLogEntryOut"
+                  },
+                  "title": "Response Get Device Logs Devices  Device Id  Logs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Device Logs",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/logs/history": {
+      "get": {
+        "description": "A device's full log and event history, oldest first, paged with ``next_cursor``.\n\nUsed by ``builderwars logs export``; any project member can read it. Timestamps without\na timezone are taken as UTC.",
+        "operationId": "get_device_log_history_devices__device_id__logs_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "only entries at or after this",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "only entries at or after this",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "only entries before this",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "only entries before this",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "next_cursor from the previous page",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "next_cursor from the previous page",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 1000,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceLogHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Device Log History",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/messages": {
+      "post": {
+        "description": "Record a board's messages uploaded by a signed-in member (the ``builderwars`` CLI).\n\nEach message is ``{topic, payload}`` exactly as the board would publish it over MQTT, and\nmust name this device. Messages go through the same validation and de-duplication as the\nMQTT path, so uploading the same messages again is harmless, and viewers of the device get\nits telemetry and logs live. One rejected message does not fail the others: check\n``results`` (same order as ``messages``).",
+        "operationId": "upload_device_messages_devices__device_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceMessagesUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMessagesUploadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Device Messages",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/sensors": {
+      "get": {
+        "description": "Every board's sensors, oldest first. ``builderwars run`` reads the enabled ones.",
+        "operationId": "list_sensors_devices__device_id__sensors_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SensorOut"
+                  },
+                  "title": "Response List Sensors Devices  Device Id  Sensors Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sensors",
+        "tags": [
+          "device setup"
+        ]
+      },
+      "post": {
+        "description": "Define a sensor on one of the device's boards. ``key`` must be unique on the device\nacross all its boards (409).",
+        "operationId": "add_sensor_devices__device_id__sensors_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Sensor",
+        "tags": [
+          "device setup"
+        ]
+      }
+    },
+    "/devices/{device_id}/sensors/{sensor_id}": {
+      "delete": {
+        "operationId": "delete_sensor_devices__device_id__sensors__sensor_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sensor_id",
+            "required": true,
+            "schema": {
+              "title": "Sensor Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Sensor",
+        "tags": [
+          "device setup"
+        ]
+      },
+      "put": {
+        "description": "Replace a sensor's definition (it may move to another of the device's boards).",
+        "operationId": "update_sensor_devices__device_id__sensors__sensor_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sensor_id",
+            "required": true,
+            "schema": {
+              "title": "Sensor Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Sensor",
+        "tags": [
+          "device setup"
+        ]
+      }
+    },
+    "/devices/{device_id}/setup": {
+      "get": {
+        "description": "Laptop, FREE-WILi, target boards and sensors, for the device page (any member).",
+        "operationId": "get_device_setup_devices__device_id__setup_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Device Setup",
+        "tags": [
+          "device setup"
+        ]
+      }
+    },
+    "/devices/{device_id}/setup/connection": {
+      "put": {
+        "description": "Sent by ``builderwars run`` when it starts: which laptop it runs on and which\nFREE-WILi is plugged in (``device:upload``, so any member running the CLI). With\n``run_id`` it also locks the board for that run; 409 ``board_in_use`` while another run\nholds it, unless ``take_over``.",
+        "operationId": "report_device_connection_devices__device_id__setup_connection_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Device Connection",
+        "tags": [
+          "device setup"
+        ]
+      }
+    },
+    "/devices/{device_id}/setup/run/{run_id}": {
+      "delete": {
+        "description": "Sent by ``builderwars run`` when it stops: frees the board for the next run.",
+        "operationId": "release_device_run_devices__device_id__setup_run__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Release Device Run",
+        "tags": [
+          "device setup"
+        ]
+      }
+    },
     "/devices/{device_id}/status": {
       "get": {
         "operationId": "get_device_status_devices__device_id__status_get",
@@ -1031,6 +3687,97 @@
           }
         },
         "summary": "Get Device Status",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/telemetry": {
+      "get": {
+        "description": "The newest ``limit`` telemetry samples, oldest first.",
+        "operationId": "get_device_telemetry_devices__device_id__telemetry_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 300,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TelemetrySampleOut"
+                  },
+                  "title": "Response Get Device Telemetry Devices  Device Id  Telemetry Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Device Telemetry",
         "tags": [
           "devices"
         ]
@@ -2080,6 +4827,76 @@
         "summary": "Start Session",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/sensor-presets": {
+      "get": {
+        "description": "Common sensor parts (TMP102, INA219, ADS1115, MPU-6050, ...) with datasheet settings,\nfor the \"add sensor\" form to start from.",
+        "operationId": "list_sensor_presets_sensor_presets_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SensorPreset"
+                  },
+                  "title": "Response List Sensor Presets Sensor Presets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sensor Presets",
+        "tags": [
+          "device setup"
         ]
       }
     },

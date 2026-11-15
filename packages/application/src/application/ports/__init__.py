@@ -1,7 +1,8 @@
 """Ports: interfaces the application needs from the outside world.
 
 Concrete adapters live elsewhere: ``application.adapters.memory`` for local development/tests,
-and (TODO) PostgreSQL / SQS / IoT Core / AppSync adapters for AWS.
+``application.adapters.postgres`` for storage, and ``aws_adapters`` (packages/aws) for S3, SQS,
+IoT Core and AppSync Events.
 """
 
 from application.ports.messaging import (
@@ -12,15 +13,22 @@ from application.ports.messaging import (
 )
 from application.ports.repositories import (
     DeviceCommandRepository,
+    DeviceLogEntry,
+    DeviceLogRecord,
     DeviceRepository,
+    DeviceSetupRepository,
     JobRepository,
+    LogPosition,
     MembershipRepository,
     ProcessedMessageStore,
     ProjectRepository,
     RawDeviceMessageStore,
+    SensorRepository,
     SequenceTracker,
     SessionRepository,
+    TargetBoardRepository,
     TelemetryRepository,
+    TelemetrySample,
     UserDirectory,
 )
 
@@ -28,16 +36,23 @@ __all__ = [
     "CommandQueue",
     "DeviceCommandPublisher",
     "DeviceCommandRepository",
+    "DeviceLogEntry",
+    "DeviceLogRecord",
     "DeviceRepository",
+    "DeviceSetupRepository",
     "JobQueue",
     "JobRepository",
+    "LogPosition",
     "MembershipRepository",
     "ProcessedMessageStore",
     "ProjectRepository",
     "RawDeviceMessageStore",
     "RealtimePublisher",
+    "SensorRepository",
     "SequenceTracker",
     "SessionRepository",
+    "TargetBoardRepository",
     "TelemetryRepository",
+    "TelemetrySample",
     "UserDirectory",
 ]

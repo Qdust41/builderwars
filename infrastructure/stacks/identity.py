@@ -57,11 +57,14 @@ class IdentityStack(Stack):
             deletion_protection=config.retain_data,
             removal_policy=config.removal_policy,
         )
-        # Public SPA client: no secret; authorization-code + PKCE via the hosted UI (TODO domain).
+        # Public client shared by the web app (SRP) and the builderwars CLI. The CLI signs in
+        # with USER_PASSWORD_AUTH: the password goes over TLS to Cognito only, never to our API,
+        # and the CLI keeps just the refresh token. One client keeps a single token audience
+        # for the API and AppSync (COGNITO_APP_CLIENT_ID).
         self.user_pool_client = self.user_pool.add_client(
             "WebClient",
             generate_secret=False,
-            auth_flows=cognito.AuthFlow(user_srp=True),
+            auth_flows=cognito.AuthFlow(user_srp=True, user_password=True),
             prevent_user_existence_errors=True,
             enable_token_revocation=True,
             access_token_validity=Duration.hours(1),

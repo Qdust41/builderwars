@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
+from pathlib import Path
 from typing import TextIO
 
-from pathlib import Path
-
-from board_runtime.config import DeviceConfig, TransportKind, default_state_dir
+from board_runtime.config import DeviceConfig, TransportKind, log_csv_path_from_env
 from board_runtime.connectivity import StdoutTransport
 from board_runtime.hardware import SimulatedSensors
 from board_runtime.logging import CsvLogSink, DeviceLogForwarder
@@ -30,15 +30,24 @@ def simulate(
     seed: int | None = None,
     out: TextIO | None = None,
     csv_path: Path | None = None,
+    write_csv: bool = True,
 ) -> None:
+    """Emit ``count`` samples as JSON lines.
+
+    Log messages also go to a CSV: ``csv_path`` if given, otherwise wherever
+    ``BUILDERWARS_LOG_CSV`` / ``BUILDERWARS_STATE_DIR`` point (``BUILDERWARS_LOG_CSV=off``
+    disables it, as for the runtime). ``write_csv=False`` disables it outright.
+    """
     config = DeviceConfig(
         device_id=device_id,
         hardware_model="simulated-board",
         firmware_version="0.0.0-sim",
         transport=TransportKind.STDOUT,
     )
-    path = csv_path if csv_path is not None else default_state_dir() / "logs" / f"{device_id}.csv"
-    csv_sink = CsvLogSink(path)
+    path: Path | None = None
+    if write_csv:
+        path = csv_path or log_csv_path_from_env({**os.environ, "DEVICE_ID": device_id})
+    csv_sink = CsvLogSink(path) if path is not None else None
     runtime = BoardRuntime(
         config, StdoutTransport(out or sys.stdout), SimulatedSensors(seed), csv_sink=csv_sink
     )
@@ -67,7 +76,7 @@ def main(argv: list[str] | None = None) -> None:
         "--csv",
         type=Path,
         default=None,
-        help="CSV log file (default: ~/.builderwars/logs/<device-id>.csv)",
+        help="CSV log file (default: $BUILDERWARS_LOG_CSV or ~/.builderwars/logs/<device-id>.csv)",
     )
     args = parser.parse_args(argv)
     simulate(device_id=args.device_id, count=args.count, seed=args.seed, csv_path=args.csv)

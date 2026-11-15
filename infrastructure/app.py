@@ -21,6 +21,7 @@ from stacks.iot import IotStack
 from stacks.messaging import MessagingStack
 from stacks.realtime import RealtimeStack
 from stacks.storage import StorageStack
+from stacks.web import WebStack
 from stacks.workers import WorkersStack
 
 
@@ -39,6 +40,12 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
     realtime = RealtimeStack(
         app, f"{prefix}-Realtime", config=config, user_pool=identity.user_pool, env=env
     )
+    database = (
+        DatabaseStack(app, f"{prefix}-Database", config=config, env=env)
+        if config.enable_rds
+        else None
+    )
+    database_secret = database.secret if database else None
     api = ApiStack(
         app,
         f"{prefix}-Api",
@@ -48,6 +55,8 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         jobs_queue=messaging.jobs_queue,
         commands_queue=messaging.commands_queue,
         artifacts_bucket=storage.artifacts_bucket,
+        events_api=realtime.events_api,
+        database_secret=database_secret,
         env=env,
     )
     workers = WorkersStack(
@@ -59,8 +68,12 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         commands_queue=messaging.commands_queue,
         device_data_bucket=storage.device_data_bucket,
         artifacts_bucket=storage.artifacts_bucket,
+        iot_data_endpoint=iot.data_endpoint,
+        events_api=realtime.events_api,
+        database_secret=database_secret,
         env=env,
     )
+    web = WebStack(app, f"{prefix}-Web", config=config, http_api=api.http_api, env=env)
     stacks: dict[str, cdk.Stack] = {
         "identity": identity,
         "storage": storage,
@@ -69,9 +82,10 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         "realtime": realtime,
         "api": api,
         "workers": workers,
+        "web": web,
     }
-    if config.enable_rds:
-        stacks["database"] = DatabaseStack(app, f"{prefix}-Database", config=config, env=env)
+    if database is not None:
+        stacks["database"] = database
     for stack in stacks.values():
         cdk.Tags.of(stack).add("project", "builderwars")
         cdk.Tags.of(stack).add("environment", config.name)

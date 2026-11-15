@@ -1,6 +1,8 @@
 # Optional. The API runs fine without Docker (`uv run uvicorn api.main:app --reload`).
-#   docker compose up api                     # API with in-memory adapters
-#   docker compose --profile postgres up db   # PostgreSQL for the upcoming repository adapter
+#   docker compose up api                                  # API with in-memory adapters
+#   docker compose --profile postgres up -d db             # PostgreSQL only (dev + test databases)
+#   docker compose --profile postgres up api-postgres      # migrate, then the API on PostgreSQL
+# Data in the builderwars_test database is wiped by the test suite (TEST_DATABASE_URL).
 # LocalStack is intentionally not included: nothing here talks to AWS locally yet.
 services:
   api:
@@ -17,7 +19,7 @@ services:
 
   db:
     profiles: ["postgres"]
-    image: postgres:16-alpine
+    image: postgres:16-alpine  # RDS runs PostgreSQL 16 too (infrastructure/stacks/database.py)
     environment:
       POSTGRES_DB: builderwars
       POSTGRES_USER: builderwars
@@ -26,6 +28,41 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U builderwars -d builderwars"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    profiles: ["postgres"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["python", "-m", "application.adapters.postgres"]
+    environment:
+      DATABASE_URL: postgresql://builderwars:builderwars-local@db:5432/builderwars
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api-postgres:
+    profiles: ["postgres"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    environment:
+      APP_ENV: local
+      AUTH_MODE: dev-header
+      REPOSITORY_BACKEND: postgres
+      DATABASE_URL: postgresql://builderwars:builderwars-local@db:5432/builderwars
+      CORS_ALLOW_ORIGINS: '["http://localhost:5173"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

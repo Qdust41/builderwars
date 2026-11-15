@@ -5,8 +5,10 @@ description = "Background workers: device message ingest and job processing"
 requires-python = ">=3.12"
 dependencies = [
     "bw-application",
+    "bw-aws-adapters",
     "bw-device-protocol",
     "bw-domain",
+    "pydantic-settings>=2.6",
 ]
 
 [build-system]
@@ -18,5 +20,6 @@ packages = ["src/workers"]
 
 [tool.uv.sources]
 bw-application = { workspace = true }
+bw-aws-adapters = { workspace = true }
 bw-device-protocol = { workspace = true }
 bw-domain = { workspace = true }

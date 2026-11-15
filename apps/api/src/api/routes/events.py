@@ -11,7 +11,7 @@ from fastapi import APIRouter
 
 from api.dependencies import SessionServiceDep, UserDep
 from api.schemas import SessionChannelOut
-from application.realtime import RealtimeEventType, session_channel
+from application.realtime import DEVICE_EVENT_TYPES, RealtimeEventType, session_channel
 
 router = APIRouter(tags=["realtime"])
 
@@ -24,5 +24,5 @@ def get_session_channel(
     return SessionChannelOut(
         session_id=session.id,
         channel=session_channel(session.project_id, session.id),
-        event_types=list(RealtimeEventType),
+        event_types=[t for t in RealtimeEventType if t not in DEVICE_EVENT_TYPES],
     )

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
-from domain.devices import Device, DeviceCommand
+from domain.devices import Device, DeviceCommand, DeviceSetup, Sensor, TargetBoard
 from domain.jobs import Job
 from domain.projects import Project, ProjectMembership
 from domain.sessions import Session
@@ -37,6 +38,35 @@ class DeviceRepository(Protocol):
     def get(self, device_id: str) -> Device | None: ...
     def save(self, device: Device) -> None: ...
     def list_for_project(self, project_id: str) -> list[Device]: ...
+
+
+class DeviceSetupRepository(Protocol):
+    """What the CLI last reported about the laptop and the FREE-WILi, one row per device."""
+
+    def get(self, device_id: str) -> DeviceSetup | None: ...
+    def save(self, setup: DeviceSetup) -> None: ...
+
+
+class TargetBoardRepository(Protocol):
+    """Boards under test wired to a device's FREE-WILi. ``delete`` also deletes the board's
+    sensors."""
+
+    def list_for_device(self, device_id: str) -> list[TargetBoard]: ...
+    def get(self, board_id: str) -> TargetBoard | None: ...
+    def add(self, board: TargetBoard) -> None: ...
+    def save(self, board: TargetBoard) -> None: ...
+    def delete(self, board_id: str) -> None: ...
+
+
+class SensorRepository(Protocol):
+    """Sensor definitions. ``add`` raises ``ConflictError`` when the device already has a
+    sensor with that ``key``; ``save`` does the same if a rename collides."""
+
+    def list_for_device(self, device_id: str) -> list[Sensor]: ...
+    def get(self, sensor_id: str) -> Sensor | None: ...
+    def add(self, sensor: Sensor) -> None: ...
+    def save(self, sensor: Sensor) -> None: ...
+    def delete(self, sensor_id: str) -> None: ...
 
 
 class SessionRepository(Protocol):
@@ -90,10 +120,85 @@ class DeviceCommandRepository(Protocol):
     def get(self, command_id: str) -> DeviceCommand | None: ...
     def save(self, command: DeviceCommand) -> None: ...
     def count_pending(self, device_id: str) -> int: ...
+    def list_pending(self, device_id: str) -> list[DeviceCommand]:
+        """Queued or sent commands for the device, oldest first."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class TelemetrySample:
+    """One timestamped set of readings (a telemetry batch holds 1-32 of these)."""
+
+    at: datetime
+    readings: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceLogEntry:
+    """A device log line or event, merged into one stream for display.
+
+    ``kind`` is ``"log"`` (``level`` = log level) or ``"event"`` (``level`` = severity,
+    ``message`` = event name plus detail).
+    """
+
+    at: datetime
+    kind: str
+    level: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceLogRecord:
+    """One row of a device's full log history (log lines and events), for export.
+
+    Rows are ordered by ``(at, source, row_id)``: ``source`` is 0 for a log line and 1 for
+    an event, ``row_id`` is the storage row id. That triple is the keyset paging cursor.
+    """
+
+    at: datetime
+    kind: str
+    level: str
+    message: str
+    message_id: str | None
+    source: int
+    row_id: int
+
+    @property
+    def position(self) -> LogPosition:
+        return LogPosition(at=self.at, source=self.source, row_id=self.row_id)
+
+
+@dataclass(frozen=True, slots=True)
+class LogPosition:
+    """Where a log history page ended; the next page starts strictly after it."""
+
+    at: datetime
+    source: int
+    row_id: int
 
 
 class TelemetryRepository(Protocol):
-    """Normalised telemetry/log records. Storage choice depends on volume (open decision #6)."""
+    """Normalised telemetry/log records. Storage choice depends on volume (open decision #6).
+
+    Reads return the newest ``limit`` records, oldest first.
+    """
+
+    def recent_telemetry(self, device_id: str, *, limit: int) -> list[TelemetrySample]: ...
+
+    def recent_logs(self, device_id: str, *, limit: int) -> list[DeviceLogEntry]: ...
+
+    def log_history(
+        self,
+        device_id: str,
+        *,
+        since: datetime | None,
+        until: datetime | None,
+        after: LogPosition | None,
+        limit: int,
+    ) -> list[DeviceLogRecord]:
+        """Up to ``limit`` log lines and events oldest first, ``since <= at < until``,
+        strictly after ``after``."""
+        ...
 
     def add_telemetry(
         self, *, device_id: str, message_id: str, at: datetime, metrics: dict[str, object]

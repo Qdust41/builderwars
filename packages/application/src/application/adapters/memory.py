@@ -8,13 +8,16 @@ used in a deployed environment.
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import cast
 
+from application.ports import DeviceLogEntry, DeviceLogRecord, LogPosition, TelemetrySample
 from application.realtime import RealtimeEvent
 from device_protocol import DeviceEnvelope
-from domain.devices import Device, DeviceCommand
+from domain.common import ConflictError
+from domain.devices import Device, DeviceCommand, DeviceSetup, Sensor, TargetBoard
 from domain.jobs import Job
 from domain.projects import Project, ProjectMembership
 from domain.sessions import Session
@@ -87,6 +90,79 @@ class InMemoryDeviceRepository:
 
     def list_for_project(self, project_id: str) -> list[Device]:
         return [d for d in self._items.values() if d.project_id == project_id]
+
+
+class InMemoryDeviceSetupRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, DeviceSetup] = {}
+
+    def get(self, device_id: str) -> DeviceSetup | None:
+        return self._items.get(device_id)
+
+    def save(self, setup: DeviceSetup) -> None:
+        self._items[setup.device_id] = setup
+
+
+class InMemoryTargetBoardRepository:
+    """``sensors`` (optional) mirrors the database's ON DELETE CASCADE."""
+
+    def __init__(self, sensors: InMemorySensorRepository | None = None) -> None:
+        self._items: dict[str, TargetBoard] = {}
+        self._sensors = sensors
+
+    def list_for_device(self, device_id: str) -> list[TargetBoard]:
+        found = [b for b in self._items.values() if b.device_id == device_id]
+        return sorted(found, key=lambda b: (b.created_at, b.id))
+
+    def get(self, board_id: str) -> TargetBoard | None:
+        return self._items.get(board_id)
+
+    def add(self, board: TargetBoard) -> None:
+        self._items[board.id] = board
+
+    def save(self, board: TargetBoard) -> None:
+        self._items[board.id] = board
+
+    def delete(self, board_id: str) -> None:
+        self._items.pop(board_id, None)
+        if self._sensors is not None:
+            self._sensors.delete_for_board(board_id)
+
+
+class InMemorySensorRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, Sensor] = {}
+
+    def delete_for_board(self, board_id: str) -> None:
+        for sensor_id in [s.id for s in self._items.values() if s.board_id == board_id]:
+            del self._items[sensor_id]
+
+    def list_for_device(self, device_id: str) -> list[Sensor]:
+        found = [s for s in self._items.values() if s.device_id == device_id]
+        return sorted(found, key=lambda s: (s.created_at, s.id))
+
+    def get(self, sensor_id: str) -> Sensor | None:
+        return self._items.get(sensor_id)
+
+    def _check_key(self, sensor: Sensor) -> None:
+        for other in self._items.values():
+            if (
+                other.id != sensor.id
+                and other.device_id == sensor.device_id
+                and other.key == sensor.key
+            ):
+                raise ConflictError(f"this device already has a sensor named {sensor.key!r}")
+
+    def add(self, sensor: Sensor) -> None:
+        self._check_key(sensor)
+        self._items[sensor.id] = sensor
+
+    def save(self, sensor: Sensor) -> None:
+        self._check_key(sensor)
+        self._items[sensor.id] = sensor
+
+    def delete(self, sensor_id: str) -> None:
+        self._items.pop(sensor_id, None)
 
 
 class InMemorySessionRepository:
@@ -177,6 +253,12 @@ class InMemoryDeviceCommandRepository:
             1 for c in self._items.values() if c.device_id == device_id and c.status.is_pending
         )
 
+    def list_pending(self, device_id: str) -> list[DeviceCommand]:
+        found = [
+            c for c in self._items.values() if c.device_id == device_id and c.status.is_pending
+        ]
+        return sorted(found, key=lambda c: (c.created_at, c.id))
+
 
 @dataclass
 class InMemoryTelemetryRepository:
@@ -225,6 +307,94 @@ class InMemoryTelemetryRepository:
             }
         )
 
+    def recent_telemetry(self, device_id: str, *, limit: int) -> list[TelemetrySample]:
+        rows = [r for r in self.telemetry if r["device_id"] == device_id]
+        rows.sort(key=lambda r: _at(r))
+        return (
+            [
+                TelemetrySample(at=_at(r), readings=dict(cast(dict[str, object], r["metrics"])))
+                for r in rows[-limit:]
+            ]
+            if limit > 0
+            else []
+        )
+
+    def recent_logs(self, device_id: str, *, limit: int) -> list[DeviceLogEntry]:
+        entries = [
+            DeviceLogEntry(at=_at(r), kind="log", level=str(r["level"]), message=str(r["message"]))
+            for r in self.logs
+            if r["device_id"] == device_id
+        ]
+        for r in self.events:
+            if r["device_id"] != device_id:
+                continue
+            detail = f": {r['detail']}" if r["detail"] else ""
+            entries.append(
+                DeviceLogEntry(
+                    at=_at(r),
+                    kind="event",
+                    level=str(r["severity"]),
+                    message=f"{r['name']}{detail}",
+                )
+            )
+        entries.sort(key=lambda e: e.at)
+        return entries[-limit:] if limit > 0 else []
+
+    def log_history(
+        self,
+        device_id: str,
+        *,
+        since: datetime | None,
+        until: datetime | None,
+        after: LogPosition | None,
+        limit: int,
+    ) -> list[DeviceLogRecord]:
+        records = [
+            DeviceLogRecord(
+                at=_at(r),
+                kind="log",
+                level=str(r["level"]),
+                message=str(r["message"]),
+                message_id=cast(str | None, r["message_id"]),
+                source=0,
+                row_id=i,
+            )
+            for i, r in enumerate(self.logs)
+            if r["device_id"] == device_id
+        ]
+        for i, r in enumerate(self.events):
+            if r["device_id"] != device_id:
+                continue
+            detail = f": {r['detail']}" if r["detail"] else ""
+            records.append(
+                DeviceLogRecord(
+                    at=_at(r),
+                    kind="event",
+                    level=str(r["severity"]),
+                    message=f"{r['name']}{detail}",
+                    message_id=cast(str | None, r["message_id"]),
+                    source=1,
+                    row_id=i,
+                )
+            )
+
+        def key(record: DeviceLogRecord | LogPosition) -> tuple[datetime, int, int]:
+            return (record.at, record.source, record.row_id)
+
+        records = [
+            r
+            for r in records
+            if (since is None or r.at >= since)
+            and (until is None or r.at < until)
+            and (after is None or key(r) > key(after))
+        ]
+        records.sort(key=key)
+        return records[: max(0, limit)]
+
+
+def _at(row: dict[str, object]) -> datetime:
+    return cast(datetime, row["at"])
+
 
 @dataclass
 class InMemoryJobQueue:
@@ -237,9 +407,18 @@ class InMemoryJobQueue:
 @dataclass
 class InMemoryCommandQueue:
     command_ids: list[str] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def enqueue_command(self, command_id: str) -> None:
-        self.command_ids.append(command_id)
+        with self._lock:
+            self.command_ids.append(command_id)
+
+    def take(self, predicate: Callable[[str], bool]) -> list[str]:
+        """Remove and return the queued ids matching ``predicate``, in FIFO order."""
+        with self._lock:
+            taken = [cid for cid in self.command_ids if predicate(cid)]
+            self.command_ids[:] = [cid for cid in self.command_ids if cid not in taken]
+            return taken
 
 
 @dataclass

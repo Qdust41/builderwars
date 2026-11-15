@@ -1,40 +1,221 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Neutral zinc surfaces with an indigo accent; dark mode follows the OS unless
+ * <html data-theme="light|dark"> overrides it. Tailwind utilities read these through @theme
+ * (bg-surface, text-fg, border-line, text-accent, ...), so components never hard-code colours.
+ */
 :root {
-  font-family: system-ui, sans-serif;
-  color: #1d1d1f;
-  background: #fafafa;
+  color-scheme: light;
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --line: #e4e4e7;
+  --line-strong: #d4d4d8;
+  --fg: #18181b;
+  --fg-2: #3f3f46;
+  --muted: #71717a;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef2ff;
+  --accent-ink: #ffffff;
+  --good: #047857;
+  --good-soft: #ecfdf5;
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --bad: #b91c1c;
+  --bad-soft: #fef2f2;
+  --grid: #f0f0f2;
+  --series-1: #4f46e5;
+  --console-bg: #0f0f12;
+  --console-fg: #e4e4e7;
+  --console-muted: #8b8b95;
 }
-body {
-  margin: 0;
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b0b0d;
+    --surface: #141417;
+    --surface-2: #1c1c20;
+    --line: #27272a;
+    --line-strong: #3f3f46;
+    --fg: #f4f4f5;
+    --fg-2: #d4d4d8;
+    --muted: #a1a1aa;
+    --accent: #818cf8;
+    --accent-hover: #a5b4fc;
+    --accent-soft: #1e1b4b;
+    --accent-ink: #0b0b0d;
+    --good: #34d399;
+    --good-soft: #052e22;
+    --warn: #fbbf24;
+    --warn-soft: #2d1f05;
+    --bad: #f87171;
+    --bad-soft: #2c0f0f;
+    --grid: #1f1f23;
+    --series-1: #818cf8;
+    --console-bg: #08080a;
+  }
 }
-.shell header {
-  display: flex;
-  gap: 1.5rem;
-  align-items: center;
-  padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid #ddd;
-  background: #fff;
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --surface: #141417;
+  --surface-2: #1c1c20;
+  --line: #27272a;
+  --line-strong: #3f3f46;
+  --fg: #f4f4f5;
+  --fg-2: #d4d4d8;
+  --muted: #a1a1aa;
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-soft: #1e1b4b;
+  --accent-ink: #0b0b0d;
+  --good: #34d399;
+  --good-soft: #052e22;
+  --warn: #fbbf24;
+  --warn-soft: #2d1f05;
+  --bad: #f87171;
+  --bad-soft: #2c0f0f;
+  --grid: #1f1f23;
+  --series-1: #818cf8;
+  --console-bg: #08080a;
 }
-.shell main {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 1.5rem;
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-console: var(--console-bg);
+  --color-console-fg: var(--console-fg);
+  --color-console-muted: var(--console-muted);
 }
-.badge {
-  margin-left: auto;
-  font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: #fde68a;
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    min-height: 100vh;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+  }
 }
-.error {
-  color: #b91c1c;
+
+@utility btn {
+
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+      whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2
+      focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50;
 }
-.todo {
-  color: #6b7280;
-  font-style: italic;
+
+@layer components {
+  .btn-primary {
+    @apply btn bg-accent text-accent-ink shadow-sm hover:bg-accent-hover;
+  }
+  .btn-secondary {
+    @apply btn border border-line bg-surface text-fg shadow-sm hover:bg-surface-2;
+  }
+  .btn-ghost {
+    @apply btn text-muted hover:bg-surface-2 hover:text-fg;
+  }
+  .input {
+    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-fg shadow-sm
+      placeholder:text-muted focus:border-accent focus:outline-none focus:ring-3
+      focus:ring-accent/20;
+  }
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.04)];
+  }
+  .card-head {
+    @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5;
+  }
+  .card-title {
+    @apply text-sm font-semibold text-fg;
+  }
+  .field-label {
+    @apply mb-1.5 block text-sm font-medium text-fg-2;
+  }
 }
-form {
-  display: flex;
-  gap: 0.5rem;
-  margin: 1rem 0;
+
+/* Telemetry chart internals (SVG parts drawn by MetricChart). */
+.metric-plot {
+  position: relative;
+}
+.metric-plot svg {
+  display: block;
+  overflow: visible;
+}
+.metric-plot .chart-grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+.metric-plot .tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.metric-plot .series-area {
+  fill: var(--series-1);
+  opacity: 0.08;
+}
+.metric-plot .series-line {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.metric-plot .series-dot {
+  fill: var(--series-1);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.metric-plot .crosshair {
+  stroke: var(--line-strong);
+  stroke-dasharray: 3 3;
+}
+.metric-plot .hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 50%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.live-pulse {
+  animation: live-pulse 2s infinite;
 }

@@ -129,3 +129,26 @@ def test_expired_command_times_out_instead_of_sending() -> None:
     )
     assert publisher.commands == []
     assert repo.get(command.id).status is CommandStatus.TIMED_OUT
+
+
+def test_command_dispatch_announces_sent_and_timed_out_commands() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from application.services import DeviceEventPublisher
+    from workers.handlers import CommandDispatchHandler, CommandMessage
+
+    repo = memory.InMemoryDeviceCommandRepository()
+    realtime = memory.RecordingRealtimePublisher()
+    handler = CommandDispatchHandler(
+        repo, memory.RecordingCommandPublisher(), DeviceEventPublisher(realtime)
+    )
+    created = datetime(2026, 11, 14, tzinfo=UTC)
+    sent = _queued_command(repo)
+    stale = _queued_command(repo, created_at=created)
+    handler.handle(CommandMessage(command_id=sent.id))
+    handler.handle(CommandMessage(command_id=sent.id))  # redelivery: no second event
+    handler.handle(CommandMessage(command_id=stale.id), now=created + timedelta(minutes=5))
+    assert [(e.data["command_id"], e.data["status"]) for e in realtime.events] == [
+        (sent.id, "sent"),
+        (stale.id, "timed_out"),
+    ]

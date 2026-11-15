@@ -1,6 +1,12 @@
 """Realtime collaboration event contract (delivered via AppSync Events in AWS).
 
-Channel layout: ``projects/{project_id}/sessions/{session_id}``.
+Channel layout:
+
+* ``projects/{project_id}/sessions/{session_id}`` — session activity (presence, AI runs, ...).
+* ``projects/{project_id}/devices/{device_id}`` — one device's telemetry, logs and command
+  results, for everyone viewing that device.
+
+Every event names exactly one of ``session_id`` / ``device_id``; that picks its channel.
 Events are notifications; clients must refetch authoritative state from the API after a
 reconnect or a missed event. Never put secrets, credentials or device commands in events.
 """
@@ -13,7 +19,14 @@ from enum import StrEnum
 from typing import Any, Final
 from uuid import UUID, uuid4
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 MAX_EVENT_BYTES: Final[int] = 8 * 1024
 REALTIME_SCHEMA_VERSION: Final[int] = 1
@@ -31,7 +44,17 @@ class RealtimeEventType(StrEnum):
     AI_RUN_COMPLETED = "ai.run.completed"
     FIRMWARE_BUILD_STARTED = "firmware.build.started"
     FIRMWARE_BUILD_COMPLETED = "firmware.build.completed"
+    DEVICE_TELEMETRY = "device.telemetry"
+    DEVICE_LOG = "device.log"
+    DEVICE_COMMAND_UPDATED = "device.command.updated"
 
+
+DEVICE_EVENT_TYPES: Final[tuple[RealtimeEventType, ...]] = (
+    RealtimeEventType.DEVICE_TELEMETRY,
+    RealtimeEventType.DEVICE_LOG,
+    RealtimeEventType.DEVICE_COMMAND_UPDATED,
+    RealtimeEventType.DEVICE_STATUS_CHANGED,
+)
 
 # Keys that must never appear anywhere in an event's data.
 FORBIDDEN_KEYS: Final[frozenset[str]] = frozenset(
@@ -39,8 +62,25 @@ FORBIDDEN_KEYS: Final[frozenset[str]] = frozenset(
 )
 
 
+def channel_segment(resource_id: str) -> str:
+    """An id as an AppSync Events channel segment, which allows only ``[A-Za-z0-9-]``.
+
+    Our ids are ``<prefix>_<hex>`` (``prj_...``, ``dev_...``), so swapping ``_`` for ``-`` is
+    reversible with ``resource_id_from_segment``.
+    """
+    return resource_id.replace("_", "-")
+
+
+def resource_id_from_segment(segment: str) -> str:
+    return segment.replace("-", "_", 1)
+
+
 def session_channel(project_id: str, session_id: str) -> str:
-    return f"projects/{project_id}/sessions/{session_id}"
+    return f"projects/{channel_segment(project_id)}/sessions/{channel_segment(session_id)}"
+
+
+def device_channel(project_id: str, device_id: str) -> str:
+    return f"projects/{channel_segment(project_id)}/devices/{channel_segment(device_id)}"
 
 
 class RealtimeEvent(BaseModel):
@@ -50,14 +90,24 @@ class RealtimeEvent(BaseModel):
     schema_version: int = REALTIME_SCHEMA_VERSION
     type: RealtimeEventType
     project_id: str
-    session_id: str
+    session_id: str | None = None
+    device_id: str | None = None
     actor_id: str | None = None  # user id, device id, or None for system
     occurred_at: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
     data: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _one_scope(self) -> RealtimeEvent:
+        if (self.session_id is None) == (self.device_id is None):
+            raise ValueError("an event needs exactly one of session_id or device_id")
+        return self
+
     @property
     def channel(self) -> str:
-        return session_channel(self.project_id, self.session_id)
+        if self.session_id is not None:
+            return session_channel(self.project_id, self.session_id)
+        assert self.device_id is not None
+        return device_channel(self.project_id, self.device_id)
 
     @field_validator("data")
     @classmethod

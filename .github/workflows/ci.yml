@@ -11,6 +11,21 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: builderwars_test
+          POSTGRES_USER: builderwars
+          POSTGRES_PASSWORD: builderwars-ci # throwaway CI container
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U builderwars -d builderwars_test"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      # Runs the repository-backed tests against PostgreSQL as well as in memory.
+      TEST_DATABASE_URL: postgresql://builderwars:builderwars-ci@localhost:5432/builderwars_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -56,6 +71,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
+      - name: Generated API types match contracts/api/openapi.json
+        run: npm run check:api
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -73,8 +90,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Lambda assets are bundled from uv.lock at synth time (lambda_bundle.py, ADR 0006).
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
       - run: pip install -r requirements.txt
-      - name: Synthesize (no deploy, no AWS credentials)
+      - name: Synthesize and bundle Lambda assets (no deploy, no AWS credentials)
         run: python app.py && CDK_CONTEXT_JSON='{"env":"prod"}' python app.py
       - name: Synth assertions
         run: python -m pytest -q tests

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from application.realtime import RealtimeEventType
+from application.realtime import RealtimeEventType, session_channel
 from domain.common import NotFoundError, PermissionDeniedError
 from domain.jobs import JobType
 from domain.projects import ProjectMembership, ProjectRole
@@ -67,7 +67,8 @@ def test_session_start_publishes_activity_event(world) -> None:
     session = world.sessions.start_session(user_id="alice", project_id=project.id)
     [event] = world.realtime.events
     assert event.type is RealtimeEventType.PROJECT_ACTIVITY
-    assert event.channel == f"projects/{project.id}/sessions/{session.id}"
+    assert event.channel == session_channel(project.id, session.id)
+    assert "_" not in event.channel  # AppSync Events channel segments: [A-Za-z0-9-] only
 
 
 def test_device_lookup_hides_devices_of_other_projects(world) -> None:

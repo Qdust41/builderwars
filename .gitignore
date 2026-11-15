@@ -41,3 +41,8 @@ secrets/
 .pi/
 .agents/
 .claude/
+
+# Output of a stray `tsc -b` in apps/web (the build uses tsc --noEmit); Vite would pick
+# these .js files over the .tsx sources.
+apps/web/src/**/*.js
+*.tsbuildinfo

@@ -10,6 +10,7 @@ Pipeline for each message (at-least-once delivery, so this must be idempotent):
 5. Gap detection on ``sequence_number`` (persisted across host reboots, decision #14): a gap
    records a ``sequence_gap`` event but never rejects the message.
 6. Store the raw message, write normalised records, apply command results, update the device.
+7. Notify viewers of the device (realtime, best effort) — only for registered devices.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from application.ports import (
     SequenceTracker,
     TelemetryRepository,
 )
+from application.services.device_events import DeviceEventPublisher
 from device_protocol import (
     DeviceEnvelope,
     MessageType,
@@ -75,6 +77,7 @@ class DeviceMessageIngestService:
         telemetry: TelemetryRepository,
         sequences: SequenceTracker,
         commands: DeviceCommandRepository | None = None,
+        events: DeviceEventPublisher | None = None,
     ) -> None:
         self._devices = devices
         self._processed = processed
@@ -82,6 +85,7 @@ class DeviceMessageIngestService:
         self._telemetry = telemetry
         self._sequences = sequences
         self._commands = commands
+        self._events = events
 
     def ingest(self, *, topic: str, body: bytes, received_at: datetime) -> IngestResult:
         result = self._ingest(topic=topic, body=body, received_at=received_at)
@@ -155,6 +159,7 @@ class DeviceMessageIngestService:
         )
         self._record(envelope, decoded.payload)
         self._touch_device(envelope, decoded.payload)
+        self._notify(envelope, decoded.payload)
         return IngestResult(
             IngestOutcome.PROCESSED,
             device_id=topic_device_id,
@@ -202,15 +207,51 @@ class DeviceMessageIngestService:
             # Never let one device complete another device's command.
             log.warning("ignoring result for unknown command %s", payload.command_id)
             return
-        self._commands.save(
-            command.complete(
-                CommandStatus(payload.status.value),
-                now=envelope.timestamp,
-                detail=payload.detail,
-                output=dict(payload.output),
-            )
+        if not command.status.is_pending:
+            return  # already completed (or timed out); a redelivered result changes nothing
+        completed = command.complete(
+            CommandStatus(payload.status.value),
+            now=envelope.timestamp,
+            detail=payload.detail,
+            output=dict(payload.output),
         )
-        # TODO (spec 06/07): broadcast the result to the project's active sessions.
+        self._commands.save(completed)
+        if self._events is not None:
+            self._events.command_updated(completed)
+        # TODO (spec 06/07): also broadcast the result to the project's active sessions.
+
+    def _notify(self, envelope: DeviceEnvelope, payload: object) -> None:
+        if self._events is None:
+            return
+        device = self._devices.get(envelope.device_id)
+        if device is None:
+            return
+        project_id, device_id = device.project_id, device.id
+        if isinstance(payload, TelemetryPayload):
+            self._events.telemetry(
+                project_id=project_id,
+                device_id=device_id,
+                samples=[(s.ts, dict(s.readings)) for s in payload.samples],
+            )
+        elif isinstance(payload, LogPayload):
+            self._events.log_entry(
+                project_id=project_id,
+                device_id=device_id,
+                at=envelope.timestamp,
+                kind="log",
+                level=payload.level.value,
+                message=payload.message,
+            )
+        elif isinstance(payload, EventPayload):
+            detail = f": {payload.detail}" if payload.detail else ""
+            self._events.log_entry(
+                project_id=project_id,
+                device_id=device_id,
+                at=envelope.timestamp,
+                kind="event",
+                level=payload.severity.value,
+                message=f"{payload.name}{detail}",
+            )
 
     def _touch_device(self, envelope: DeviceEnvelope, payload: object) -> None:
         device = self._devices.get(envelope.device_id)
@@ -225,11 +266,20 @@ class DeviceMessageIngestService:
             status = ConnectionStatus.OFFLINE
         # TODO: OFFLINE should primarily come from IoT lifecycle events
         # ($aws/events/presence/disconnected/...), not from device messages.
-        self._devices.save(
-            device.observed(
-                envelope.timestamp, status=status, firmware_version=envelope.firmware_version
-            )
+        updated = device.observed(
+            envelope.timestamp, status=status, firmware_version=envelope.firmware_version
         )
+        self._devices.save(updated)
+        # Tell viewers when it comes online or goes away. "Online" also counts as a change
+        # when the device had gone silent long enough to read as offline.
+        before = device.status_at(envelope.timestamp)
+        if self._events is not None and updated.connection_status is not before:
+            self._events.status_changed(
+                project_id=device.project_id,
+                device_id=device.id,
+                status=updated.connection_status.value,
+                at=updated.last_seen_at,
+            )
 
 
 def _rejected(

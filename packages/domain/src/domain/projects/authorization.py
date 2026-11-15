@@ -20,6 +20,12 @@ class Permission(StrEnum):
     MANAGE_MEMBERS = "project:manage_members"
     REGISTER_DEVICE = "device:register"
     SEND_DEVICE_COMMAND = "device:command"
+    # Upload a board's telemetry and logs on its behalf (the builderwars CLI, signed in as a
+    # user). Boards have no IoT certificates yet, so this is how device data reaches the cloud.
+    UPLOAD_DEVICE_DATA = "device:upload"
+    # Add/describe target boards and their sensors (what the CLI reads). Owner only for now;
+    # the owner plans to open it to every member later (decision 2026-11-15).
+    CONFIGURE_DEVICE = "device:configure"
     JOIN_SESSION = "session:join"
     START_SESSION = "session:start"
     CREATE_JOB = "job:create"
@@ -28,7 +34,12 @@ class Permission(StrEnum):
 
 
 _VIEWER: Final = frozenset({Permission.VIEW_PROJECT, Permission.JOIN_SESSION})
-_MEMBER: Final = _VIEWER | {Permission.START_SESSION, Permission.CREATE_JOB, Permission.RUN_AI}
+_MEMBER: Final = _VIEWER | {
+    Permission.START_SESSION,
+    Permission.CREATE_JOB,
+    Permission.RUN_AI,
+    Permission.UPLOAD_DEVICE_DATA,
+}
 _ADMIN: Final = _MEMBER | {
     Permission.MANAGE_PROJECT,
     Permission.MANAGE_MEMBERS,
@@ -36,7 +47,7 @@ _ADMIN: Final = _MEMBER | {
     Permission.SEND_DEVICE_COMMAND,
     Permission.APPROVE_FIRMWARE,
 }
-_OWNER: Final = _ADMIN
+_OWNER: Final = _ADMIN | {Permission.CONFIGURE_DEVICE}
 
 ROLE_PERMISSIONS: Final[dict[ProjectRole, frozenset[Permission]]] = {
     ProjectRole.VIEWER: _VIEWER,
