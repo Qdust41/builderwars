@@ -66,11 +66,11 @@ delta is called out.
 | 2 | `MqttTransport` on `awsiotsdk` (mTLS, client id = thing name, QoS 1); `mqtt` extra | Exercise against a dev IoT endpoint; provisioning (spec 03) |
 | 4 | Notifications only, no CRDT. Device channel `projects/{p}/devices/{d}` carries `device.telemetry`, `device.log` and `device.command.updated` (ADR 0008) | Presence, session broadcast of command results |
 | 5 | Command path: `POST /projects/{id}/devices/{device_id}/commands`, `GET /commands/{id}`, per-device bound of 32 pending, 30 s expiry, dispatcher worker, results applied by ingest (a device can't complete another device's command) | AWS adapters, timeout sweeper, session broadcast |
-| 6/7 | Telemetry payload is now `{"samples": [{"ts", "readings"}]}` (1–32 samples); host batches per 5 s window or 32 samples; new `event` message type on `devices/{id}/events` | Ingest rate limiting |
+| 6/7 | Telemetry payload is now `{"samples": [{"ts", "readings"}]}` (1–32 samples); host batches per 5 s window or 32 samples; new `event` message type on `devices/{id}/events`. Telemetry, logs and events are stored in PostgreSQL tables (jsonb metrics, ADR 0006) | Ingest rate limiting; RDS retention per table (spec 04) |
 | 8 | `ai_platform.providers.ProviderConfig` (`openai_compatible` / `bedrock`, `AI_MODEL` required), client stub; new `ai:run` permission (member+) | Client implementation and default model (spec 08) |
 | 9 | `JobType.FIRMWARE_DEPLOY/ROLLBACK`; artifact `required_extensions`; host `verify_sha256`; UF2 flasher stub | Build/deploy executors, dual-CPU flashing |
 | 10 | `AUTH_MODE=cognito` verifies JWTs (JWKS, issuer, client, expiry); `GET/POST /projects/{id}/members`, `DELETE /projects/{id}/members/{user_id}`; Cognito pool: self sign-up, email + password, MFA off | Role change, ownership transfer, SES email sender, hosted UI domain (spec 06) |
-| 11/12 | CDK envs are `dev` (synth/sandbox) and `prod`; no staging. RDS only in prod, 20 GB with no storage autoscaling (free tier); commands queue + DLQ | Budget alarm needs an address (#13) |
+| 11/12 | CDK envs are `dev` (synth/sandbox) and `prod`; no staging. RDS only in prod, 20 GB with no storage autoscaling (free tier); commands queue + DLQ. PostgreSQL repositories and SQL migrations for every port (ADR 0006); local Postgres via `docker compose --profile postgres` | Budget alarm needs an address (#13); running migrations against RDS and Lambda access to it (workstream C) |
 | 13 | `ops_alert_email` placeholder in `infrastructure/config.py`, not wired | — |
 | 14 | `FileSequenceStore` (`~/.builderwars/seq/<device_id>`, atomic write before use); ingest records a `sequence_gap` event and never rejects | — |
 

@@ -36,3 +36,6 @@ secrets/
 .idea/
 .vscode/
 .DS_Store
+
+# AI
+.pi/

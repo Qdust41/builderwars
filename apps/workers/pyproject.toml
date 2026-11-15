@@ -7,6 +7,7 @@ dependencies = [
     "bw-application",
     "bw-device-protocol",
     "bw-domain",
+    "pydantic-settings>=2.6",
 ]
 
 [build-system]

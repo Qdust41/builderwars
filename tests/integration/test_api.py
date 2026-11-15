@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
 from api.main import create_app
-from api.settings import AppEnv, Settings
+from api.settings import AppEnv, RepositoryBackend, Settings
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(create_app(Settings(app_env=AppEnv.TEST)))
+def client(backend: str, request: pytest.FixtureRequest) -> Iterator[TestClient]:
+    settings = Settings(app_env=AppEnv.TEST)
+    if backend == "postgres":
+        request.getfixturevalue("pg")  # migrated, emptied schema
+        settings = Settings(
+            app_env=AppEnv.TEST,
+            repository_backend=RepositoryBackend.POSTGRES,
+            database_url=os.environ["TEST_DATABASE_URL"],
+            database_pool_max_size=2,
+        )
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client
 
 
 def _as(user: str) -> dict[str, str]:

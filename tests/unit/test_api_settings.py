@@ -45,3 +45,36 @@ def test_cognito_mode_requires_pool_and_client_ids() -> None:
     assert validate_settings(settings).cognito_jwks_endpoint == (
         "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc/.well-known/jwks.json"
     )
+
+
+def test_postgres_backend_needs_a_database_url() -> None:
+    with pytest.raises(UnsafeConfigurationError, match="DATABASE_URL"):
+        validate_settings(
+            Settings(
+                app_env=AppEnv.LOCAL,
+                repository_backend=RepositoryBackend.POSTGRES,
+                database_url=None,
+            )
+        )
+
+
+def test_worker_settings_refuse_memory_outside_local_and_postgres_without_url() -> None:
+    from workers.settings import (
+        RepositoryBackend as WorkerBackend,
+    )
+    from workers.settings import (
+        UnsafeConfigurationError as WorkerConfigError,
+    )
+    from workers.settings import (
+        WorkerSettings,
+        validate_worker_settings,
+    )
+
+    with pytest.raises(WorkerConfigError, match="memory"):
+        validate_worker_settings(
+            WorkerSettings(app_env="prod", repository_backend=WorkerBackend.MEMORY)
+        )
+    with pytest.raises(WorkerConfigError, match="DATABASE_URL"):
+        validate_worker_settings(
+            WorkerSettings(repository_backend=WorkerBackend.POSTGRES, database_url=None)
+        )

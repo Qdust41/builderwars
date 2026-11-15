@@ -24,13 +24,13 @@ stores, so nothing a simulated host sent could reach the browser.
 3. **Read endpoints.** `GET /devices/{id}/telemetry?limit=` and `GET /devices/{id}/logs?limit=`
    return the newest records, oldest first. `TelemetryRepository` gained `recent_telemetry`
    and `recent_logs`; the PostgreSQL adapter (workstream A) must implement them.
-4. **Local bridge (LOCAL ONLY).** With the in-memory backend the API mounts `/local/*`:
+4. **Local bridge (LOCAL ONLY).** When `APP_ENV` is `local` or `test` the API mounts `/local/*`
+   (with either repository backend):
    `POST /local/device-messages` (stands in for IoT Core + the ingest worker),
    `POST /local/devices/{id}/commands/next` (stands in for the dispatcher + IoT Core) and
    `GET /local/realtime?channel=` (server-sent events in place of AppSync Events). The host
    runtime reaches it with `DEVICE_TRANSPORT=local-api`. These routes are left out of the
-   OpenAPI contract and cannot exist outside `APP_ENV=local|test`, because
-   `validate_settings` already refuses the in-memory backend there (ADR 0003).
+   OpenAPI contract, and `build_container` only builds them for `APP_ENV=local|test`.
 5. **Web types are generated.** `apps/web/src/api/schema.gen.ts` comes from
    `contracts/api/openapi.json` via `openapi-typescript`; CI fails if it is stale.
 

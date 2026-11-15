@@ -9,12 +9,31 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from psycopg_pool import ConnectionPool
 
 from api.auth import CognitoTokenVerifier, InvalidTokenError, JwksUrlKeySource
 from api.local_realtime import LocalRealtimeHub
-from api.settings import AuthMode, RepositoryBackend, Settings, validate_settings
-from application.adapters import memory
-from application.ports import DeviceCommandRepository, UserDirectory
+from api.settings import (
+    LOCAL_ONLY_ENVS,
+    AuthMode,
+    RepositoryBackend,
+    Settings,
+    validate_settings,
+)
+from application.adapters import memory, postgres
+from application.ports import UserDirectory
+from application.ports.repositories import (
+    DeviceCommandRepository,
+    DeviceRepository,
+    JobRepository,
+    MembershipRepository,
+    ProcessedMessageStore,
+    ProjectRepository,
+    RawDeviceMessageStore,
+    SequenceTracker,
+    SessionRepository,
+    TelemetryRepository,
+)
 from application.services import (
     Authorizer,
     CommandService,
@@ -61,6 +80,68 @@ class Container:
     commands: CommandService
     telemetry: TelemetryQueryService
     local: LocalDevBridge | None = None
+    pool: ConnectionPool | None = None  # closed on app shutdown
+
+    def close(self) -> None:
+        if self.pool is not None:
+            self.pool.close()
+
+
+@dataclass(frozen=True, slots=True)
+class _Repositories:
+    projects: ProjectRepository
+    memberships: MembershipRepository
+    devices: DeviceRepository
+    sessions: SessionRepository
+    jobs: JobRepository
+    commands: DeviceCommandRepository
+    telemetry: TelemetryRepository
+    processed: ProcessedMessageStore
+    sequences: SequenceTracker
+    raw_messages: RawDeviceMessageStore
+
+
+def _memory_repositories() -> _Repositories:
+    return _Repositories(
+        projects=memory.InMemoryProjectRepository(),
+        memberships=memory.InMemoryMembershipRepository(),
+        devices=memory.InMemoryDeviceRepository(),
+        sessions=memory.InMemorySessionRepository(),
+        jobs=memory.InMemoryJobRepository(),
+        commands=memory.InMemoryDeviceCommandRepository(),
+        telemetry=memory.InMemoryTelemetryRepository(),
+        processed=memory.InMemoryProcessedMessageStore(),
+        sequences=memory.InMemorySequenceTracker(),
+        raw_messages=memory.InMemoryRawMessageStore(),
+    )
+
+
+def _postgres_repositories(settings: Settings) -> tuple[_Repositories, ConnectionPool]:
+    assert settings.database_url is not None  # validate_settings guarantees it
+    pool = postgres.create_pool(
+        settings.database_url.get_secret_value(), max_size=settings.database_pool_max_size
+    )
+    try:
+        postgres.check_schema_current_with(pool)
+    except Exception:
+        pool.close()
+        raise
+    repos = postgres.PostgresRepositories.from_pool(pool)
+    return (
+        _Repositories(
+            projects=repos.projects,
+            memberships=repos.memberships,
+            devices=repos.devices,
+            sessions=repos.sessions,
+            jobs=repos.jobs,
+            commands=repos.commands,
+            telemetry=repos.telemetry,
+            processed=repos.processed,
+            sequences=repos.sequences,
+            raw_messages=repos.raw_messages,
+        ),
+        pool,
+    )
 
 
 def build_container(
@@ -71,23 +152,22 @@ def build_container(
 ) -> Container:
     """``token_verifier`` and ``users`` override the Cognito adapters (tests, local JWKS)."""
     validate_settings(settings)
-    if settings.repository_backend is not RepositoryBackend.MEMORY:
-        # TODO: PostgreSQL repositories, SQS job queue, AppSync realtime publisher.
+    if settings.app_env not in LOCAL_ONLY_ENVS:
+        # TODO(workstream C): SQS job/command queues and the AppSync realtime publisher. Until
+        # they exist a deployed API would accept jobs and commands that nothing ever runs.
         raise NotImplementedError(
-            f"repository backend {settings.repository_backend.value!r} is not implemented yet"
+            "queue and realtime adapters for deployed environments are not implemented yet"
         )
 
-    projects = memory.InMemoryProjectRepository()
-    memberships = memory.InMemoryMembershipRepository()
-    devices = memory.InMemoryDeviceRepository()
-    sessions = memory.InMemorySessionRepository()
-    jobs = memory.InMemoryJobRepository()
-    commands = memory.InMemoryDeviceCommandRepository()
+    pool: ConnectionPool | None = None
+    if settings.repository_backend is RepositoryBackend.POSTGRES:
+        repos, pool = _postgres_repositories(settings)
+    else:
+        repos = _memory_repositories()
+    authorizer = Authorizer(repos.memberships)
     command_queue = memory.InMemoryCommandQueue()
-    telemetry = memory.InMemoryTelemetryRepository()
     realtime = LocalRealtimeHub()
     events = DeviceEventPublisher(realtime)
-    authorizer = Authorizer(memberships)
 
     dev_users: memory.InMemoryUserDirectory | None = None
     if settings.auth_mode is AuthMode.COGNITO:
@@ -102,34 +182,38 @@ def build_container(
     elif users is None:
         users = dev_users = memory.InMemoryUserDirectory()
 
-    local = LocalDevBridge(
-        realtime=realtime,
-        events=events,
-        ingest=DeviceMessageIngestService(
-            devices=devices,
-            processed=memory.InMemoryProcessedMessageStore(),
-            raw_store=memory.InMemoryRawMessageStore(),
-            telemetry=telemetry,
-            sequences=memory.InMemorySequenceTracker(),
-            commands=commands,
+    # LOCAL ONLY: the bridge for a simulated host and the browser's event stream (ADR 0008).
+    local: LocalDevBridge | None = None
+    if settings.app_env in LOCAL_ONLY_ENVS:
+        local = LocalDevBridge(
+            realtime=realtime,
             events=events,
-        ),
-        commands=commands,
-        command_queue=command_queue,
-    )
+            ingest=DeviceMessageIngestService(
+                devices=repos.devices,
+                processed=repos.processed,
+                raw_store=repos.raw_messages,
+                telemetry=repos.telemetry,
+                sequences=repos.sequences,
+                commands=repos.commands,
+                events=events,
+            ),
+            commands=repos.commands,
+            command_queue=command_queue,
+        )
     return Container(
         settings=settings,
         token_verifier=token_verifier,
         users=users,
         dev_users=dev_users,
         authorizer=authorizer,
-        projects=ProjectService(projects, memberships, authorizer, users),
-        devices=DeviceService(devices, authorizer),
-        sessions=SessionService(sessions, devices, authorizer, realtime),
-        jobs=JobService(jobs, devices, memory.InMemoryJobQueue(), authorizer),
-        commands=CommandService(commands, devices, command_queue, authorizer),
-        telemetry=TelemetryQueryService(devices, telemetry, authorizer),
+        projects=ProjectService(repos.projects, repos.memberships, authorizer, users),
+        devices=DeviceService(repos.devices, authorizer),
+        sessions=SessionService(repos.sessions, repos.devices, authorizer, realtime),
+        jobs=JobService(repos.jobs, repos.devices, memory.InMemoryJobQueue(), authorizer),
+        commands=CommandService(repos.commands, repos.devices, command_queue, authorizer),
+        telemetry=TelemetryQueryService(repos.devices, repos.telemetry, authorizer),
         local=local,
+        pool=pool,
     )
 
 

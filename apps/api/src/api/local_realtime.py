@@ -1,8 +1,7 @@
 """LOCAL ONLY: an in-process realtime hub that stands in for AppSync Events.
 
 The API publishes events here (``RealtimePublisher`` port) and ``GET /local/realtime`` streams
-them to the browser as server-sent events. Only wired with the in-memory backend, which
-``validate_settings`` already forbids outside local/test.
+them to the browser as server-sent events. Only wired when ``APP_ENV`` is local or test.
 """
 
 from __future__ import annotations

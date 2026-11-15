@@ -8,8 +8,8 @@ everything is in one process, so these routes stand in for those hops:
 * ``POST /local/devices/{device_id}/commands/next`` — the host collects its queued commands.
 * ``GET /local/realtime?channel=...`` — server-sent events in place of AppSync Events.
 
-They are mounted only when the in-memory backend is in use (``container.local``), which
-``validate_settings`` forbids outside ``APP_ENV=local``/``test``. They are left out of the
+They are mounted only when ``APP_ENV`` is ``local`` or ``test`` (``container.local``), with
+either repository backend. They are left out of the
 OpenAPI contract on purpose. The host routes take no credentials, like a broker on localhost.
 """
 

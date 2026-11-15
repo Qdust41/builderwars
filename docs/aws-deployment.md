@@ -1,6 +1,8 @@
 # AWS deployment (future — not performed by the scaffold)
 
-Nothing in this repository deploys automatically. CI only synthesises templates.
+Nothing in this repository deploys automatically. CI only synthesises templates. For the full
+step-by-step walkthrough (account, deploy, sign-up, device provisioning, connecting a board) see
+[deployment-guide.md](deployment-guide.md).
 
 ## Before the first deploy
 

@@ -2,7 +2,7 @@
 
 ``DEVICE_TRANSPORT=local-api`` posts each message to ``POST /local/device-messages`` (what the
 IoT rule would forward) and polls ``POST /local/devices/{id}/commands/next`` for commands.
-The API only mounts those routes with its in-memory backend (``APP_ENV=local``/``test``), and
+The API only mounts those routes when ``APP_ENV`` is ``local`` or ``test``, and
 this transport is not an authenticated IoT device. Standard library only (Python 3.10+).
 """
 
