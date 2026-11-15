@@ -16,6 +16,7 @@ mqtt = ["awsiotsdk>=1.22,<2"]
 
 [project.scripts]
 builderwars-host = "board_runtime.main:main"
+builderwars = "board_runtime.cli:main"
 builderwars-logs = "board_runtime.cli:main"
 
 [build-system]

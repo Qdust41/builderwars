@@ -4,6 +4,22 @@ Runs on the **host PC wired to a FREE-WILi 1-OG** over USB (decision #1, ADR 000
 the platform's "device": it samples the board, batches telemetry, and talks to AWS IoT Core.
 Requires **CPython 3.10+** (CI runs these tests on 3.10).
 
+## Testing a board: `builderwars`
+
+```bash
+uv run builderwars                    # what's plugged in, and what to type next
+uv run builderwars /dev/ttyACM0       # step-by-step check of the board on that port
+uv run builderwars test --watch       # first board found; print GPIO/button changes live
+uv run builderwars run /dev/ttyACM0   # full host runtime on that board (JSON lines to stdout)
+uv run builderwars ports              # boards + serial ports, with permission status
+```
+
+Either of the board's two ttys (main or display CPU) works; `ttyACM0` is accepted for
+`/dev/ttyACM0`. Every failed step prints the cause and a fix — e.g. if you can't open the port
+it names the group that owns it (`uucp` on Arch, `dialout` on Debian/Ubuntu) and the
+`usermod` command. Exit codes: 0 pass, 1 board check failed, 2 usage/setup error.
+`--debug` (anywhere on the line) shows full tracebacks. `builderwars-logs` is the same program.
+
 ## Local development (no board, no AWS)
 
 ```bash
@@ -24,8 +40,11 @@ export DEVICE_ID=<thing-name> DEVICE_SENSORS=freewili DEVICE_TRANSPORT=mqtt \
        IOT_ENDPOINT=<ats-endpoint> IOT_CERT_PATH=~/.builderwars/credentials/device.pem.crt \
        IOT_KEY_PATH=~/.builderwars/credentials/private.pem.key \
        IOT_CA_PATH=~/.builderwars/credentials/AmazonRootCA1.pem
-builderwars-host
+builderwars-host            # or: builderwars-host --port /dev/ttyACM0
 ```
+
+`DEVICE_PORT=/dev/ttyACM0` (or `--port`) pins the board; setting it implies
+`DEVICE_SENSORS=freewili`. Without it the first FREE-WILi found is used.
 
 `freewili` is installed separately on purpose: it pins `typing-extensions` exactly, which
 would force older pydantic on the whole workspace if it were locked as an extra. (The
