@@ -32,7 +32,9 @@ class ConfigError(ValueError):
 
 
 def default_state_dir() -> Path:
-    return Path.home() / ".builderwars"
+    """``BUILDERWARS_STATE_DIR`` if set (every command honours it), else ``~/.builderwars``."""
+    override = os.environ.get("BUILDERWARS_STATE_DIR", "").strip()
+    return Path(override).expanduser() if override else Path.home() / ".builderwars"
 
 
 def log_csv_path_from_env(e: dict[str, str]) -> Path | None:
@@ -81,6 +83,7 @@ class DeviceConfig:
     batch_max_samples: int = TELEMETRY_MAX_SAMPLES
     heartbeat_interval_s: float = 30.0
     state_dir: Path | None = None  # None -> sequence numbers are not persisted (tests/sim)
+    run_id: str | None = None  # cloud: the run holding the board's lock (builderwars run)
     mqtt_endpoint: str | None = None
     mqtt_port: int = 8883
     cert_path: Path | None = None

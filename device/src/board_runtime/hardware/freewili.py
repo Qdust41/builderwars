@@ -174,6 +174,7 @@ class FreeWiliSensors:
         self.port = port
         self.open_timeout_s = float(open_timeout_s)
         self.info: BoardInfo | None = None
+        self._buttons_ok = True
 
     @classmethod
     def adopt(cls, board: Any, info: BoardInfo, *, port: str | None = None) -> FreeWiliSensors:
@@ -224,9 +225,18 @@ class FreeWiliSensors:
             io: _Result = device.get_io(self._processor("Main"))
             if io.is_err():
                 self._fail(f"reading GPIO from the main CPU failed: {io.unwrap_err()}")
-            buttons: _Result = device.read_all_buttons(self._processor("Display"))
-            if buttons.is_err():
-                self._fail(f"reading buttons from the display CPU failed: {buttons.unwrap_err()}")
+            buttons: _Result | None = None
+            if self._buttons_ok:
+                buttons = device.read_all_buttons(self._processor("Display"))
+                if buttons.is_err():
+                    # The buttons are a nice-to-have: without the display CPU (some boards,
+                    # or its port busy) keep sending the pins rather than going "degraded".
+                    log.warning(
+                        "reading buttons from the display CPU failed (%s); sending GPIO only",
+                        buttons.unwrap_err(),
+                    )
+                    self._buttons_ok = False
+                    buttons = None
         except BoardUnavailableError:
             raise
         except Exception as exc:  # serial errors surface as exceptions on unplug
@@ -239,7 +249,7 @@ class FreeWiliSensors:
         readings: dict[str, MetricValue] = {
             f"io_{index}": int(level) for index, level in enumerate(io.unwrap())
         }
-        for color, pressed in buttons.unwrap().items():
+        for color, pressed in (buttons.unwrap() if buttons is not None else {}).items():
             name = getattr(color, "name", str(color)).lower()
             readings[f"button_{name}"] = bool(pressed)
         return readings

@@ -187,3 +187,20 @@ def test_run_over_mqtt_requires_a_real_device_id(
     monkeypatch.setenv("DEVICE_TRANSPORT", "mqtt")
     assert main(["--state-dir", str(tmp_path), "run", "-n", "1"]) == 2
     assert "registered device id" in capsys.readouterr().err
+
+
+def test_i2c_address_clash_across_boards_is_warned() -> None:
+    from board_runtime.cli import i2c_address_clashes
+    from device_protocol.sensors import SensorSpec
+
+    def spec(key: str, address: int) -> SensorSpec:
+        return SensorSpec.model_validate(
+            {"key": key, "name": key, "bus": {"protocol": "i2c", "address": address, "reg": 0}}
+        )
+
+    specs = [spec("a", 0x48), spec("b", 0x48), spec("c", 0x40), spec("d", 0x40)]
+    boards = {"a": "Motor", "b": "Power", "c": "Motor", "d": "Motor"}
+    warnings = i2c_address_clashes(specs, boards)
+    assert len(warnings) == 1
+    assert "0x48" in warnings[0]
+    assert "Motor, Power" in warnings[0]

@@ -28,11 +28,13 @@ Exit codes: 0 ok, 1 board test failed, 2 usage/setup error, 130 interrupted.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import dataclasses
 import logging
 import os
 import shlex
+import signal
 import sys
 import time
 import traceback
@@ -52,6 +54,7 @@ from board_runtime.hardware.configured import (
     ConfiguredSensors,
     SensorReadError,
     SimulatedConfiguredSensors,
+    SimulatedFaults,
 )
 from board_runtime.hardware.freewili import (
     BoardInfo,
@@ -549,6 +552,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"skipping sensor {key}: {why} (update the CLI?)", file=sys.stderr)
 
     specs = [s for s in (sensor_list.sensors if sensor_list else []) if s.enabled]
+    refresh: Any = None
+    if session is not None:
+        from board_runtime.cloud import fetch_sensors
+
+        # Sensors and boards added on the device page while this runs are picked up (30 s).
+        def refresh() -> list[Any]:
+            return fetch_sensors(session, config.device_id).sensors
+
     sensors: Any = None
     board_info: BoardInfo | None = None
     if config.sensors is SensorKind.FREEWILI:
@@ -567,34 +578,37 @@ def cmd_run(args: argparse.Namespace) -> int:
         board_info = board.info
         assert board_info is not None
         print(f"connected to {board_info.describe()}", file=sys.stderr)
-        if specs:
-            from board_runtime.cloud import fetch_sensors
-
-            sensors = ConfiguredSensors(
-                specs,
-                board,
-                refresh=lambda: fetch_sensors(session, config.device_id).sensors,
-            )
-            source = "freewili"
+        source = "freewili" if specs else "freewili-gpio"
+        if specs or refresh is not None:
+            # Without sensors yet, send the FREE-WILi's own pins until some are defined.
+            sensors = ConfiguredSensors(specs, board, refresh=refresh, fallback=board)
         else:
             sensors = board
-            source = "freewili-gpio"
-            if cloud:
-                print(
-                    "no sensors are defined for this device yet: sending the FREE-WILi's own "
-                    "pin levels.\nAdd target boards and sensors on the device page; they are "
-                    "picked up within 30 s.",
-                    file=sys.stderr,
-                )
+        if not specs and cloud:
+            print(
+                "no sensors are defined for this device yet: sending the FREE-WILi's own "
+                "pin levels.\nAdd target boards and sensors on the device page; they are "
+                "picked up within 30 s.",
+                file=sys.stderr,
+            )
     else:
         source = "simulated"
+        error_rate = float(getattr(args, "sim_errors", 0.0) or 0.0)
+        faults = SimulatedFaults(error_rate) if error_rate > 0 else None
+        sensors = SimulatedConfiguredSensors(
+            specs, refresh=refresh, fallback=SimulatedSensors(), faults=faults
+        )
         if specs:
-            sensors = SimulatedConfiguredSensors(specs)
             print("SIMULATED values for this device's sensors (no board is read)", file=sys.stderr)
         else:
-            sensors = SimulatedSensors()
             hint = "" if simulate else " (pass a port to use a real board)"
             print(f"using simulated sensors{hint}", file=sys.stderr)
+        if faults is not None:
+            print(
+                f"with made-up faults about {error_rate:.0%} of the time "
+                "(--sim-errors 0 turns them off)",
+                file=sys.stderr,
+            )
 
     if specs:
         width = max(len(s.key) for s in specs) + 2
@@ -604,25 +618,104 @@ def cmd_run(args: argparse.Namespace) -> int:
             where = f"  [{board_name}]" if board_name else ""
             every = f"every {spec.poll_interval_s:g} s"
             print(f"  {spec.key:<{width}}{describe_bus(spec)}, {every}{where}", file=sys.stderr)
+        for warning in i2c_address_clashes(specs, sensor_list.boards if sensor_list else {}):
+            print(f"warning: {warning}", file=sys.stderr)
         fastest = min(s.poll_interval_s for s in specs)
         if args.interval is None and fastest < config.sample_interval_s:
             config = dataclasses.replace(config, sample_interval_s=fastest)
 
+    run_id: str | None = None
     if session is not None:
-        from board_runtime.cloud import bridge_report, host_report, report_connection
+        from board_runtime.cloud import (
+            BoardInUseError,
+            bridge_report,
+            host_report,
+            new_run_id,
+            report_connection,
+        )
 
-        report_connection(
-            session,
-            config.device_id,
-            host_report(cli_version=_cli_version(), sensor_source=source),
-            bridge_report(board_info, library_version=_freewili_version()),
+        run_id = new_run_id()
+        try:  # lock the board for this run: one `builderwars run` at a time per device
+            report_connection(
+                session,
+                config.device_id,
+                host_report(cli_version=_cli_version(), sensor_source=source),
+                bridge_report(board_info, library_version=_freewili_version()),
+                run_id=run_id,
+                take_over=bool(getattr(args, "take_over", False)),
+            )
+        except BoardInUseError as exc:
+            _close_quietly(sensors)
+            _error(str(exc), exc.hint)
+            return EXIT_FAILED
+        config = dataclasses.replace(config, run_id=run_id)
+        print(
+            "this run has locked the board; other runs are refused until it stops", file=sys.stderr
         )
     print(
         f"device id {config.device_id}; messages go to {destination}; Ctrl+C to stop",
         file=sys.stderr,
     )
-    run_loop(config, samples=args.samples, sensors=sensors)
+    _stop_on_signals()  # closing the terminal or `kill` also releases the board
+    try:
+        stop_reason = run_loop(config, samples=args.samples, sensors=sensors)
+    finally:
+        if session is not None and run_id is not None:
+            from board_runtime.cloud import release_run
+
+            release_run(session, config.device_id, run_id)
+        _close_quietly(sensors)
+    if stop_reason:
+        _error(stop_reason, "someone ran `builderwars run --take-over` for this device")
+        return EXIT_FAILED
     return EXIT_OK
+
+
+def i2c_address_clashes(specs: list[Any], boards: dict[str, str]) -> list[str]:
+    """The FREE-WILi has one I2C bus for all target boards, so the same address on two boards
+    can't be told apart (one chip answers, or both garble the reply)."""
+    from device_protocol.sensors import I2CBus
+
+    seen: dict[int, set[str]] = {}
+    for spec in specs:
+        if isinstance(spec.bus, I2CBus):
+            seen.setdefault(spec.bus.address, set()).add(boards.get(spec.key, ""))
+    return [
+        f"I2C address 0x{address:02X} is used on {len(names)} boards ({', '.join(sorted(names))}); "
+        "the FREE-WILi shares one I2C bus, so only one chip there can answer"
+        for address, names in sorted(seen.items())
+        if len(names - {""}) > 1
+    ]
+
+
+def _stop_on_signals() -> None:
+    """SIGTERM/SIGHUP stop the run like Ctrl+C, so it says goodbye and frees the board."""
+
+    def stop(signum: int, frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            with contextlib.suppress(ValueError, OSError):  # not the main thread / platform
+                signal.signal(sig, stop)
+
+
+def _rate(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError("use a rate between 0 and 1, e.g. 0.05")
+    return value
+
+
+def _close_quietly(sensors: Any) -> None:
+    close = getattr(sensors, "close", None)
+    if callable(close):
+        with contextlib.suppress(Exception):  # best effort on the way out
+            close()
 
 
 def describe_bus(spec: Any) -> str:
@@ -1083,6 +1176,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--simulate",
         action="store_true",
         help="no hardware: send made-up values (for the device's defined sensors, if any)",
+    )
+    p_run.add_argument(
+        "--sim-errors",
+        type=_rate,
+        default=0.05,
+        metavar="RATE",
+        help="with --simulate: how often to make up faults (sensor read errors, USB drop-outs, "
+        "board error logs), 0..1 (default 0.05; 0 turns them off)",
+    )
+    p_run.add_argument(
+        "--take-over",
+        action="store_true",
+        help="--cloud: take the board from another run that holds it (that run stops)",
     )
     p_run.set_defaults(func=cmd_run)
 

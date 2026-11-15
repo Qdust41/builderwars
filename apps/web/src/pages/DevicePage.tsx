@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Network, Radio, Table2, Timer } from "lucide-react";
+import { Activity, BarChart3, Lock, Network, Radio, Table2, Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -85,6 +85,11 @@ export function DevicePage() {
     const timer = window.setInterval(reloadSetup, SETUP_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [reloadSetup]);
+  // A run starting or stopping changes who holds the board: pick that up right away.
+  useEffect(() => {
+    reloadSetup();
+  }, [board, reloadSetup]);
+  const run = setup.data?.run ?? null;
   const [dialog, setDialog] = useState<Dialog>();
   // Boards and sensors are owner-only for now (the owner will open it to members later).
   const canEdit = !!project.data && project.data.owner_user_id === session?.user.userId;
@@ -140,6 +145,13 @@ export function DevicePage() {
               {d.hardware_model}
               {d.extensions.length ? ` + ${d.extensions.join(", ")}` : ""} · firmware{" "}
               {d.firmware_version ?? "unknown"} · last seen {timeAgo(d.last_seen_at)}
+              {run && board === "online" && (
+                <span className="mt-1 flex items-center gap-1.5 text-fg-2">
+                  <Lock className="size-3.5" aria-hidden="true" />
+                  In use by {run.user_email ?? "a project member"}
+                  {run.hostname ? ` on ${run.hostname}` : ""} since {timeAgo(run.started_at)}
+                </span>
+              )}
             </>
           )
         }

@@ -296,3 +296,138 @@ def _send_via(client: TestClient):  # type: ignore[no-untyped-def]
         return response.status_code, response.content
 
     return send
+
+
+# -- one run at a time: `builderwars run` locks the board -----------------------------------
+def _report(run_id: str, host: str = "bench-laptop", **extra: object) -> dict:
+    return {
+        "host": {"hostname": host, "os": "Linux", "python_version": "3.10", "cli_version": "0.1"},
+        "run_id": run_id,
+        **extra,
+    }
+
+
+def _upload(client: TestClient, did: str, run_id: str | None, user: str = "alice"):  # type: ignore[no-untyped-def]
+    envelope = {
+        "message_id": f"m-{run_id}-{user}",
+        "device_id": did,
+        "message_type": "heartbeat",
+        "schema_version": 1,
+        "sequence": 1,
+        "timestamp": "2026-11-15T12:00:00Z",
+        "payload": {"uptime_s": 1},
+    }
+    body: dict = {
+        "messages": [{"topic": f"builderwars/devices/{did}/heartbeat", "payload": envelope}]
+    }
+    if run_id:
+        body["run_id"] = run_id
+    return client.post(f"/devices/{did}/messages", json=body, headers=_as(user))
+
+
+def test_a_run_locks_the_board_until_it_stops(client: TestClient) -> None:
+    pid, did = _device(client)
+    _add_member(client, pid, "bob")
+    url = f"/devices/{did}/setup/connection"
+    first = client.put(url, json=_report("run_aaaaaaaa"), headers=_as("alice"))
+    assert first.status_code == 200, first.text
+    run = first.json()["run"]
+    assert run["hostname"] == "bench-laptop"
+    assert run["user_id"]
+
+    # The same run may report again; another run is refused while the first one holds it.
+    assert client.put(url, json=_report("run_aaaaaaaa"), headers=_as("alice")).status_code == 200
+    second = client.put(url, json=_report("run_bbbbbbbb", "bob-laptop"), headers=_as("bob"))
+    assert second.status_code == 409
+    assert second.json()["code"] == "board_in_use"
+    assert "alice@example.com's run on bench-laptop" in second.json()["detail"]
+
+    # Stopping frees it for the next run (a wrong run id releases nothing).
+    assert (
+        client.delete(f"/devices/{did}/setup/run/run_zzzzzzzz", headers=_as("bob")).status_code
+        == 204
+    )
+    assert client.put(url, json=_report("run_bbbbbbbb"), headers=_as("bob")).status_code == 409
+    assert (
+        client.delete(f"/devices/{did}/setup/run/run_aaaaaaaa", headers=_as("alice")).status_code
+        == 204
+    )
+    assert client.get(f"/devices/{did}/setup", headers=_as("alice")).json()["run"] is None
+    assert client.put(url, json=_report("run_bbbbbbbb"), headers=_as("bob")).status_code == 200
+
+
+def test_take_over_stops_the_old_run(client: TestClient) -> None:
+    _, did = _device(client)
+    url = f"/devices/{did}/setup/connection"
+    client.put(url, json=_report("run_aaaaaaaa"), headers=_as("alice"))
+    assert _upload(client, did, "run_aaaaaaaa").status_code == 200
+    took = client.put(url, json=_report("run_bbbbbbbb", take_over=True), headers=_as("alice"))
+    assert took.status_code == 200, took.text
+    old = _upload(client, did, "run_aaaaaaaa")
+    assert old.status_code == 409
+    assert old.json()["code"] == "run_superseded"
+    # Saved data uploaded without a run (builderwars upload) is never blocked by the lock.
+    assert _upload(client, did, None).status_code == 200
+
+
+def test_lock_lapses_when_the_run_goes_quiet() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from domain.devices import BoardInUseError, DeviceSetup
+
+    t0 = datetime(2026, 11, 15, 12, tzinfo=UTC)
+    held = DeviceSetup(device_id="dev_1").claim_run("run_a", by="alice", at=t0)
+    with pytest.raises(BoardInUseError):
+        held.claim_run("run_b", by="bob", at=t0 + timedelta(seconds=74))
+    later = held.claim_run("run_b", by="bob", at=t0 + timedelta(seconds=76))
+    assert later.run_id == "run_b"
+    assert later.release_run("run_a", at=t0).run_id == "run_b"
+
+
+def test_cli_refuses_a_held_board_and_stops_when_taken_over(
+    client: TestClient, tmp_path: Path
+) -> None:
+    from board_runtime.cloud import BoardInUseError
+
+    _, did = _device(client)
+    send = _send_via(client)
+    login(
+        api_url="http://localhost:8000/",
+        email="alice",
+        password=lambda: pytest.fail("no password in dev mode"),
+        new_password=lambda: "",
+        state_dir=tmp_path,
+        send=send,
+    )
+    session = CloudSession.load(tmp_path, send=send)
+    host = host_report(cli_version="0.1.0", sensor_source="simulated")
+    report_connection(session, did, host, None, run_id="run_first000")
+    with pytest.raises(BoardInUseError, match="in use"):
+        report_connection(session, did, host, None, run_id="run_second00")
+
+    config = DeviceConfig(
+        device_id=did,
+        hardware_model="freewili",
+        firmware_version="1.0.0",
+        transport=TransportKind.CLOUD,
+        batch_max_samples=1,
+        sample_interval_s=0.01,
+        run_id="run_first000",
+    )
+    from board_runtime.hardware import SimulatedSensors
+    from board_runtime.main import run_loop
+
+    taken = False
+
+    class TakeOverMidRun(SimulatedSensors):
+        def read(self):  # type: ignore[no-untyped-def]
+            nonlocal taken
+            if not taken:
+                taken = True
+                report_connection(session, did, host, None, run_id="run_second00", take_over=True)
+            return super().read()
+
+    transport = CloudApiTransport(session, did, poll_interval_s=None, run_id="run_first000")
+    reason = run_loop(config, samples=20, sensors=TakeOverMidRun(), transport=transport)
+    assert reason is not None
+    assert "taken over" in reason

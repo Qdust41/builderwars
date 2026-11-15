@@ -2,20 +2,23 @@
 
 * ``fetch_sensors``: the sensor definitions people made on the device page, which
   ``builderwars run`` reads through the FREE-WILi.
-* ``report_connection``: tell the device page which laptop and FREE-WILi are running it.
+* ``report_connection``: tell the device page which laptop and FREE-WILi are running it, and
+  lock the board for this run (``run_id``): one ``builderwars run`` at a time per device.
+* ``release_run``: free the board when the run stops.
 """
 
 from __future__ import annotations
 
 import logging
 import platform
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
 from pydantic import ValidationError
 
-from board_runtime.cloud.account import ApiError, CloudSession
+from board_runtime.cloud.account import AccountError, ApiError, CloudSession
 from board_runtime.hardware.freewili import BoardInfo
 from device_protocol.sensors import SensorSpec
 from device_protocol.setup import BridgeReport, HostReport, SetupReport
@@ -86,16 +89,55 @@ def bridge_report(info: BoardInfo | None, *, library_version: str | None) -> Bri
     )
 
 
+class BoardInUseError(AccountError):
+    """Another ``builderwars run`` holds this device's board."""
+
+
+def new_run_id() -> str:
+    return f"run_{uuid.uuid4().hex}"
+
+
 def report_connection(
-    session: CloudSession, device_id: str, host: HostReport, bridge: BridgeReport | None
+    session: CloudSession,
+    device_id: str,
+    host: HostReport,
+    bridge: BridgeReport | None,
+    *,
+    run_id: str | None = None,
+    take_over: bool = False,
 ) -> dict[str, Any] | None:
-    """Best effort: a failure is logged, never fatal (the data upload matters more)."""
-    body = SetupReport(host=host, bridge=bridge).model_dump(mode="json")
+    """Report the chain and, with ``run_id``, lock the board for this run.
+
+    Raises :class:`BoardInUseError` when another run holds the board. Anything else is
+    logged and not fatal (the data upload matters more; uploads re-take a lapsed lock).
+    """
+    body = SetupReport(host=host, bridge=bridge, run_id=run_id, take_over=take_over)
     try:
         result = session.request(
-            "PUT", f"/devices/{quote(device_id, safe='')}/setup/connection", body
+            "PUT",
+            f"/devices/{quote(device_id, safe='')}/setup/connection",
+            body.model_dump(mode="json", exclude_none=True),
         )
+    except ApiError as exc:
+        if exc.status == 409 and exc.code == "board_in_use":
+            raise BoardInUseError(
+                exc.detail,
+                "stop that run first (Ctrl+C there), or pass --take-over to stop it from here",
+            ) from exc
+        log.warning("could not report this laptop/FREE-WILi to the device page: %s", exc)
+        return None
     except Exception as exc:
         log.warning("could not report this laptop/FREE-WILi to the device page: %s", exc)
         return None
     return result if isinstance(result, dict) else None
+
+
+def release_run(session: CloudSession, device_id: str, run_id: str) -> None:
+    """Best effort: free the board for the next run (it frees itself after 75 s anyway)."""
+    try:
+        session.request(
+            "DELETE",
+            f"/devices/{quote(device_id, safe='')}/setup/run/{quote(run_id, safe='')}",
+        )
+    except Exception as exc:
+        log.debug("could not release the board lock: %s", exc)

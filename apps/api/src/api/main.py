@@ -67,7 +67,10 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
 
     @app.exception_handler(ConflictError)
     async def _already(_: Request, exc: ConflictError) -> JSONResponse:
-        return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
+        body = {"detail": str(exc)}
+        if code := getattr(exc, "code", None):  # e.g. board_in_use, for the CLI
+            body["code"] = code
+        return JSONResponse(body, status_code=status.HTTP_409_CONFLICT)
 
     @app.exception_handler(InvalidStateTransitionError)
     async def _conflict(_: Request, exc: InvalidStateTransitionError) -> JSONResponse:

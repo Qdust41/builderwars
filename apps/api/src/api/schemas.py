@@ -146,6 +146,12 @@ class UploadedDeviceMessage(BaseModel):
 
 class DeviceMessagesUpload(BaseModel):
     messages: list[UploadedDeviceMessage] = Field(min_length=1, max_length=MAX_MESSAGES_PER_UPLOAD)
+    run_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="The live ``builderwars run`` sending these (keeps its lock on the board; "
+        "409 run_superseded if another run took the board over). Omit for saved-data uploads.",
+    )
 
 
 class DeviceMessageResultOut(BaseModel):
@@ -325,6 +331,16 @@ class TargetBoardOut(_Out):
         return cls.model_validate(board)
 
 
+class DeviceRunOut(BaseModel):
+    """The ``builderwars run`` that has locked the board: one run at a time."""
+
+    started_at: datetime
+    last_seen_at: datetime
+    user_id: str
+    user_email: str | None = None
+    hostname: str | None = None
+
+
 class DeviceSetupOut(BaseModel):
     """The whole chain for the device page. ``host``/``bridge`` are null until the CLI has
     run against this device; ``bridge`` is also null for a ``--simulate`` run."""
@@ -336,6 +352,9 @@ class DeviceSetupOut(BaseModel):
     max_boards: int
     boards: list[TargetBoardOut]
     sensors: list[SensorOut]
+    run: DeviceRunOut | None = Field(
+        default=None, description="The `builderwars run` holding the board right now, if any"
+    )
 
     @classmethod
     def of(cls, view: SetupView) -> DeviceSetupOut:
@@ -348,4 +367,13 @@ class DeviceSetupOut(BaseModel):
             max_boards=MAX_TARGET_BOARDS,
             boards=[TargetBoardOut.of(b) for b in view.boards],
             sensors=[SensorOut.of(s) for s in view.sensors],
+            run=DeviceRunOut(
+                started_at=setup.run_started_at,
+                last_seen_at=setup.run_seen_at,
+                user_id=setup.run_by,
+                user_email=view.run_by_email,
+                hostname=(setup.host or {}).get("hostname"),
+            )
+            if view.run_active and setup.run_started_at and setup.run_seen_at and setup.run_by
+            else None,
         )
