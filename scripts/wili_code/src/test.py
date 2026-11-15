@@ -1,10 +1,9 @@
-
-
 # # import onewili
 
 # # dev = onewili.connect()   # discovers the device with pyfwfinder
 
-# # # dev.gui.set_led_color(ledindex: int, red: int, green: int, blue: int, duration: int, mode: enums.owLEDManagerLEDMode | int) -> Result
+# # # dev.gui.set_led_color(ledindex: int, red: int, green: int, blue: int, duration: int,
+# # #                       mode: enums.owLEDManagerLEDMode | int) -> Result
 # # # res = dev.gui.set_led_color(0, 0, 255, 0, 0, 0)
 # # match res:
 # #     case onewili.Ok(value):
@@ -30,7 +29,8 @@ finally:
 
 # dev = onewili.connect()   # discovers the device with pyfwfinder
 
-# # dev.gui.set_led_color(ledindex: int, red: int, green: int, blue: int, duration: int, mode: enums.owLEDManagerLEDMode | int) -> Result
+# # dev.gui.set_led_color(ledindex: int, red: int, green: int, blue: int, duration: int,
+# #                       mode: enums.owLEDManagerLEDMode | int) -> Result
 # # res = dev.gui.set_led_color(...)
 # res = dev.io.gpio.set_io_toggle(25)
 
