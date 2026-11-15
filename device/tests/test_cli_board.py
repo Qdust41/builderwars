@@ -310,3 +310,41 @@ def test_run_refuses_a_held_board_before_opening_the_freewili(
     assert code == 1
     assert "bob@example.com's run on lab-pc" in capsys.readouterr().err
     assert board.opens == 0  # the port the other run holds was never touched
+
+
+# -- the bench case: a time-out must not leave the display port open --------------------------
+class _Serial:
+    def __init__(self, fail: bool = False) -> None:
+        self.fail = fail
+        self.closed_with: dict | None = None
+
+    def close(self, restore_menu=True, block=True, timeout_sec=6.0):
+        self.closed_with = {"restore_menu": restore_menu, "timeout_sec": timeout_sec}
+        if self.fail:
+            raise TimeoutError("Failed to close serial port in 6.0 seconds.")
+
+
+def test_closing_closes_the_display_port_even_when_the_main_port_hangs() -> None:
+    board = SimpleNamespace(_main_serial=_Serial(fail=True), _display_serial=_Serial())
+    fw.close_quietly(board)
+    assert board._display_serial.closed_with == {"restore_menu": False, "timeout_sec": 3.0}
+    assert board._main_serial.closed_with is not None
+
+
+def test_a_slow_answer_keeps_the_ports_open_and_retries(boards) -> None:
+    board = FakeBoard(read_error="Failed to read response frame in 6.0 seconds: ")
+    boards.append(board)
+    reader = fw.FreeWiliSensors(port=None)
+    reader._injected = False  # a real (discovered) board, as in `builderwars run`
+    for _ in range(fw.REOPEN_AFTER_FAILURES - 1):
+        with pytest.raises(fw.BoardUnavailableError):
+            reader.read()
+    assert not board.closed  # still open: the next read asks again
+    board.read_error = None
+    assert "io_0" in reader.read()
+    board.read_error = "Failed to read response frame in 6.0 seconds: "
+    for _ in range(fw.REOPEN_AFTER_FAILURES):
+        with pytest.raises(fw.BoardUnavailableError) as raised:
+            reader.read()
+    assert "re-opening the FREE-WILi" in str(raised.value)
+    assert board.closed
