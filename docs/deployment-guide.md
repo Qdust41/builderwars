@@ -414,7 +414,8 @@ AWS access is keyless (GitHub OIDC). One-time setup, already done for account 51
 
 - [x] IAM OIDC provider for `token.actions.githubusercontent.com` (audience `sts.amazonaws.com`).
 - [x] IAM role `builderwars-github-deploy`, trusted only for
-      `repo:Qdust41/builderwars:ref:refs/heads/main`. Its inline policy allows only: assume the
+      `repo:Qdust41@103899064/builderwars@1458014947:ref:refs/heads/main`. GitHub's token subject includes the
+      numeric owner and repository ids, not just the names. Its inline policy allows only: assume the
       `cdk-hnb659fds-*` bootstrap roles in us-east-1, describe `Builderwars-prod-*` stacks, invoke
       the Migrate Lambda. CloudFormation makes the actual changes through the bootstrap
       execution role.
@@ -424,7 +425,10 @@ AWS access is keyless (GitHub OIDC). One-time setup, already done for account 51
 - [ ] GitHub: protect `main` (require a pull request and the CI checks), since every merge goes
       to prod.
 
-Renaming the repository or its owner breaks the trust condition: update the role's trust policy.
+The subject is pinned to the repository's ids, so a deleted-and-recreated repository with the same
+name can't deploy. Moving the repository to another owner changes it: update the role's trust
+policy. The exact subject GitHub sent is in CloudTrail (us-east-1, event
+`AssumeRoleWithWebIdentity`, field `userIdentity.userName`).
 
 ## Updating prod by hand
 
@@ -448,7 +452,7 @@ Certificates don't change between deploys.
 | `cdk deploy` "SSO session expired" / `ExpiredToken` | SSO login lapsed | `aws sso login --profile builderwars-prod` |
 | Stacks named `Builderwars-dev-*` appeared | `-c env=prod` was left out | `npx aws-cdk@2 destroy -c env=dev --all`, redeploy with `-c env=prod` |
 | Stacks appeared in another region (e.g. us-east-2) | `AWS_REGION` not set; the CDK CLI used the profile's region | Destroy them there, `export AWS_REGION=us-east-1`, redeploy |
-| Deploy workflow: "Not authorized to perform sts:AssumeRoleWithWebIdentity" | run not on `main`, repo renamed, or `AWS_DEPLOY_ROLE_ARN` wrong | Check the role's trust policy and the repository variable |
+| Deploy workflow: "Not authorized to perform sts:AssumeRoleWithWebIdentity" | run not on `main`, trust `sub` doesn't match the token (it includes the owner/repo ids), or `AWS_DEPLOY_ROLE_ARN` wrong | Compare the trust policy with the `userIdentity.userName` of the failed `AssumeRoleWithWebIdentity` event in CloudTrail (us-east-1); check the repository variable |
 | API errors right after deploy; Lambda logs say the schema is out of date | migrations not run | Step 7 |
 | Web app: sign-in works, every call 401 | wrong pool/client id in `VITE_COGNITO_*` | Re-copy from the Identity stack outputs |
 | No verification email | spam folder, or the 50/day cap | Create the user in the Cognito console |
