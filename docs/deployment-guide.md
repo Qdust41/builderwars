@@ -29,7 +29,7 @@ Decisions this follows (don't re-decide them here):
 | 8 | Run the web dashboard against prod | laptop | **PR #6** (+ #7) |
 | 9 | Sign up, create a project | browser | step 8 |
 | 10 | Register a device, note its id | browser | step 9 |
-| 11 | Give the device an IoT identity (thing + certificate) | laptop | step 10 |
+| 11 | Give the device an IoT identity (thing + certificate) | laptop | **skip for now** (ADR 0009) |
 | 12 | Set up the host PC and test the board | host PC | **`qwen-cli` branch** for the `builderwars` CLI |
 | 13 | Connect the host runtime to prod | host PC | steps 11-12 |
 | 14 | Verify end to end, send a command | browser + AWS console | step 13 |
@@ -314,7 +314,20 @@ leave out the port.
 
 ## 13. Connect the host runtime to prod
 
-Put the settings in one file on the host, e.g. `~/.builderwars/prod.env` (not in the repo):
+**Current path (no certificates, ADR 0009):** sign in to the CLI with your own account and let
+it upload as you. You need the member role (or higher) on the project.
+
+```bash
+builderwars login                                   # web app email + password
+builderwars devices                                 # find the device id
+builderwars run --cloud --device-id dev_... /dev/ttyACM0   # live to the dashboard; Ctrl+C
+builderwars upload dev-local --device-id dev_...    # optional: upload an earlier log CSV
+```
+
+Open the device page in the web app while it runs: telemetry and logs appear live. Dashboard
+commands do not reach the board in this mode yet.
+
+**Later, with an IoT certificate (step 11):** put the settings in one file on the host, e.g. `~/.builderwars/prod.env` (not in the repo):
 
 ```bash
 DEVICE_ID=dev_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx           # exactly the registered id

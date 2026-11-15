@@ -10,7 +10,14 @@ from device_protocol.schemas import MetricValue
 
 
 class BoardUnavailableError(Exception):
-    """The board can't be reached (e.g. USB unplugged). The runtime reports ``degraded``."""
+    """The board can't be reached (e.g. USB unplugged). The runtime reports ``degraded``.
+
+    ``hint`` (optional) is a human-readable suggestion for fixing it.
+    """
+
+    def __init__(self, message: str, hint: str | None = None) -> None:
+        super().__init__(message)
+        self.hint = hint
 
 
 class SensorReader(Protocol):

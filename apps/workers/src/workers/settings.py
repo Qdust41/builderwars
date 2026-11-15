@@ -28,6 +28,10 @@ class WorkerSettings(BaseSettings):
     database_secret_arn: str | None = None
     device_data_bucket: str | None = None  # S3 raw/rejected store for the ingest worker
     iot_data_endpoint: str | None = None  # account ATS data endpoint, for the command dispatcher
+    # AppSync Events HTTP host. When set, ingest and the dispatcher publish device events
+    # (telemetry, logs, command updates) for the live dashboard; Lambda sets AWS_REGION.
+    events_http_dns: str | None = None
+    aws_region: str | None = None
 
 
 class UnsafeConfigurationError(RuntimeError):

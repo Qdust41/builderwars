@@ -7,6 +7,11 @@ from application.services.device_ingest import (
     IngestOutcome,
     IngestResult,
 )
+from application.services.device_upload import (
+    MAX_MESSAGES_PER_UPLOAD,
+    DeviceUploadService,
+    UploadedMessage,
+)
 from application.services.devices import DeviceService
 from application.services.jobs import JobService
 from application.services.projects import ProjectMember, ProjectService
@@ -14,6 +19,7 @@ from application.services.sessions import SessionService
 from application.services.telemetry import TelemetryQueryService
 
 __all__ = [
+    "MAX_MESSAGES_PER_UPLOAD",
     "Authorizer",
     "CommandDispatchService",
     "CommandQueueFullError",
@@ -21,6 +27,7 @@ __all__ = [
     "DeviceEventPublisher",
     "DeviceMessageIngestService",
     "DeviceService",
+    "DeviceUploadService",
     "IngestOutcome",
     "IngestResult",
     "JobService",
@@ -28,4 +35,5 @@ __all__ = [
     "ProjectService",
     "SessionService",
     "TelemetryQueryService",
+    "UploadedMessage",
 ]

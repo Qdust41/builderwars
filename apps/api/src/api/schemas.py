@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from application.realtime import RealtimeEventType
-from application.services import ProjectMember
+from application.services import MAX_MESSAGES_PER_UPLOAD, IngestOutcome, ProjectMember
 from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project, ProjectRole
@@ -113,6 +113,41 @@ class SessionChannelOut(BaseModel):
     session_id: str
     channel: str
     event_types: list[RealtimeEventType]
+
+
+class UploadedDeviceMessage(BaseModel):
+    """One protocol message as the board would publish it: the MQTT topic and the envelope."""
+
+    topic: str = Field(min_length=1, max_length=256)
+    payload: dict[str, Any]
+
+
+class DeviceMessagesUpload(BaseModel):
+    messages: list[UploadedDeviceMessage] = Field(min_length=1, max_length=MAX_MESSAGES_PER_UPLOAD)
+
+
+class DeviceMessageResultOut(BaseModel):
+    outcome: IngestOutcome
+    message_id: str | None = None
+    reason: str | None = None
+    detail: str | None = None
+
+
+class DeviceMessagesUploadOut(BaseModel):
+    processed: int
+    duplicate: int
+    rejected: int
+    results: list[DeviceMessageResultOut]
+
+
+class ClientConfigOut(BaseModel):
+    """Public sign-in settings for command-line clients (no secrets: ids only)."""
+
+    environment: str
+    auth_mode: Literal["cognito", "dev-header"]
+    cognito_region: str | None = None
+    cognito_user_pool_id: str | None = None
+    cognito_app_client_id: str | None = None
 
 
 class DeviceChannelOut(BaseModel):

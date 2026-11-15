@@ -125,6 +125,7 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 - [Security](docs/security.md) — identities, authorisation, AI and firmware controls
 - [AWS deployment (future)](docs/aws-deployment.md) — steps, costs, testing against real IoT
 - [Deployment guide](docs/deployment-guide.md) — end to end: AWS account, deploy, sign-up, device provisioning, connecting a board
+- [Log ingestion spec](docs/log-ingestion-spec.md) — target shape of the cloud log store (spec only, not implemented)
 - [Product decisions](docs/open-decisions.md) — answered decisions and what the scaffold does with each
 - [Spec outline](docs/spec-outline.md) — the specs still to write, in order
 - [Architecture decision records](docs/decisions/)

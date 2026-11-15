@@ -24,6 +24,10 @@ log = logging.getLogger(__name__)
 Sender = Callable[[str, bytes, dict[str, str], float], tuple[int, bytes]]
 
 
+# The Events HTTP API takes at most 5 events per publish request.
+MAX_EVENTS_PER_PUBLISH = 5
+
+
 class RealtimePublishError(RuntimeError):
     pass
 
@@ -61,8 +65,30 @@ class AppSyncEventsPublisher:
         self._timeout = timeout
 
     def publish(self, event: RealtimeEvent) -> None:
+        self._post(event.channel, [event])
+
+    def publish_batch(self, events: list[RealtimeEvent]) -> None:
+        """Publish many events, grouped per channel, up to ``MAX_EVENTS_PER_PUBLISH`` per call.
+
+        Order is kept within each channel. Every chunk is attempted; the first failure is
+        raised after the rest have been sent.
+        """
+        by_channel: dict[str, list[RealtimeEvent]] = {}
+        for event in events:
+            by_channel.setdefault(event.channel, []).append(event)
+        first_error: RealtimePublishError | None = None
+        for channel, channel_events in by_channel.items():
+            for start in range(0, len(channel_events), MAX_EVENTS_PER_PUBLISH):
+                try:
+                    self._post(channel, channel_events[start : start + MAX_EVENTS_PER_PUBLISH])
+                except RealtimePublishError as exc:
+                    first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
+
+    def _post(self, channel: str, events: list[RealtimeEvent]) -> None:
         body = json.dumps(
-            {"channel": f"/{event.channel}", "events": [event.model_dump_json()]}
+            {"channel": f"/{channel}", "events": [e.model_dump_json() for e in events]}
         ).encode()
         request = AWSRequest(
             method="POST",

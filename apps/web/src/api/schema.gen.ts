@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/client-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client Config
+         * @description How a command-line client signs in (public, like ``/health``; ids only, no secrets).
+         *
+         *     The ``builderwars`` CLI reads this so ``builderwars login`` needs only the API address.
+         */
+        get: operations["client_config_client_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/commands/{command_id}": {
         parameters: {
             query?: never;
@@ -72,6 +94,32 @@ export interface paths {
         get: operations["get_device_logs_devices__device_id__logs_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Device Messages
+         * @description Record a board's messages uploaded by a signed-in member (the ``builderwars`` CLI).
+         *
+         *     Each message is ``{topic, payload}`` exactly as the board would publish it over MQTT, and
+         *     must name this device. Messages go through the same validation and de-duplication as the
+         *     MQTT path, so uploading the same messages again is harmless, and viewers of the device get
+         *     its telemetry and logs live. One rejected message does not fail the others: check
+         *     ``results`` (same order as ``messages``).
+         */
+        post: operations["upload_device_messages_devices__device_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -340,6 +388,25 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ClientConfigOut
+         * @description Public sign-in settings for command-line clients (no secrets: ids only).
+         */
+        ClientConfigOut: {
+            /**
+             * Auth Mode
+             * @enum {string}
+             */
+            auth_mode: "cognito" | "dev-header";
+            /** Cognito App Client Id */
+            cognito_app_client_id?: string | null;
+            /** Cognito Region */
+            cognito_region?: string | null;
+            /** Cognito User Pool Id */
+            cognito_user_pool_id?: string | null;
+            /** Environment */
+            environment: string;
+        };
+        /**
          * CommandCreate
          * @description Same naming rules as the protocol's ``CommandPayload``; the host's allowlist decides.
          */
@@ -434,6 +501,32 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** DeviceMessageResultOut */
+        DeviceMessageResultOut: {
+            /** Detail */
+            detail?: string | null;
+            /** Message Id */
+            message_id?: string | null;
+            outcome: components["schemas"]["IngestOutcome"];
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DeviceMessagesUpload */
+        DeviceMessagesUpload: {
+            /** Messages */
+            messages: components["schemas"]["UploadedDeviceMessage"][];
+        };
+        /** DeviceMessagesUploadOut */
+        DeviceMessagesUploadOut: {
+            /** Duplicate */
+            duplicate: number;
+            /** Processed */
+            processed: number;
+            /** Rejected */
+            rejected: number;
+            /** Results */
+            results: components["schemas"]["DeviceMessageResultOut"][];
+        };
         /** DeviceOut */
         DeviceOut: {
             connection_status: components["schemas"]["ConnectionStatus"];
@@ -479,6 +572,11 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * IngestOutcome
+         * @enum {string}
+         */
+        IngestOutcome: "processed" | "duplicate" | "rejected";
         /** JobCreate */
         JobCreate: {
             /** Device Id */
@@ -629,6 +727,18 @@ export interface components {
              */
             ts: string;
         };
+        /**
+         * UploadedDeviceMessage
+         * @description One protocol message as the board would publish it: the MQTT topic and the envelope.
+         */
+        UploadedDeviceMessage: {
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Topic */
+            topic: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -651,6 +761,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    client_config_client_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientConfigOut"];
+                };
+            };
+        };
+    };
     get_command_commands__command_id__get: {
         parameters: {
             query?: never;
@@ -776,6 +906,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceLogEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_device_messages_devices__device_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceMessagesUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceMessagesUploadOut"];
                 };
             };
             /** @description Validation Error */

@@ -19,6 +19,8 @@ from domain.sessions import Session
         (ProjectRole.VIEWER, Permission.START_SESSION, False),
         (ProjectRole.VIEWER, Permission.CREATE_JOB, False),
         (ProjectRole.MEMBER, Permission.CREATE_JOB, True),
+        (ProjectRole.MEMBER, Permission.UPLOAD_DEVICE_DATA, True),
+        (ProjectRole.VIEWER, Permission.UPLOAD_DEVICE_DATA, False),
         (ProjectRole.MEMBER, Permission.REGISTER_DEVICE, False),
         (ProjectRole.MEMBER, Permission.SEND_DEVICE_COMMAND, False),
         (ProjectRole.MEMBER, Permission.APPROVE_FIRMWARE, False),

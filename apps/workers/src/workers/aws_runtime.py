@@ -21,8 +21,13 @@ from application.ports.repositories import (
     SequenceTracker,
     TelemetryRepository,
 )
-from application.services import DeviceMessageIngestService
-from aws_adapters import IotDataCommandPublisher, S3RawMessageStore, database_url_from_secret
+from application.services import DeviceEventPublisher, DeviceMessageIngestService
+from aws_adapters import (
+    AppSyncEventsPublisher,
+    IotDataCommandPublisher,
+    S3RawMessageStore,
+    database_url_from_secret,
+)
 from domain.jobs import JobType
 from workers.handlers import BackgroundJobHandler, CommandDispatchHandler, DeviceMessageHandler
 from workers.handlers.background_job import JobExecutor
@@ -96,6 +101,21 @@ def _require(value: str | None, name: str) -> str:
     return value
 
 
+def device_events(settings: WorkerSettings) -> DeviceEventPublisher | None:
+    """Realtime device events over AppSync Events, or ``None`` when EVENTS_HTTP_DNS is unset."""
+    if not settings.events_http_dns:
+        return None
+    import boto3  # only in AWS; credentials are the function role's, refreshed per publish
+
+    return DeviceEventPublisher(
+        AppSyncEventsPublisher(
+            http_dns=settings.events_http_dns,
+            region=_require(settings.aws_region, "AWS_REGION"),
+            credentials=boto3.Session().get_credentials,
+        )
+    )
+
+
 def build_device_ingest(
     settings: WorkerSettings, repos: WorkerRepositories, client_factory: ClientFactory
 ) -> DeviceMessageHandler:
@@ -107,6 +127,7 @@ def build_device_ingest(
         telemetry=repos.telemetry,
         sequences=repos.sequences,
         commands=repos.commands,
+        events=device_events(settings),
     )
     return DeviceMessageHandler(ingest)
 
@@ -116,7 +137,9 @@ def build_command_dispatch(
 ) -> CommandDispatchHandler:
     endpoint = _require(settings.iot_data_endpoint, "IOT_DATA_ENDPOINT")
     client = client_factory("iot-data", endpoint_url=f"https://{endpoint}")
-    return CommandDispatchHandler(repos.commands, IotDataCommandPublisher(client))
+    return CommandDispatchHandler(
+        repos.commands, IotDataCommandPublisher(client), device_events(settings)
+    )
 
 
 def build_job_worker(

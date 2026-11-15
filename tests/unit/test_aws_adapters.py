@@ -197,3 +197,33 @@ def test_appsync_publish_is_sigv4_signed_to_the_session_channel() -> None:
 def test_appsync_publish_failures_raise(sender: _FakeSender) -> None:
     with pytest.raises(RealtimePublishError):
         _publisher(sender).publish(_event())
+
+
+def test_appsync_publish_batch_groups_by_channel_in_chunks_of_five() -> None:
+    sender = _FakeSender()
+    device_events = [
+        RealtimeEvent(
+            type=RealtimeEventType.DEVICE_LOG,
+            project_id="prj_1",
+            device_id="dev_1",
+            actor_id="dev_1",
+            data={"n": n},
+        )
+        for n in range(7)
+    ]
+    _publisher(sender).publish_batch([*device_events[:3], _event(), *device_events[3:]])
+    sent = [json.loads(body) for _, body, _ in sender.calls]
+    assert [(p["channel"], len(p["events"])) for p in sent] == [
+        ("/projects/prj-1/devices/dev-1", 5),
+        ("/projects/prj-1/devices/dev-1", 2),
+        ("/projects/prj-1/sessions/ses-1", 1),
+    ]
+    order = [json.loads(e)["data"]["n"] for p in sent[:2] for e in p["events"]]
+    assert order == list(range(7))  # per-channel order is kept
+
+
+def test_appsync_publish_batch_raises_on_failure() -> None:
+    sender = _FakeSender(status=500)
+    with pytest.raises(RealtimePublishError):
+        _publisher(sender).publish_batch([_event(), _event()])
+    assert len(sender.calls) == 1

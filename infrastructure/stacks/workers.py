@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from aws_cdk import Aws, Duration, Stack
+from aws_cdk import aws_appsync as appsync
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_lambda_event_sources as sources
@@ -45,6 +46,7 @@ class WorkersStack(Stack):
         device_data_bucket: s3.IBucket,
         artifacts_bucket: s3.IBucket,
         iot_data_endpoint: str,
+        events_api: appsync.EventApi,
         database_secret: secretsmanager.ISecret | None = None,
         **kw: Any,
     ) -> None:
@@ -55,6 +57,7 @@ class WorkersStack(Stack):
 
         ingest_fn = self._function("DeviceIngest", "workers.main.device_message_lambda_handler")
         ingest_fn.add_environment("DEVICE_DATA_BUCKET", device_data_bucket.bucket_name)
+        self._publish_device_events(ingest_fn, events_api)
         device_data_bucket.grant_put(ingest_fn, "raw/*")
         device_data_bucket.grant_put(ingest_fn, "rejected/*")
         ingest_fn.add_event_source(
@@ -71,6 +74,7 @@ class WorkersStack(Stack):
             "CommandDispatch", "workers.main.command_dispatch_lambda_handler"
         )
         commands_fn.add_environment("IOT_DATA_ENDPOINT", iot_data_endpoint)
+        self._publish_device_events(commands_fn, events_api)
         # Only cloud -> device command topics; never device -> cloud topics.
         commands_fn.add_to_role_policy(
             iam.PolicyStatement(
@@ -105,6 +109,12 @@ class WorkersStack(Stack):
             self.migrate_function = self._function(
                 "Migrate", "workers.main.migrate_lambda_handler", timeout=Duration.minutes(5)
             )
+
+    @staticmethod
+    def _publish_device_events(fn: lambda_.Function, events_api: appsync.EventApi) -> None:
+        # Live dashboard: telemetry, logs and command updates go out on AppSync Events.
+        fn.add_environment("EVENTS_HTTP_DNS", events_api.http_dns)
+        events_api.grant_publish(fn)
 
     def _function(
         self, name: str, handler: str, *, timeout: Duration = CONSUMER_TIMEOUT
