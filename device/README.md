@@ -4,6 +4,22 @@ Runs on the **host PC wired to a FREE-WILi 1-OG** over USB (decision #1, ADR 000
 the platform's "device": it samples the board, batches telemetry, and talks to AWS IoT Core.
 Requires **CPython 3.10+** (CI runs these tests on 3.10).
 
+## Testing a board: `builderwars`
+
+```bash
+uv run builderwars                    # what's plugged in, and what to type next
+uv run builderwars /dev/ttyACM0       # step-by-step check of the board on that port
+uv run builderwars test --watch       # first board found; print GPIO/button changes live
+uv run builderwars run /dev/ttyACM0   # full host runtime on that board (JSON lines to stdout)
+uv run builderwars ports              # boards + serial ports, with permission status
+```
+
+Either of the board's two ttys (main or display CPU) works; `ttyACM0` is accepted for
+`/dev/ttyACM0`. Every failed step prints the cause and a fix — e.g. if you can't open the port
+it names the group that owns it (`uucp` on Arch, `dialout` on Debian/Ubuntu) and the
+`usermod` command. Exit codes: 0 pass, 1 board check failed, 2 usage/setup error.
+`--debug` (anywhere on the line) shows full tracebacks. `builderwars-logs` is the same program.
+
 ## Local development (no board, no AWS)
 
 ```bash
@@ -32,14 +48,23 @@ export DEVICE_ID=<thing-name> DEVICE_SENSORS=freewili DEVICE_TRANSPORT=mqtt \
        IOT_ENDPOINT=<ats-endpoint> IOT_CERT_PATH=~/.builderwars/credentials/device.pem.crt \
        IOT_KEY_PATH=~/.builderwars/credentials/private.pem.key \
        IOT_CA_PATH=~/.builderwars/credentials/AmazonRootCA1.pem
-builderwars-host
+builderwars-host            # or: builderwars-host --port /dev/ttyACM0
 ```
 
-On the host, `freewili` is installed by name rather than as a `device` extra, because it pins
-`typing-extensions` exactly. In the dev workspace it is a root dependency (`pyproject.toml`), so
-`uv sync` already installs it; that pin is why the lockfile holds pydantic at 2.11.x. (The
-decisions doc mentions `onewili`; that isn't on PyPI, and `freewili` is the vendor's published
-library.)
+`DEVICE_PORT=/dev/ttyACM0` (or `--port`) pins the board; setting it implies
+`DEVICE_SENSORS=freewili`. Without it the first FREE-WILi found is used.
+
+In a clone of this repo, `freewili` is a root workspace dependency, so `uv sync` installs it.
+The cost: it pins `typing-extensions` exactly, which holds the whole workspace on an older
+pydantic (2.11 rather than 2.14). It is still not a dependency of `bw-board-runtime` itself, so
+a bare host installs it next to the runtime as shown above. (The decisions doc mentions
+`onewili`; that isn't on PyPI, and `freewili` is the vendor's published library.)
+
+`builderwars run` with `DEVICE_TRANSPORT=mqtt` needs the registered device id (`--device-id` or
+`DEVICE_ID`): AWS IoT only lets a certificate connect as its own thing, so it refuses to fall
+back to `dev-local`. Local log CSVs follow `BUILDERWARS_LOG_CSV` for both `run` and `sim`
+(`off` disables them). `builderwars to-sql` dumps into a `host_device_logs` table, never the
+cloud's `device_logs`, and re-loading a dump skips rows already present.
 
 ## Modules
 
