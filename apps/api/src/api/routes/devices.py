@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from api.dependencies import (
     CommandServiceDep,
@@ -19,6 +19,8 @@ from api.schemas import (
     DeviceChannelOut,
     DeviceCreate,
     DeviceLogEntryOut,
+    DeviceLogHistoryOut,
+    DeviceLogRecordOut,
     DeviceMessageResultOut,
     DeviceMessagesUpload,
     DeviceMessagesUploadOut,
@@ -29,7 +31,12 @@ from api.schemas import (
 )
 from application.realtime import DEVICE_EVENT_TYPES, device_channel
 from application.services import IngestOutcome, UploadedMessage
-from application.services.telemetry import MAX_LOG_ENTRIES, MAX_TELEMETRY_SAMPLES
+from application.services.telemetry import (
+    MAX_LOG_ENTRIES,
+    MAX_LOG_HISTORY_PAGE,
+    MAX_TELEMETRY_SAMPLES,
+    InvalidLogCursorError,
+)
 
 router = APIRouter(tags=["devices"])
 
@@ -138,6 +145,47 @@ def get_device_logs(
         )
         for e in entries
     ]
+
+
+@router.get("/devices/{device_id}/logs/history", response_model=DeviceLogHistoryOut)
+def get_device_log_history(
+    device_id: str,
+    user: UserDep,
+    service: TelemetryServiceDep,
+    since: Annotated[datetime | None, Query(description="only entries at or after this")] = None,
+    until: Annotated[datetime | None, Query(description="only entries before this")] = None,
+    cursor: Annotated[str | None, Query(description="next_cursor from the previous page")] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_LOG_HISTORY_PAGE)] = MAX_LOG_HISTORY_PAGE,
+) -> DeviceLogHistoryOut:
+    """A device's full log and event history, oldest first, paged with ``next_cursor``.
+
+    Used by ``builderwars logs export``; any project member can read it. Timestamps without
+    a timezone are taken as UTC.
+    """
+    try:
+        page = service.log_history(
+            user_id=user.user_id,
+            device_id=device_id,
+            since=since,
+            until=until,
+            cursor=cursor,
+            limit=limit,
+        )
+    except InvalidLogCursorError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return DeviceLogHistoryOut(
+        entries=[
+            DeviceLogRecordOut(
+                at=e.at,
+                kind=cast(Literal["log", "event"], e.kind),
+                level=e.level,
+                message=e.message,
+                message_id=e.message_id,
+            )
+            for e in page.entries
+        ],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.get("/devices/{device_id}/channel", response_model=DeviceChannelOut)

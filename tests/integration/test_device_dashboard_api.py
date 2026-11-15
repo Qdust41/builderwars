@@ -156,3 +156,34 @@ def test_local_routes_stay_out_of_the_api_contract(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
     assert not [p for p in paths if p.startswith("/local")]
     assert "/devices/{device_id}/telemetry" in paths
+
+
+def test_log_history_pages_through_everything_for_members_only(client: TestClient) -> None:
+    _, did = _device(client)
+    for i in range(5):
+        _host_message(client, did, MessageType.LOG, {"level": "info", "message": f"line {i}"})
+
+    url = f"/devices/{did}/logs/history?limit=2"
+    messages: list[str] = []
+    cursor = None
+    pages = 0
+    while True:
+        page = client.get(
+            url + (f"&cursor={cursor}" if cursor else ""), headers=_as("alice")
+        ).json()
+        pages += 1
+        messages += [e["message"] for e in page["entries"]]
+        assert all(e["kind"] == "log" and e["message_id"] for e in page["entries"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert messages == [f"line {i}" for i in range(5)]
+    assert pages == 3
+
+    assert client.get(f"/devices/{did}/logs/history", headers=_as("mallory")).status_code == 404
+    bad = client.get(f"/devices/{did}/logs/history?cursor=junk", headers=_as("alice"))
+    assert bad.status_code == 422
+    future = client.get(
+        f"/devices/{did}/logs/history?since=2999-01-01T00:00:00", headers=_as("alice")
+    ).json()
+    assert future == {"entries": [], "next_cursor": None}

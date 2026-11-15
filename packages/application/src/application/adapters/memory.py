@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import cast
 
-from application.ports import DeviceLogEntry, TelemetrySample
+from application.ports import DeviceLogEntry, DeviceLogRecord, LogPosition, TelemetrySample
 from application.realtime import RealtimeEvent
 from device_protocol import DeviceEnvelope
 from domain.devices import Device, DeviceCommand
@@ -259,6 +259,57 @@ class InMemoryTelemetryRepository:
             )
         entries.sort(key=lambda e: e.at)
         return entries[-limit:] if limit > 0 else []
+
+    def log_history(
+        self,
+        device_id: str,
+        *,
+        since: datetime | None,
+        until: datetime | None,
+        after: LogPosition | None,
+        limit: int,
+    ) -> list[DeviceLogRecord]:
+        records = [
+            DeviceLogRecord(
+                at=_at(r),
+                kind="log",
+                level=str(r["level"]),
+                message=str(r["message"]),
+                message_id=cast(str | None, r["message_id"]),
+                source=0,
+                row_id=i,
+            )
+            for i, r in enumerate(self.logs)
+            if r["device_id"] == device_id
+        ]
+        for i, r in enumerate(self.events):
+            if r["device_id"] != device_id:
+                continue
+            detail = f": {r['detail']}" if r["detail"] else ""
+            records.append(
+                DeviceLogRecord(
+                    at=_at(r),
+                    kind="event",
+                    level=str(r["severity"]),
+                    message=f"{r['name']}{detail}",
+                    message_id=cast(str | None, r["message_id"]),
+                    source=1,
+                    row_id=i,
+                )
+            )
+
+        def key(record: DeviceLogRecord | LogPosition) -> tuple[datetime, int, int]:
+            return (record.at, record.source, record.row_id)
+
+        records = [
+            r
+            for r in records
+            if (since is None or r.at >= since)
+            and (until is None or r.at < until)
+            and (after is None or key(r) > key(after))
+        ]
+        records.sort(key=key)
+        return records[: max(0, limit)]
 
 
 def _at(row: dict[str, object]) -> datetime:

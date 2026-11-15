@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -254,3 +256,57 @@ def test_upload_readdresses_files_recorded_under_a_local_id(
     session = CloudSession.load(tmp_path, send=_send_via(client))
     result = CloudApiTransport(session, did).upload(read.messages)
     assert result["processed"] == 2
+
+
+def test_cli_logs_downloads_the_cloud_history_to_csv(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    from board_runtime import cli
+    from board_runtime.cloud import CLOUD_LOG_COLUMNS
+
+    _, did = _device(client)
+    send = _send_via(client)
+    login(
+        api_url="http://localhost:8000",
+        email="alice",
+        password=str,
+        new_password=str,
+        state_dir=tmp_path,
+        send=send,
+    )
+    monkeypatch.setattr(cli, "_session", lambda state_dir: CloudSession.load(state_dir, send=send))
+    monkeypatch.setattr("board_runtime.cloud.logs.PAGE_SIZE", 2)  # force several pages
+    messages = [
+        _message(did, MessageType.LOG, {"level": "info", "message": f"line {i}, with comma"})
+        for i in range(5)
+    ]
+    CloudApiTransport(CloudSession.load(tmp_path, send=send), did).upload(messages)
+    monkeypatch.chdir(tmp_path)
+
+    # By device name; default output file next to where you run it.
+    assert cli.main(["--state-dir", str(tmp_path), "logs", "bench"]) == 0
+    out = tmp_path / f"{did}-logs.csv"
+    with out.open(newline="") as handle:
+        rows = list(csv.reader(handle))
+    assert tuple(rows[0]) == CLOUD_LOG_COLUMNS
+    assert [r[4] for r in rows[1:]] == [f"line {i}, with comma" for i in range(5)]
+    assert {r[1] for r in rows[1:]} == {did}
+    assert "5 entries" in capsys.readouterr().out
+
+    # An existing file is not overwritten without --force; stdout works with -o -.
+    assert cli.main(["--state-dir", str(tmp_path), "logs", did]) == 2
+    assert cli.main(["--state-dir", str(tmp_path), "logs", did, "-o", "-"]) == 0
+    assert capsys.readouterr().out.count("with comma") == 5
+    assert cli.main(["--state-dir", str(tmp_path), "logs", did, "--since", "2999-01-01"]) == 2
+    assert (
+        cli.main(["--state-dir", str(tmp_path), "logs", did, "--since", "2999-01-01", "--force"])
+        == 0
+    )
+    assert out.read_text().count("\n") == 1  # header only
+
+    # Unknown devices and not-signed-in say what to do.
+    assert cli.main(["--state-dir", str(tmp_path), "logs", "nope"]) == 1
+    assert "builderwars devices" in capsys.readouterr().err
+    assert cli.main(["--state-dir", str(tmp_path), "logout"]) == 0
+    assert cli.main(["--state-dir", str(tmp_path), "logs", did, "--force"]) == 1
+    assert "builderwars login" in capsys.readouterr().err
