@@ -333,9 +333,9 @@ builderwars run /dev/ttyACM0          # the real board -> prod, until Ctrl+C
 # without the qwen-cli branch:  builderwars-host --samples 30   /   builderwars-host --port /dev/ttyACM0
 ```
 
-- [ ] Always run with `DEVICE_ID` (or `--device-id`) set to the registered id. `builderwars run`
-      falls back to `dev-local` when neither is set, and IoT will refuse that connection because
-      no such thing exists.
+- [ ] Always run with `DEVICE_ID` (or `--device-id`) set to the registered id. IoT refuses any
+      other client id. With PR #10, `builderwars run` stops with a hint if it's missing; before
+      that it silently connects as `dev-local`, which IoT refuses.
 - [ ] The runtime checks the three files exist before connecting; a bad path fails fast with the
       variable name.
 
@@ -360,13 +360,15 @@ Stopping the runtime with Ctrl+C sends a `shutting_down` status, so the device g
 ## Local log files on the host
 
 With the `qwen-cli` branch, every `log` message the runtime sends is also appended to
-`~/.builderwars/logs/<device id>.csv` (`BUILDERWARS_LOG_CSV=off` disables it for `run`).
+`~/.builderwars/logs/<device id>.csv` (`BUILDERWARS_LOG_CSV=off` disables it; for `sim` too
+after PR #10).
 `builderwars show` lists them.
 
-`builderwars to-sql <device id>` makes a `.sql` dump of one file, but **don't load it into the
-prod database**: prod already has a `device_logs` table with a different shape (from PR #5), so
-the dump's `INSERT`s fail, and the same log lines already reached prod over MQTT. Use the dump with
-SQLite or a scratch PostgreSQL for offline analysis. `docs/log-ingestion-spec.md` describes a
+`builderwars to-sql <device id>` makes a `.sql` dump of one file for SQLite or a scratch
+PostgreSQL. **Don't load it into the prod database**: the same log lines already reached prod
+over MQTT. Before PR #10 the dump also targets `device_logs`, which prod has in a different shape
+(from PR #5), so it fails there; after #10 it writes its own `host_device_logs` table and skips
+rows already present. `docs/log-ingestion-spec.md` describes a
 future upload path; it is not built.
 
 ## Updating prod later
