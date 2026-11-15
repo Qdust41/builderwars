@@ -292,7 +292,14 @@ def build_container(
         devices=DeviceService(repos.devices, authorizer),
         sessions=SessionService(repos.sessions, repos.devices, authorizer, messaging.realtime),
         jobs=JobService(repos.jobs, repos.devices, messaging.job_queue, authorizer),
-        commands=CommandService(repos.commands, repos.devices, messaging.command_queue, authorizer),
+        commands=CommandService(
+            repos.commands,
+            repos.devices,
+            messaging.command_queue,
+            authorizer,
+            # Claims by the CLI and lazy time-outs update viewers live.
+            events=DeviceEventPublisher(messaging.realtime),
+        ),
         telemetry=TelemetryQueryService(repos.devices, repos.telemetry, authorizer),
         # Board data uploaded by signed-in members (builderwars CLI); fans out live through
         # the same realtime publisher as everything else (AppSync Events in AWS).

@@ -195,6 +195,7 @@ class BoardRuntime:
         if decoded.envelope.device_id != self.config.device_id:
             log.warning("ignoring command addressed to another device")
             return
+        app_log.info("received command %s from the dashboard", decoded.payload.name)
         result = self.dispatcher.dispatch(decoded.payload)
         self.send(MessageType.COMMAND_RESULT, result.model_dump(mode="json"))
         app_log.info("command %s: %s", decoded.payload.name, result.status.value)

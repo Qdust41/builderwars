@@ -46,4 +46,6 @@ FREE-WILi's I2C, SPI, UART and GPIO pins.
   (SHT3x) are not expressible yet; a "formula" or per-part driver step would be the next step.
 - Nothing here has run against real hardware yet: the I2C/SPI/GPIO/UART calls follow the
   library's API and are covered by fakes.
-- Dashboard commands still don't reach CLI-connected boards (ADR 0009).
+- Dashboard commands reach CLI-connected boards by polling: the CLI calls
+  `POST /devices/{id}/commands/claim` every 2 s, which marks queued commands sent. A device that
+  has sent nothing for 75 s reads as offline, so "Live" only shows while a run is going.

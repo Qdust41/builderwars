@@ -337,6 +337,23 @@
         "title": "DeviceChannelOut",
         "type": "object"
       },
+      "DeviceCommandsClaimOut": {
+        "description": "Commands waiting for a CLI-connected board, as ``{topic, payload}`` like uploads.",
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/UploadedDeviceMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "DeviceCommandsClaimOut",
+        "type": "object"
+      },
       "DeviceCreate": {
         "properties": {
           "display_name": {
@@ -2542,6 +2559,81 @@
           }
         },
         "summary": "Get Device Channel",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/commands/claim": {
+      "post": {
+        "description": "Pending commands for a board streamed by the ``builderwars`` CLI (ADR 0009 has no MQTT\nfor it). Polled by ``run --cloud``; each message is ``{topic, payload}`` exactly as the\ndispatcher would publish it. Answer with ``command_result`` via ``/messages``.",
+        "operationId": "claim_device_commands_devices__device_id__commands_claim_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCommandsClaimOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Device Commands",
         "tags": [
           "devices"
         ]

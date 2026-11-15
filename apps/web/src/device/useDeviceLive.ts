@@ -107,6 +107,20 @@ export function useDeviceLive(
           markSeen(data.at);
           return;
         }
+        case "device.status_changed": {
+          // The CLI started or stopped (or the API noticed it had gone silent).
+          const data = event.data as { connection_status?: Device["connection_status"]; last_seen_at?: string | null };
+          const d = deviceRef.current;
+          if (!d || !data.connection_status) return;
+          const next: Device = {
+            ...d,
+            connection_status: data.connection_status,
+            last_seen_at: data.last_seen_at ?? d.last_seen_at,
+          };
+          deviceRef.current = next;
+          setDevice(next);
+          return;
+        }
         case "device.command.updated": {
           const data = event.data as unknown as DeviceCommandUpdatedData;
           // The event is a hint; the API record is the truth (and covers commands sent by
@@ -165,6 +179,20 @@ export function useDeviceLive(
       unsubscribe?.();
     };
   }, [deviceId, client, realtime, upsertCommand]);
+
+  // Nothing announces a command that expires unanswered (board offline), so look again just
+  // after it expires; the API times it out on read.
+  useEffect(() => {
+    const timers = commands
+      .filter((c) => (c.status === "queued" || c.status === "sent") && c.expires_at)
+      .map((c) =>
+        window.setTimeout(
+          () => client.getCommand(c.id).then(upsertCommand, () => undefined),
+          Math.max(0, Date.parse(c.expires_at!) - Date.now()) + 1500,
+        ),
+      );
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [commands, client, upsertCommand]);
 
   const sendCommand = useCallback(
     async (name: string, args: Record<string, CommandArg> = {}) => {

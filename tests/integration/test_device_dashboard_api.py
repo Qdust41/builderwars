@@ -97,6 +97,7 @@ def test_device_channel_is_appsync_safe(client: TestClient) -> None:
         "device.telemetry",
         "device.log",
         "device.command.updated",
+        "device.status_changed",
     }
 
 

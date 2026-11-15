@@ -18,16 +18,46 @@ import type { Sensor, TargetBoard, TelemetryValue } from "../api/types";
 import { useSession } from "../auth/AuthGate";
 import { SetupChain } from "../device/SetupChain";
 import { BoardDialog, SensorDialog } from "../device/SetupDialogs";
-import { describeMetric, formatValue, toSeries, type MetricMeta } from "../device/telemetry";
+import {
+  describeMetric,
+  effectiveStatus,
+  formatValue,
+  toSeries,
+  type MetricMeta,
+} from "../device/telemetry";
 import { useDeviceLive, type LiveStatus } from "../device/useDeviceLive";
 import { useAsync } from "../useAsync";
 
-const LIVE: Record<LiveStatus, { text: string; dot: string; chip: string }> = {
+type Chip = { text: string; dot: string; chip: string; title?: string };
+
+const LIVE: Record<Exclude<LiveStatus, "live">, Chip> = {
   connecting: { text: "Connecting…", dot: "bg-warn", chip: "bg-warn-soft text-warn" },
-  live: { text: "Live", dot: "bg-good live-pulse", chip: "bg-good-soft text-good" },
   reconnecting: { text: "Reconnecting…", dot: "bg-warn", chip: "bg-warn-soft text-warn" },
   offline: { text: "Live updates unavailable", dot: "bg-muted", chip: "bg-surface-2 text-muted" },
 };
+
+/** "Live" only while the board is actually streaming; otherwise say why not. */
+function liveChip(live: LiveStatus, board: "online" | "offline" | "unknown"): Chip {
+  if (live !== "live") return LIVE[live];
+  if (board === "online")
+    return { text: "Live", dot: "bg-good live-pulse", chip: "bg-good-soft text-good" };
+  return {
+    text: board === "unknown" ? "Waiting for the board" : "Board not connected",
+    dot: "bg-muted",
+    chip: "bg-surface-2 text-muted",
+    title: "Start `builderwars run --cloud` on the laptop the FREE-WILi is plugged into",
+  };
+}
+
+/** Re-renders every `ms` so time-based state (a board going silent) updates on its own. */
+function useNow(ms: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), ms);
+    return () => window.clearInterval(t);
+  }, [ms]);
+  return now;
+}
 
 type Dialog =
   | { kind: "board"; board?: TargetBoard }
@@ -46,6 +76,8 @@ export function DevicePage() {
     [d?.project_id],
   );
 
+  const now = useNow(5_000);
+  const board = effectiveStatus(d, now);
   const session = useSession();
   const setup = useAsync(() => api.getDeviceSetup(deviceId), [deviceId]);
   const reloadSetup = setup.reload;
@@ -87,7 +119,7 @@ export function DevicePage() {
     );
   }
 
-  const live = LIVE[state.live];
+  const live = liveChip(state.live, board);
   return (
     <>
       <PageHeader
@@ -96,7 +128,7 @@ export function DevicePage() {
           d ? (
             <span className="flex items-center gap-3">
               <span className="truncate">{d.display_name}</span>
-              <StatusPill status={d.connection_status} />
+              <StatusPill status={board} />
             </span>
           ) : (
             <Skeleton className="h-8 w-56" />
@@ -114,7 +146,7 @@ export function DevicePage() {
         actions={
           <span
             className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${live.chip}`}
-            title={state.liveError}
+            title={state.liveError ?? live.title}
           >
             <span className={`size-2 rounded-full ${live.dot}`} aria-hidden="true" />
             {live.text}
@@ -260,6 +292,11 @@ export function DevicePage() {
               </button>
             </div>
           </div>
+          {board !== "online" && d && (
+            <p className="border-b border-line px-5 py-2.5 text-xs text-muted">
+              The board isn't connected. A command waits 30 s for it, then times out.
+            </p>
+          )}
           {state.commandError && (
             <div className="px-5 pt-4">
               <ErrorBanner>{errorText(state.commandError)}</ErrorBanner>

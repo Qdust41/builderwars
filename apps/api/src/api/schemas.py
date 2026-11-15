@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -102,7 +102,9 @@ class DeviceOut(_Out):
 
     @classmethod
     def of(cls, d: Device) -> DeviceOut:
-        return cls.model_validate(d)
+        out = cls.model_validate(d)
+        # A device that went silent reads as offline (domain.devices.STALE_AFTER).
+        return out.model_copy(update={"connection_status": d.status_at(datetime.now(UTC))})
 
 
 class DeviceStatusOut(BaseModel):
@@ -151,6 +153,12 @@ class DeviceMessageResultOut(BaseModel):
     message_id: str | None = None
     reason: str | None = None
     detail: str | None = None
+
+
+class DeviceCommandsClaimOut(BaseModel):
+    """Commands waiting for a CLI-connected board, as ``{topic, payload}`` like uploads."""
+
+    messages: list[UploadedDeviceMessage]
 
 
 class DeviceMessagesUploadOut(BaseModel):

@@ -161,7 +161,11 @@ builderwars run --cloud --device-id dev_... -n 60 -i 0.5   # stop after 60 sampl
 - Every log line is also appended to `~/.builderwars/logs/<device id>.csv`
   (`BUILDERWARS_LOG_CSV=off` disables it).
 - Without `--cloud`, `run` prints JSON lines to stdout, which you can save and `upload` later.
-- Not yet: commands from the dashboard (ping, uptime) don't reach a board in this mode.
+- Commands sent from the dashboard (ping, uptime) are picked up every 2 s while `run --cloud`
+  is going. The CLI logs "received command ... from the dashboard" and the command moves from
+  *waiting for board* to *delivered* to its result. A command nobody picks up times out after 30 s.
+- The dashboard shows a board as Online/Live only while a `run --cloud` is sending: it goes
+  offline when the run stops, or after 75 s without anything from it.
 
 ### Upload saved data: `builderwars upload`
 

@@ -66,6 +66,17 @@ class DeviceEventPublisher:
             },
         )
 
+    def status_changed(
+        self, *, project_id: str, device_id: str, status: str, at: datetime | None
+    ) -> None:
+        """The device went online or offline (e.g. the CLI stopped)."""
+        self._publish(
+            RealtimeEventType.DEVICE_STATUS_CHANGED,
+            project_id,
+            device_id,
+            {"connection_status": status, "last_seen_at": at.isoformat() if at else None},
+        )
+
     def _publish(
         self, type_: RealtimeEventType, project_id: str, device_id: str, data: dict[str, Any]
     ) -> None:

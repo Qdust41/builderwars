@@ -16,6 +16,16 @@ const TONE = {
   pending: { cls: "bg-warn-soft text-warn", Icon: Clock },
 } as const;
 
+/** What each status means to someone watching the board. */
+const LABEL: Record<DeviceCommand["status"], string> = {
+  queued: "waiting for board",
+  sent: "delivered",
+  succeeded: "succeeded",
+  failed: "failed",
+  rejected: "rejected",
+  timed_out: "timed out",
+};
+
 /** Commands sent to this device, newest first, with their status as it changes. */
 export function CommandList({ commands }: { commands: DeviceCommand[] }) {
   if (commands.length === 0) {
@@ -46,7 +56,7 @@ export function CommandList({ commands }: { commands: DeviceCommand[] }) {
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${cls}`}
               >
                 <Icon className={`size-3 ${tone === "pending" ? "animate-pulse" : ""}`} aria-hidden="true" />
-                {c.status.replace("_", " ")}
+                {LABEL[c.status] ?? c.status.replace("_", " ")}
               </span>
             </div>
             <p className="mt-1 text-xs text-muted">

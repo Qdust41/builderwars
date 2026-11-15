@@ -121,6 +121,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{device_id}/commands/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Device Commands
+         * @description Pending commands for a board streamed by the ``builderwars`` CLI (ADR 0009 has no MQTT
+         *     for it). Polled by ``run --cloud``; each message is ``{topic, payload}`` exactly as the
+         *     dispatcher would publish it. Answer with ``command_result`` via ``/messages``.
+         */
+        post: operations["claim_device_commands_devices__device_id__commands_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{device_id}/logs": {
         parameters: {
             query?: never;
@@ -662,6 +684,14 @@ export interface components {
             device_id: string;
             /** Event Types */
             event_types: components["schemas"]["RealtimeEventType"][];
+        };
+        /**
+         * DeviceCommandsClaimOut
+         * @description Commands waiting for a CLI-connected board, as ``{topic, payload}`` like uploads.
+         */
+        DeviceCommandsClaimOut: {
+            /** Messages */
+            messages: components["schemas"]["UploadedDeviceMessage"][];
         };
         /** DeviceCreate */
         DeviceCreate: {
@@ -1567,6 +1597,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceChannelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_device_commands_devices__device_id__commands_claim_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCommandsClaimOut"];
                 };
             };
             /** @description Validation Error */

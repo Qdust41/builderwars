@@ -253,6 +253,12 @@ class InMemoryDeviceCommandRepository:
             1 for c in self._items.values() if c.device_id == device_id and c.status.is_pending
         )
 
+    def list_pending(self, device_id: str) -> list[DeviceCommand]:
+        found = [
+            c for c in self._items.values() if c.device_id == device_id and c.status.is_pending
+        ]
+        return sorted(found, key=lambda c: (c.created_at, c.id))
+
 
 @dataclass
 class InMemoryTelemetryRepository:

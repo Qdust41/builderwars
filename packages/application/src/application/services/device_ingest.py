@@ -266,11 +266,20 @@ class DeviceMessageIngestService:
             status = ConnectionStatus.OFFLINE
         # TODO: OFFLINE should primarily come from IoT lifecycle events
         # ($aws/events/presence/disconnected/...), not from device messages.
-        self._devices.save(
-            device.observed(
-                envelope.timestamp, status=status, firmware_version=envelope.firmware_version
-            )
+        updated = device.observed(
+            envelope.timestamp, status=status, firmware_version=envelope.firmware_version
         )
+        self._devices.save(updated)
+        # Tell viewers when it comes online or goes away. "Online" also counts as a change
+        # when the device had gone silent long enough to read as offline.
+        before = device.status_at(envelope.timestamp)
+        if self._events is not None and updated.connection_status is not before:
+            self._events.status_changed(
+                project_id=device.project_id,
+                device_id=device.id,
+                status=updated.connection_status.value,
+                at=updated.last_seen_at,
+            )
 
 
 def _rejected(

@@ -555,6 +555,14 @@ class PostgresDeviceCommandRepository(_Repo):
         )
         return int(row["n"]) if row else 0
 
+    def list_pending(self, device_id: str) -> list[DeviceCommand]:
+        rows = self._all(
+            "SELECT * FROM device_commands WHERE device_id = %s AND status = ANY(%s)"
+            " ORDER BY created_at, id",
+            (device_id, list(_PENDING)),
+        )
+        return [_command(r) for r in rows]
+
 
 # --- ingest -------------------------------------------------------------------------------------
 

@@ -104,3 +104,18 @@ describe("form <-> API body", () => {
     expect(uart.bus).toMatchObject({ protocol: "uart", command: "READ?", baud: 115200, response_pattern: null });
   });
 });
+
+describe("board status", () => {
+  it("is online only while the board has been heard from recently", async () => {
+    const { effectiveStatus, STALE_AFTER_MS } = await import("./telemetry");
+    const now = Date.parse("2026-11-15T10:00:00Z");
+    const seen = (msAgo: number) => new Date(now - msAgo).toISOString();
+    expect(effectiveStatus({ connection_status: "online", last_seen_at: seen(5_000) }, now)).toBe("online");
+    expect(effectiveStatus({ connection_status: "online", last_seen_at: seen(STALE_AFTER_MS + 1) }, now)).toBe(
+      "offline",
+    );
+    expect(effectiveStatus({ connection_status: "offline", last_seen_at: seen(1) }, now)).toBe("offline");
+    expect(effectiveStatus({ connection_status: "unknown", last_seen_at: null }, now)).toBe("unknown");
+    expect(effectiveStatus(undefined, now)).toBe("unknown");
+  });
+});

@@ -53,6 +53,7 @@ DEVICE_EVENT_TYPES: Final[tuple[RealtimeEventType, ...]] = (
     RealtimeEventType.DEVICE_TELEMETRY,
     RealtimeEventType.DEVICE_LOG,
     RealtimeEventType.DEVICE_COMMAND_UPDATED,
+    RealtimeEventType.DEVICE_STATUS_CHANGED,
 )
 
 # Keys that must never appear anywhere in an event's data.
