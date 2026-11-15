@@ -21,8 +21,10 @@ it and chose the simplest sign-in for the MVP.
   404 (so ids can't be probed); unknown email → 404; already a member → 409.
 
 ## Consequences
-- Anyone can create an account, but a new account sees nothing until someone adds it to a
-  project. The person being added must have signed up first.
+- Anyone can create an account, and any signed-in account can create its own projects
+  (`POST /projects`) and becomes their owner; there is no role or approval gate on creating.
+  Other people's projects stay invisible until an owner or admin adds you. The person being
+  added must have signed up first.
 - Email lookups go to Cognito `ListUsers` (`cognito-idp:ListUsers` on the pool only).
 - Cognito's default email sender is limited to about 50 emails a day; move to SES before
   inviting real users.
