@@ -1,5 +1,5 @@
-import { Activity, BarChart3, Radio, Table2, Timer } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Activity, BarChart3, Network, Radio, Table2, Timer } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { CommandList } from "../components/CommandList";
@@ -14,7 +14,11 @@ import {
   StatusPill,
   timeAgo,
 } from "../components/ui";
-import { describeMetric, formatValue, toSeries } from "../device/telemetry";
+import type { Sensor, TargetBoard, TelemetryValue } from "../api/types";
+import { useSession } from "../auth/AuthGate";
+import { SetupChain } from "../device/SetupChain";
+import { BoardDialog, SensorDialog } from "../device/SetupDialogs";
+import { describeMetric, formatValue, toSeries, type MetricMeta } from "../device/telemetry";
 import { useDeviceLive, type LiveStatus } from "../device/useDeviceLive";
 import { useAsync } from "../useAsync";
 
@@ -24,6 +28,13 @@ const LIVE: Record<LiveStatus, { text: string; dot: string; chip: string }> = {
   reconnecting: { text: "Reconnecting…", dot: "bg-warn", chip: "bg-warn-soft text-warn" },
   offline: { text: "Live updates unavailable", dot: "bg-muted", chip: "bg-surface-2 text-muted" },
 };
+
+type Dialog =
+  | { kind: "board"; board?: TargetBoard }
+  | { kind: "sensor"; boardId: string; sensor?: Sensor };
+
+/** How often the setup (laptop/FREE-WILi report, boards, sensors) is refetched. */
+const SETUP_REFRESH_MS = 30_000;
 
 export function DevicePage() {
   const { deviceId = "" } = useParams();
@@ -35,7 +46,27 @@ export function DevicePage() {
     [d?.project_id],
   );
 
+  const session = useSession();
+  const setup = useAsync(() => api.getDeviceSetup(deviceId), [deviceId]);
+  const reloadSetup = setup.reload;
+  useEffect(() => {
+    const timer = window.setInterval(reloadSetup, SETUP_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [reloadSetup]);
+  const [dialog, setDialog] = useState<Dialog>();
+  // Boards and sensors are owner-only for now (the owner will open it to members later).
+  const canEdit = !!project.data && project.data.owner_user_id === session?.user.userId;
+
   const series = useMemo(() => toSeries(samples), [samples]);
+  const latest = useMemo(
+    () => Object.fromEntries(series.map((s) => [s.name, s.latest])) as Record<string, TelemetryValue | undefined>,
+    [series],
+  );
+  const meta = useMemo(() => {
+    const out: Record<string, MetricMeta> = {};
+    for (const s of setup.data?.sensors ?? []) out[s.key] = { label: s.name, unit: s.unit ?? "" };
+    return out;
+  }, [setup.data]);
   const charted = series.filter((s) => s.kind !== "text");
   const domain: [number, number] = samples.length
     ? [Date.parse(samples[0].ts), Date.parse(samples[samples.length - 1].ts)]
@@ -91,10 +122,60 @@ export function DevicePage() {
         }
       />
 
+      <section className="card mb-6">
+        <div className="card-head">
+          <h2 className="card-title flex items-center gap-2">
+            <Network className="size-4 text-muted" aria-hidden="true" />
+            Test setup
+          </h2>
+          {!canEdit && project.data && (
+            <span className="text-xs text-muted">Only the project owner can change boards and sensors.</span>
+          )}
+        </div>
+        {setup.error ? (
+          <div className="p-5">
+            <ErrorBanner>{errorText(setup.error)}</ErrorBanner>
+          </div>
+        ) : (
+          <SetupChain
+            deviceId={deviceId}
+            setup={setup.data}
+            latest={latest}
+            canEdit={canEdit}
+            actions={{
+              addBoard: () => setDialog({ kind: "board" }),
+              editBoard: (board) => setDialog({ kind: "board", board }),
+              addSensor: (board) => setDialog({ kind: "sensor", boardId: board.id }),
+              editSensor: (sensor) => setDialog({ kind: "sensor", boardId: sensor.board_id, sensor }),
+            }}
+          />
+        )}
+      </section>
+
+      {dialog?.kind === "board" && (
+        <BoardDialog
+          deviceId={deviceId}
+          board={dialog.board}
+          sensorCount={(setup.data?.sensors ?? []).filter((s) => s.board_id === dialog.board?.id).length}
+          onClose={() => setDialog(undefined)}
+          onSaved={reloadSetup}
+        />
+      )}
+      {dialog?.kind === "sensor" && setup.data && (
+        <SensorDialog
+          deviceId={deviceId}
+          boards={setup.data.boards}
+          boardId={dialog.boardId}
+          sensor={dialog.sensor}
+          onClose={() => setDialog(undefined)}
+          onSaved={reloadSetup}
+        />
+      )}
+
       {series.length > 0 && (
         <dl className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {series.slice(0, 8).map((s) => {
-            const { label, unit } = describeMetric(s.name);
+            const { label, unit } = describeMetric(s.name, meta);
             return (
               <div key={s.name} className="card px-4 py-3.5">
                 <dt className="truncate text-xs font-medium text-muted">{label}</dt>
@@ -135,18 +216,19 @@ export function DevicePage() {
         {series.length === 0 ? (
           <EmptyState icon={<Radio className="size-5" />} title="Waiting for telemetry">
             <p>
-              Sign in to the CLI on the board's host and start it with <code className="font-mono text-xs">builderwars run --cloud</code>
-              {" "}(or the simulator). Readings appear here as they arrive.
+              Sign in to the CLI on the laptop the FREE-WILi is plugged into and run{" "}
+              <code className="font-mono text-xs">builderwars run --cloud --device-id {deviceId}</code>. It reads the
+              sensors defined above (add <code className="font-mono text-xs">--simulate</code> without a board).
             </p>
           </EmptyState>
         ) : asTable ? (
-          <TelemetryTable samples={samples} names={series.map((s) => s.name)} />
+          <TelemetryTable samples={samples} names={series.map((s) => s.name)} meta={meta} />
         ) : (
           <div className="p-5">
             {charted.length > 0 ? (
               <div className="grid gap-x-8 gap-y-6 md:grid-cols-2">
                 {charted.map((s) => (
-                  <MetricChart key={s.name} series={s} domain={domain} />
+                  <MetricChart key={s.name} series={s} domain={domain} meta={meta} />
                 ))}
               </div>
             ) : (
@@ -200,9 +282,11 @@ export function DevicePage() {
 function TelemetryTable({
   samples,
   names,
+  meta,
 }: {
   samples: { ts: string; readings: Record<string, number | boolean | string> }[];
   names: string[];
+  meta: Record<string, MetricMeta>;
 }) {
   const rows = samples.slice(-100).reverse();
   return (
@@ -213,7 +297,7 @@ function TelemetryTable({
             <tr>
               <th className="px-5 py-2.5 font-medium">Time</th>
               {names.map((n) => {
-                const { label, unit } = describeMetric(n);
+                const { label, unit } = describeMetric(n, meta);
                 return (
                   <th key={n} className="px-4 py-2.5 font-medium whitespace-nowrap">
                     {unit ? `${label} (${unit})` : label}

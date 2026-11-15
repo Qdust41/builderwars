@@ -16,7 +16,8 @@ from typing import cast
 from application.ports import DeviceLogEntry, DeviceLogRecord, LogPosition, TelemetrySample
 from application.realtime import RealtimeEvent
 from device_protocol import DeviceEnvelope
-from domain.devices import Device, DeviceCommand
+from domain.common import ConflictError
+from domain.devices import Device, DeviceCommand, DeviceSetup, Sensor, TargetBoard
 from domain.jobs import Job
 from domain.projects import Project, ProjectMembership
 from domain.sessions import Session
@@ -89,6 +90,79 @@ class InMemoryDeviceRepository:
 
     def list_for_project(self, project_id: str) -> list[Device]:
         return [d for d in self._items.values() if d.project_id == project_id]
+
+
+class InMemoryDeviceSetupRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, DeviceSetup] = {}
+
+    def get(self, device_id: str) -> DeviceSetup | None:
+        return self._items.get(device_id)
+
+    def save(self, setup: DeviceSetup) -> None:
+        self._items[setup.device_id] = setup
+
+
+class InMemoryTargetBoardRepository:
+    """``sensors`` (optional) mirrors the database's ON DELETE CASCADE."""
+
+    def __init__(self, sensors: InMemorySensorRepository | None = None) -> None:
+        self._items: dict[str, TargetBoard] = {}
+        self._sensors = sensors
+
+    def list_for_device(self, device_id: str) -> list[TargetBoard]:
+        found = [b for b in self._items.values() if b.device_id == device_id]
+        return sorted(found, key=lambda b: (b.created_at, b.id))
+
+    def get(self, board_id: str) -> TargetBoard | None:
+        return self._items.get(board_id)
+
+    def add(self, board: TargetBoard) -> None:
+        self._items[board.id] = board
+
+    def save(self, board: TargetBoard) -> None:
+        self._items[board.id] = board
+
+    def delete(self, board_id: str) -> None:
+        self._items.pop(board_id, None)
+        if self._sensors is not None:
+            self._sensors.delete_for_board(board_id)
+
+
+class InMemorySensorRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, Sensor] = {}
+
+    def delete_for_board(self, board_id: str) -> None:
+        for sensor_id in [s.id for s in self._items.values() if s.board_id == board_id]:
+            del self._items[sensor_id]
+
+    def list_for_device(self, device_id: str) -> list[Sensor]:
+        found = [s for s in self._items.values() if s.device_id == device_id]
+        return sorted(found, key=lambda s: (s.created_at, s.id))
+
+    def get(self, sensor_id: str) -> Sensor | None:
+        return self._items.get(sensor_id)
+
+    def _check_key(self, sensor: Sensor) -> None:
+        for other in self._items.values():
+            if (
+                other.id != sensor.id
+                and other.device_id == sensor.device_id
+                and other.key == sensor.key
+            ):
+                raise ConflictError(f"this device already has a sensor named {sensor.key!r}")
+
+    def add(self, sensor: Sensor) -> None:
+        self._check_key(sensor)
+        self._items[sensor.id] = sensor
+
+    def save(self, sensor: Sensor) -> None:
+        self._check_key(sensor)
+        self._items[sensor.id] = sensor
+
+    def delete(self, sensor_id: str) -> None:
+        self._items.pop(sensor_id, None)
 
 
 class InMemorySessionRepository:

@@ -11,12 +11,22 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
+from psycopg import errors as pg_errors
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from application.ports import DeviceLogEntry, DeviceLogRecord, LogPosition, TelemetrySample
-from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
+from domain.common import ConflictError
+from domain.devices import (
+    CommandStatus,
+    ConnectionStatus,
+    Device,
+    DeviceCommand,
+    DeviceSetup,
+    Sensor,
+    TargetBoard,
+)
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project, ProjectMembership, ProjectRole
 from domain.sessions import Session, SessionStatus
@@ -201,6 +211,172 @@ class PostgresDeviceRepository(_Repo):
             "SELECT * FROM devices WHERE project_id = %s ORDER BY created_at, id", (project_id,)
         )
         return [_device(r) for r in rows]
+
+
+# --- device setup and sensors -------------------------------------------------------------------
+
+
+def _setup(row: Row) -> DeviceSetup:
+    return DeviceSetup(
+        device_id=row["device_id"],
+        host=row["host"],
+        bridge=row["bridge"],
+        reported_at=row["reported_at"],
+        reported_by=row["reported_by"],
+        updated_at=row["updated_at"],
+    )
+
+
+class PostgresDeviceSetupRepository(_Repo):
+    def get(self, device_id: str) -> DeviceSetup | None:
+        row = self._one("SELECT * FROM device_setups WHERE device_id = %s", (device_id,))
+        return _setup(row) if row else None
+
+    def save(self, setup: DeviceSetup) -> None:
+        self._exec(
+            "INSERT INTO device_setups (device_id, host, bridge, reported_at, reported_by,"
+            " updated_at) VALUES (%s, %s, %s, %s, %s, %s)"
+            " ON CONFLICT (device_id) DO UPDATE SET host = EXCLUDED.host,"
+            " bridge = EXCLUDED.bridge, reported_at = EXCLUDED.reported_at,"
+            " reported_by = EXCLUDED.reported_by, updated_at = EXCLUDED.updated_at",
+            (
+                setup.device_id,
+                Jsonb(setup.host) if setup.host is not None else None,
+                Jsonb(setup.bridge) if setup.bridge is not None else None,
+                setup.reported_at,
+                setup.reported_by,
+                setup.updated_at,
+            ),
+        )
+
+
+def _board(row: Row) -> TargetBoard:
+    return TargetBoard(
+        id=row["id"],
+        device_id=row["device_id"],
+        name=row["name"],
+        notes=row["notes"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+class PostgresTargetBoardRepository(_Repo):
+    def list_for_device(self, device_id: str) -> list[TargetBoard]:
+        rows = self._all(
+            "SELECT * FROM device_target_boards WHERE device_id = %s ORDER BY created_at, id",
+            (device_id,),
+        )
+        return [_board(r) for r in rows]
+
+    def get(self, board_id: str) -> TargetBoard | None:
+        row = self._one("SELECT * FROM device_target_boards WHERE id = %s", (board_id,))
+        return _board(row) if row else None
+
+    _UPSERT = (
+        "INSERT INTO device_target_boards (id, device_id, name, notes, created_at, updated_at)"
+        " VALUES (%s, %s, %s, %s, %s, %s)"
+    )
+
+    @staticmethod
+    def _params(board: TargetBoard) -> tuple[object, ...]:
+        return (
+            board.id,
+            board.device_id,
+            board.name,
+            board.notes,
+            board.created_at,
+            board.updated_at,
+        )
+
+    def add(self, board: TargetBoard) -> None:
+        self._exec(self._UPSERT, self._params(board))
+
+    def save(self, board: TargetBoard) -> None:
+        self._exec(
+            self._UPSERT + " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,"
+            " notes = EXCLUDED.notes, updated_at = EXCLUDED.updated_at",
+            self._params(board),
+        )
+
+    def delete(self, board_id: str) -> None:
+        self._exec("DELETE FROM device_target_boards WHERE id = %s", (board_id,))
+
+
+def _sensor(row: Row) -> Sensor:
+    return Sensor(
+        id=row["id"],
+        device_id=row["device_id"],
+        board_id=row["board_id"],
+        key=row["key"],
+        name=row["name"],
+        bus=row["bus"],
+        decode=row["decode"],
+        unit=row["unit"],
+        poll_interval_s=float(row["poll_interval_s"]),
+        enabled=row["enabled"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+class PostgresSensorRepository(_Repo):
+    def list_for_device(self, device_id: str) -> list[Sensor]:
+        rows = self._all(
+            "SELECT * FROM device_sensors WHERE device_id = %s ORDER BY created_at, id",
+            (device_id,),
+        )
+        return [_sensor(r) for r in rows]
+
+    def get(self, sensor_id: str) -> Sensor | None:
+        row = self._one("SELECT * FROM device_sensors WHERE id = %s", (sensor_id,))
+        return _sensor(row) if row else None
+
+    def _write(self, query: str, sensor: Sensor) -> None:
+        try:
+            self._exec(
+                query,
+                (
+                    sensor.id,
+                    sensor.device_id,
+                    sensor.board_id,
+                    sensor.key,
+                    sensor.name,
+                    sensor.protocol,
+                    Jsonb(sensor.bus),
+                    Jsonb(sensor.decode),
+                    sensor.unit,
+                    sensor.poll_interval_s,
+                    sensor.enabled,
+                    sensor.created_at,
+                    sensor.updated_at,
+                ),
+            )
+        except pg_errors.UniqueViolation as exc:
+            raise ConflictError(f"this device already has a sensor named {sensor.key!r}") from exc
+
+    _INSERT = (
+        "INSERT INTO device_sensors (id, device_id, board_id, key, name, protocol, bus, decode,"
+        " unit, poll_interval_s, enabled, created_at, updated_at)"
+        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+    )
+
+    def add(self, sensor: Sensor) -> None:
+        self._write(self._INSERT, sensor)
+
+    def save(self, sensor: Sensor) -> None:
+        self._write(
+            self._INSERT
+            + " ON CONFLICT (id) DO UPDATE SET board_id = EXCLUDED.board_id, key = EXCLUDED.key,"
+            " name = EXCLUDED.name, protocol = EXCLUDED.protocol, bus = EXCLUDED.bus,"
+            " decode = EXCLUDED.decode, unit = EXCLUDED.unit,"
+            " poll_interval_s = EXCLUDED.poll_interval_s, enabled = EXCLUDED.enabled,"
+            " updated_at = EXCLUDED.updated_at",
+            sensor,
+        )
+
+    def delete(self, sensor_id: str) -> None:
+        self._exec("DELETE FROM device_sensors WHERE id = %s", (sensor_id,))
 
 
 # --- sessions -----------------------------------------------------------------------------------

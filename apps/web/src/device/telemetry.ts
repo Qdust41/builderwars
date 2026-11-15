@@ -84,7 +84,17 @@ function kindOf(value: TelemetryValue): MetricKind {
 }
 
 /** "temperature_c" -> { label: "Temperature", unit: "°C" }. Unknown suffixes stay in the label. */
-export function describeMetric(name: string): { label: string; unit: string } {
+export interface MetricMeta {
+  label: string;
+  unit: string;
+}
+
+/** Labels from the device's sensor definitions win over guessing from the reading name. */
+export function describeMetric(
+  name: string,
+  known?: Record<string, MetricMeta>,
+): { label: string; unit: string } {
+  if (known?.[name]) return known[name];
   const units: [string, string][] = [
     ["_pct", "%"],
     ["_c", "°C"],

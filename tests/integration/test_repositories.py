@@ -11,7 +11,16 @@ from typing import Any
 import pytest
 
 from application.adapters import memory
-from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
+from domain.common import ConflictError
+from domain.devices import (
+    CommandStatus,
+    ConnectionStatus,
+    Device,
+    DeviceCommand,
+    DeviceSetup,
+    Sensor,
+    TargetBoard,
+)
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project, ProjectMembership, ProjectRole
 from domain.sessions import Session
@@ -34,6 +43,9 @@ def repos(backend: str, request: pytest.FixtureRequest) -> Any:
         commands=memory.InMemoryDeviceCommandRepository(),
         processed=memory.InMemoryProcessedMessageStore(),
         sequences=memory.InMemorySequenceTracker(),
+        setups=memory.InMemoryDeviceSetupRepository(),
+        sensors=(sensors := memory.InMemorySensorRepository()),
+        boards=memory.InMemoryTargetBoardRepository(sensors),
     )
 
 
@@ -194,3 +206,71 @@ def test_sequence_tracker_reports_gaps_only_going_forward(repos: Any) -> None:
     assert seq.observe("dev-1", 14) == 0  # duplicate
     assert seq.observe("dev-1", 16) == 1  # high-water mark stayed at 14
     assert seq.observe("dev-2", 0) == 0  # per device
+
+
+# --- device setup: laptop -> FREE-WILi -> target boards, and sensors --------------------------
+
+
+def test_device_setup_round_trips(repos: Any) -> None:
+    device = _device(repos, _project(repos).id)
+    assert repos.setups.get(device.id) is None
+    setup = DeviceSetup(device_id=device.id, updated_at=T0).with_report(
+        host={"hostname": "bench", "os": "Linux"},
+        bridge={"model": "FREE-WILi", "serial": "FW1"},
+        by="alice",
+        at=T0,
+    )
+    repos.setups.save(setup)
+    assert repos.setups.get(device.id) == setup
+    again = setup.with_report(host={"hostname": "other"}, bridge=None, by="bob", at=T0)
+    repos.setups.save(again)
+    assert repos.setups.get(device.id) == again
+
+
+def _sensor(device_id: str, board_id: str, key: str, at: datetime = T0) -> Sensor:
+    return Sensor(
+        device_id=device_id,
+        board_id=board_id,
+        key=key,
+        name=key.title(),
+        bus={"protocol": "i2c", "address": 72, "reg": 0, "length": 2, "setup_writes": []},
+        decode={"data_type": "i16_be", "bit_shift": 4, "scale": 0.0625},
+        unit="°C",
+        poll_interval_s=2.5,
+        created_at=at,
+        updated_at=at,
+    )
+
+
+def test_boards_and_sensors_round_trip_and_cascade(repos: Any) -> None:
+    device = _device(repos, _project(repos).id)
+    a = TargetBoard(device_id=device.id, name="A", created_at=T0, updated_at=T0)
+    b = TargetBoard(
+        device_id=device.id, name="B", created_at=T0 + timedelta(seconds=1), updated_at=T0
+    )
+    repos.boards.add(b)
+    repos.boards.add(a)
+    assert [x.name for x in repos.boards.list_for_device(device.id)] == ["A", "B"]
+    repos.boards.save(replace(a, name="A2", notes="rev 2"))
+    assert repos.boards.get(a.id).notes == "rev 2"
+
+    temp = _sensor(device.id, a.id, "temp")
+    volts = _sensor(device.id, b.id, "volts", T0 + timedelta(seconds=1))
+    repos.sensors.add(temp)
+    repos.sensors.add(volts)
+    assert repos.sensors.get(temp.id) == temp
+    assert [s.key for s in repos.sensors.list_for_device(device.id)] == ["temp", "volts"]
+
+    with pytest.raises(ConflictError):
+        repos.sensors.add(_sensor(device.id, b.id, "temp"))
+    with pytest.raises(ConflictError):
+        repos.sensors.save(replace(volts, key="temp"))
+
+    repos.sensors.save(replace(temp, board_id=b.id, enabled=False))
+    assert repos.sensors.get(temp.id).enabled is False
+
+    repos.boards.delete(b.id)  # takes its sensors with it
+    assert repos.sensors.list_for_device(device.id) == []
+    repos.sensors.add(_sensor(device.id, a.id, "again"))
+    repos.sensors.delete(repos.sensors.list_for_device(device.id)[0].id)
+    assert repos.sensors.list_for_device(device.id) == []

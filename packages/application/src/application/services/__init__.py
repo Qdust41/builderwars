@@ -7,6 +7,7 @@ from application.services.device_ingest import (
     IngestOutcome,
     IngestResult,
 )
+from application.services.device_setup import DeviceSetupService
 from application.services.device_upload import (
     MAX_MESSAGES_PER_UPLOAD,
     DeviceUploadService,
@@ -27,6 +28,7 @@ __all__ = [
     "DeviceEventPublisher",
     "DeviceMessageIngestService",
     "DeviceService",
+    "DeviceSetupService",
     "DeviceUploadService",
     "IngestOutcome",
     "IngestResult",

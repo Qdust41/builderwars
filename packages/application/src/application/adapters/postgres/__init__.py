@@ -25,13 +25,16 @@ from application.adapters.postgres.migrate import (
 from application.adapters.postgres.repositories import (
     PostgresDeviceCommandRepository,
     PostgresDeviceRepository,
+    PostgresDeviceSetupRepository,
     PostgresJobRepository,
     PostgresMembershipRepository,
     PostgresProcessedMessageStore,
     PostgresProjectRepository,
     PostgresRawMessageStore,
+    PostgresSensorRepository,
     PostgresSequenceTracker,
     PostgresSessionRepository,
+    PostgresTargetBoardRepository,
     PostgresTelemetryRepository,
 )
 
@@ -77,6 +80,9 @@ class PostgresRepositories:
     sequences: PostgresSequenceTracker
     raw_messages: PostgresRawMessageStore
     telemetry: PostgresTelemetryRepository
+    setups: PostgresDeviceSetupRepository
+    boards: PostgresTargetBoardRepository
+    sensors: PostgresSensorRepository
 
     @classmethod
     def from_pool(cls, pool: ConnectionPool) -> PostgresRepositories:
@@ -92,6 +98,9 @@ class PostgresRepositories:
             sequences=PostgresSequenceTracker(pool),
             raw_messages=PostgresRawMessageStore(pool),
             telemetry=PostgresTelemetryRepository(pool),
+            setups=PostgresDeviceSetupRepository(pool),
+            boards=PostgresTargetBoardRepository(pool),
+            sensors=PostgresSensorRepository(pool),
         )
 
     def close(self) -> None:
@@ -101,14 +110,17 @@ class PostgresRepositories:
 __all__ = [
     "PostgresDeviceCommandRepository",
     "PostgresDeviceRepository",
+    "PostgresDeviceSetupRepository",
     "PostgresJobRepository",
     "PostgresMembershipRepository",
     "PostgresProcessedMessageStore",
     "PostgresProjectRepository",
     "PostgresRawMessageStore",
     "PostgresRepositories",
+    "PostgresSensorRepository",
     "PostgresSequenceTracker",
     "PostgresSessionRepository",
+    "PostgresTargetBoardRepository",
     "PostgresTelemetryRepository",
     "SchemaNotCurrentError",
     "check_schema_current",

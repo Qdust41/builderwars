@@ -82,12 +82,16 @@ line.
 ```bash
 builderwars login                                        # 1. sign in (once every 30 days)
 builderwars devices                                      # 2. find your device's id
-builderwars run --cloud --device-id dev_... /dev/ttyACM0 # 3. stream the board live; Ctrl+C stops
-builderwars logs dev_...                                 # 4. its cloud logs -> ./dev_...-logs.csv
+builderwars sensors dev_... --read                       # 3. check its sensors on the board
+builderwars run --cloud --device-id dev_... /dev/ttyACM0 # 4. stream the board live; Ctrl+C stops
+builderwars logs dev_...                                 # 5. its cloud logs -> ./dev_...-logs.csv
 ```
 
 Register the device first in the web app (open a project, add a device), and make sure you have
-the **member** role or higher on that project.
+the **member** role or higher on that project. On the device page the project owner adds the
+**target boards** wired to the FREE-WILi (up to 4) and their **sensors**: protocol (I2C, SPI,
+UART, GPIO), address or pins, what to read, how to decode it, unit and poll rate, or one of the
+common parts from the table ([ADR 0010](docs/decisions/0010-test-setup-and-sensor-definitions.md)).
 
 ### Commands
 
@@ -100,7 +104,8 @@ the **member** role or higher on that project.
 | `builderwars login [--email E] [--api URL]` | Sign in to your Builderwars account |
 | `builderwars whoami` / `logout` | Show or forget the saved sign-in |
 | `builderwars devices` | The devices in your projects, with their ids |
-| `builderwars run [port] [--cloud] [--device-id ID] [-n N] [-i SECONDS]` | Run the host runtime |
+| `builderwars run [port] [--cloud] [--simulate] [--device-id ID] [-n N] [-i SECONDS]` | Run the host runtime |
+| `builderwars sensors DEVICE [--read] [--port P]` | List a device's sensors; `--read` reads each once on the FREE-WILi |
 | `builderwars upload FILE --device-id ID` | Upload saved telemetry/logs to a device |
 | `builderwars logs [DEVICE] [--since T] [--until T] [-o PATH] [--force]` | Download a device's cloud logs as CSV |
 | `builderwars sim` | Emit messages from a simulated board as JSON lines |
@@ -132,15 +137,23 @@ name. Commands that take `--device-id` need that id; `logs` also accepts the dev
 ### Stream live: `builderwars run --cloud`
 
 ```bash
-builderwars run --cloud --device-id dev_... /dev/ttyACM0   # the real board
-builderwars run --cloud --device-id dev_...                # no port: simulated sensors
+builderwars run --cloud --device-id dev_... /dev/ttyACM0   # this FREE-WILi
+builderwars run --cloud --device-id dev_...                # the first FREE-WILi found
+builderwars run --cloud --device-id dev_... --simulate     # no hardware: made-up values
 builderwars run --cloud --device-id dev_... -n 60 -i 0.5   # stop after 60 samples, 2 per second
 ```
 
-- **With a port** it reads that FREE-WILi (either of its two ttys works, and `ttyACM0` is
-  short for `/dev/ttyACM0`). **Without a port** it uses simulated sensors, unless
-  `DEVICE_SENSORS=freewili` or `DEVICE_PORT` says otherwise. That is handy while the board is
-  out of action: the dashboard still fills up.
+- It downloads the **sensors defined on the device page** and reads each enabled one through the
+  FREE-WILi at its own poll rate; edits on the page are picked up within 30 s. A sensor that
+  can't be read (wrong address, no reply) is reported once in the device's logs and skipped.
+  With no sensors defined yet it sends the FREE-WILi's own pin levels.
+- It tells the device page which laptop it runs on and which FREE-WILi it opened.
+- **With a port** it uses that FREE-WILi (either of its two ttys works, and `ttyACM0` is
+  short for `/dev/ttyACM0`); **without one** the first FREE-WILi found. **`--simulate`** sends
+  made-up values for the defined sensors instead, handy while the board is out of action. The
+  laptop card on the device page shows when a run is simulated.
+- The UART baud rate and the SPI mode/clock are set on the FREE-WILi itself; the `freewili`
+  library can't change them from the laptop.
 - `--cloud` needs the registered device id (`--device-id` or `DEVICE_ID`).
 - Telemetry is batched (every 5 s or 32 samples) and logs, status and heartbeats are sent as
   they happen. If the network or the API is down, it keeps sampling and buffers the last 1000

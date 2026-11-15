@@ -9,7 +9,18 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from application.realtime import RealtimeEventType
 from application.services import MAX_MESSAGES_PER_UPLOAD, IngestOutcome, ProjectMember
-from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
+from application.services.device_setup import SetupView, sensor_spec
+from device_protocol.sensors import SensorProtocol, SensorSpec
+from device_protocol.setup import BridgeReport, HostReport
+from domain.devices import (
+    MAX_TARGET_BOARDS,
+    CommandStatus,
+    ConnectionStatus,
+    Device,
+    DeviceCommand,
+    Sensor,
+    TargetBoard,
+)
 from domain.jobs import Job, JobStatus, JobType
 from domain.projects import Project, ProjectRole
 from domain.sessions import Session, SessionStatus
@@ -243,3 +254,90 @@ class CommandOut(_Out):
     @classmethod
     def of(cls, c: DeviceCommand) -> CommandOut:
         return cls.model_validate(c)
+
+
+# --- test setup: laptop -> FREE-WILi -> up to 4 target boards, and their sensors -------------
+
+
+class SensorIn(SensorSpec):
+    """A sensor definition from the web app, on one of the device's target boards. Unlike
+    the shared ``SensorSpec`` (which the CLI reads leniently), unknown fields are an error."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    board_id: str = Field(min_length=1, max_length=80)
+
+
+class SensorOut(SensorSpec):
+    id: str
+    device_id: str
+    board_id: str
+    protocol: SensorProtocol  # same as bus.protocol, for listing
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def of(cls, sensor: Sensor) -> SensorOut:
+        return cls.model_validate(
+            {
+                **sensor_spec(sensor).model_dump(mode="json"),
+                "id": sensor.id,
+                "device_id": sensor.device_id,
+                "board_id": sensor.board_id,
+                "protocol": sensor.protocol,
+                "created_at": sensor.created_at,
+                "updated_at": sensor.updated_at,
+            }
+        )
+
+
+class TargetBoardIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    notes: str = Field(default="", max_length=2000)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("board name must not be blank")
+        return stripped
+
+
+class TargetBoardOut(_Out):
+    id: str
+    device_id: str
+    name: str
+    notes: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def of(cls, board: TargetBoard) -> TargetBoardOut:
+        return cls.model_validate(board)
+
+
+class DeviceSetupOut(BaseModel):
+    """The whole chain for the device page. ``host``/``bridge`` are null until the CLI has
+    run against this device; ``bridge`` is also null for a ``--simulate`` run."""
+
+    device_id: str
+    host: HostReport | None
+    bridge: BridgeReport | None
+    reported_at: datetime | None
+    max_boards: int
+    boards: list[TargetBoardOut]
+    sensors: list[SensorOut]
+
+    @classmethod
+    def of(cls, view: SetupView) -> DeviceSetupOut:
+        setup = view.setup
+        return cls(
+            device_id=setup.device_id,
+            host=HostReport.model_validate(setup.host) if setup.host else None,
+            bridge=BridgeReport.model_validate(setup.bridge) if setup.bridge else None,
+            reported_at=setup.reported_at,
+            max_boards=MAX_TARGET_BOARDS,
+            boards=[TargetBoardOut.of(b) for b in view.boards],
+            sensors=[SensorOut.of(s) for s in view.sensors],
+        )

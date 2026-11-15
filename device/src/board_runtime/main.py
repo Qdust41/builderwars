@@ -138,7 +138,8 @@ class BoardRuntime:
                 log.warning("hint: %s", exc.hint)
         else:
             self._set_board_available(True)
-            batch = self.batcher.add(readings, at=datetime.now(UTC), now=now)
+            # Configured sensors poll at their own rates, so some ticks have nothing due.
+            batch = self.batcher.add(readings, at=datetime.now(UTC), now=now) if readings else None
             if batch is not None:
                 self.send(MessageType.TELEMETRY, batch)
         if self.batcher.due(now):
