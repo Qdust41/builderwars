@@ -4,7 +4,8 @@ name: Deploy prod
 # app, deploys every stack to prod (us-east-1), applies database migrations and checks /health.
 #
 # AWS access is keyless (GitHub OIDC). The IAM role `builderwars-github-deploy` trusts only
-# `repo:Qdust41/builderwars:ref:refs/heads/main`, so branches and pull requests can't assume it.
+# `repo:Qdust41@103899064/builderwars@1458014947:ref:refs/heads/main`
+# (GitHub's subject carries the owner and repo ids), so branches and pull requests can't assume it.
 # It may only assume the CDK bootstrap roles, read Builderwars-prod-* stacks and invoke the
 # Migrate Lambda. Set its ARN as the repository variable AWS_DEPLOY_ROLE_ARN.
 # See docs/deployment-guide.md, "Deploying from GitHub Actions".
