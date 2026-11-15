@@ -23,6 +23,7 @@ packages/
   domain/           framework-free domain models and rules    -> bw-domain
   application/      services + ports (+ in-memory and PostgreSQL adapters) -> bw-application
   ai/               controlled AI tool boundary (stubs)       -> bw-ai-platform, `ai_platform`
+  aws/              AWS adapters for the ports (S3, SQS, IoT, AppSync) -> bw-aws-adapters, `aws_adapters`
 device/         host-PC runtime for the FREE-WILi + simulator -> bw-board-runtime, `board_runtime`
 infrastructure/ AWS CDK (Python) — synth only
 contracts/      GENERATED JSON Schemas / OpenAPI + device message fixtures
@@ -32,7 +33,7 @@ scripts/        export_contracts.py
 docker/         api / worker images (local use)
 ```
 
-Dependency direction: `api`, `workers` → `application` → `domain`, `device_protocol`.
+Dependency direction: `api`, `workers` → `aws_adapters`, `application` → `domain`, `device_protocol`.
 `board_runtime` → `device_protocol` only. Domain/application code never imports AWS SDKs.
 
 ## Prerequisites
@@ -127,17 +128,17 @@ Metadata in **PostgreSQL (RDS)**, artifacts and raw data in **S3**. Details:
 
 | Area | State |
 | --- | --- |
-| Persistence | PostgreSQL repositories for every port (`REPOSITORY_BACKEND=postgres`, ADR 0006), or in-memory for local/test. Migrations run by hand: `uv run python -m application.adapters.postgres`. Not yet wired to RDS (workstream C). |
+| Persistence | PostgreSQL repositories for every port (`REPOSITORY_BACKEND=postgres`, ADR 0006), or in-memory for local/test. Migrations run by hand: `uv run python -m application.adapters.postgres`. In AWS the Lambdas read the RDS secret and connect over TLS; a `Migrate` Lambda applies migrations (ADR 0007). |
 | User auth | `X-Dev-User` header locally; `AUTH_MODE=cognito` verifies Cognito JWTs (ADR 0005). Project members are added by email. |
 | Device connectivity | MQTT/TLS via `awsiotsdk` implemented but not yet run against a real IoT endpoint (SDK handles reconnects). Offline buffer: RAM only. |
 | Board I/O | `FreeWiliSensors` (vendor `freewili` package) reads GPIO + buttons as placeholder readings; not yet run on a real board. Sensor set: spec 02. |
 | Device provisioning | Not implemented (no certificates created anywhere; spec 03). |
-| Device commands | API route, per-device queue (32 pending, 30 s expiry), dispatcher handler and result handling exist with in-memory adapters. AWS adapters, timeout sweeper and session broadcast: TODO. |
-| Workers in AWS | Lambda handlers raise `NotImplementedError` until AWS adapters exist. |
+| Device commands | API route, per-device queue (32 pending, 30 s expiry), dispatcher handler and result handling; SQS command queue and IoT data-plane publisher in AWS (`packages/aws`). Timeout sweeper and session broadcast: TODO. |
+| Workers in AWS | Ingest (raw/rejected bodies to S3), command dispatcher and job worker Lambdas are wired (`workers.aws_runtime`); not yet deployed. |
 | Job execution | No executors; queued jobs fail with "not implemented". Fargate: TODO. |
-| Realtime | Recording publisher locally; AppSync client/publisher: TODO; membership check on subscribe: TODO. |
+| Realtime | Recording publisher locally; SigV4-signed AppSync Events publisher in AWS; membership check on subscribe: TODO. |
 | AI | Tool definitions, approval gate, redaction, run records, provider config (OpenAI-compatible / Bedrock). No client, no executors, no default model (spec 08). |
 | Firmware | Model, job types and host-side sha256 check only. No build, flashing or deployment (spec 09). |
 | Ingest rate limiting | Not implemented (burst 10 msg/s, sustained 60 msg/min per device planned). |
-| Lambda packaging | CDK assets are source-only; dependency bundling TODO. |
+| Lambda packaging | Bundled at synth from `uv.lock` for arm64 (`infrastructure/lambda_bundle.py`, ADR 0006). |
 | Collaborative editing | Deliberately deferred (CRDT/Yjs later if needed). |
