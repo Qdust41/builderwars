@@ -157,6 +157,7 @@ Stacks created (all prefixed `Builderwars-prod-`):
 | Database | VPC (public subnets only), RDS PostgreSQL 16 `db.t4g.micro`, generated secret | |
 | Api | HTTP API + API Lambda | `ApiUrl` |
 | Workers | DeviceIngest, CommandDispatch, Jobs, Migrate Lambdas | |
+| Web | S3 bucket + CloudFront (site, and `/api/*` → the HTTP API), ACM certificate | `WebUrl`, `DistributionDomainName` |
 
 The outputs file holds ids and URLs, not secrets, but keep it out of the repo anyway. To read
 outputs again later:
@@ -188,8 +189,9 @@ the password is in the Secrets Manager secret the Database stack created. Connec
 
 ## 8. Web dashboard (after PR #6)
 
-There is no hosting stack yet (S3 + CloudFront is the recommendation, still an open question).
-Run it locally against prod. Vite proxies `/api` to the deployed API, so no CORS change is needed.
+Prod serves it at <https://builderwars.jimweaver.com> (see "Web app on your domain" below); every
+deploy from `main` rebuilds and uploads it. Sign-in needs PR #6. To run it locally against prod
+instead, Vite proxies `/api` to the deployed API, so no CORS change is needed:
 
 ```bash
 cd apps/web
@@ -372,6 +374,34 @@ over MQTT. Before PR #10 the dump also targets `device_logs`, which prod has in 
 rows already present. `docs/log-ingestion-spec.md` describes a
 future upload path; it is not built.
 
+## Web app on your domain
+
+The Web stack (`infrastructure/stacks/web.py`) hosts the dashboard on CloudFront at
+`config.web_domain` (prod: `builderwars.jimweaver.com`). The DNS for `jimweaver.com` stays in
+Cloudflare; AWS only issues the certificate.
+
+- `/*` serves `apps/web/dist` from a private S3 bucket; paths without a file extension (client
+  routes such as `/projects/<id>`) get `index.html`.
+- `/api/*` goes to the HTTP API with caching off and the `/api` prefix stripped, so the browser
+  stays on one origin and the API needs no CORS.
+- `scripts/build_web_prod.sh` builds the app with the Cognito and AppSync ids read from the
+  deployed stacks. The deploy workflow runs it before `cdk deploy`; by hand, run it first
+  (`AWS_REGION=us-east-1 scripts/build_web_prod.sh`), or the site upload is skipped.
+
+Cloudflare records (DNS → Records), both **DNS only** (grey cloud), already set up:
+
+| Type | Name | Target | Why |
+| --- | --- | --- | --- |
+| CNAME | `_d5afb458142ddaf1e5008dfb12923503.builderwars` | `_999689e01e525f85ef87231f25aa8355.wzccmgtwzk.acm-validations.aws` | ACM certificate validation and automatic renewal. Never delete it. |
+| CNAME | `builderwars` | `d16lx0u1urlkrh.cloudfront.net` | The site. Target is the Web stack's `DistributionDomainName` output. |
+
+Cloudflare's proxy (orange cloud) also works on the `builderwars` record if you set SSL/TLS to
+**Full (strict)**, but it puts a second CDN in front of CloudFront for no gain.
+
+Changing the domain: set `web_domain` in `infrastructure/config.py` and deploy. CloudFormation
+creates a new certificate and waits until its validation record exists: read it from the ACM
+console (us-east-1), or the stack's events, and add it in Cloudflare.
+
 ## Deploying from GitHub Actions
 
 Once the first deploy is done, `.github/workflows/deploy.yml` keeps prod current: **merging to
@@ -438,6 +468,7 @@ Rough monthly figures at MVP volume (<10 boards); full table in `aws-deployment.
 | Secrets Manager (1 secret) | ~$0.40 | ~$0.40 |
 | CloudWatch logs/alarms | cents | cents |
 | IoT Core, SQS, Lambda, API Gateway, S3, AppSync, Cognito | ~$0 at this volume | ~$0-2 |
+| CloudFront + ACM certificate | ~$0 (CloudFront free tier; public certificates are free) | ~$0 |
 
 The RDS instance bills all the time, used or not. Prod keeps data on teardown:
 `npx aws-cdk@2 destroy -c env=prod --all` leaves the RDS instance (deletion protection on), the S3
@@ -446,8 +477,8 @@ certificates you made in step 11 are not part of any stack: delete them in the I
 
 ## Not needed for the MVP
 
-- **Domain / Route 53 / TLS certificates:** the API is on its `execute-api` URL and Cognito has
-  no hosted-UI domain. Needed later for web hosting on your own domain.
+- **Route 53:** DNS stays in Cloudflare. The API is reached through the web domain's `/api/*`
+  (or its `execute-api` URL), and Cognito has no hosted-UI domain.
 - **SES:** Cognito's built-in sender is used for now.
 - **Secrets you create by hand:** none. The RDS password is generated into Secrets Manager.
 
@@ -456,6 +487,7 @@ certificates you made in step 11 are not part of any stack: delete them in the I
 - Membership check on AppSync subscriptions (`stacks/realtime.py` TODO): until it exists, any
   signed-in user could subscribe to any project's channel.
 - Automated device provisioning (certificate per registered device) instead of step 11.
-- Host the web app (S3 + CloudFront), restrict API CORS to its domain, move email to SES.
+- Move Cognito email to SES. (The web app is hosted; the API needs no CORS because the browser
+  reaches it same-origin through CloudFront.)
 - Revisit the public database endpoint (VPC endpoints, or IAM DB auth, which is already enabled).
 - Alarm notifications (SNS) once there is a recipient (#13).

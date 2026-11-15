@@ -1,7 +1,7 @@
 name: Deploy prod
 
-# Merging to main is the review point: once CI passes on a push to main, this deploys every
-# stack to prod (us-east-1), applies database migrations and checks /health.
+# Merging to main is the review point: once CI passes on a push to main, this builds the web
+# app, deploys every stack to prod (us-east-1), applies database migrations and checks /health.
 #
 # AWS access is keyless (GitHub OIDC). The IAM role `builderwars-github-deploy` trusts only
 # `repo:Qdust41/builderwars:ref:refs/heads/main`, so branches and pull requests can't assume it.
@@ -67,6 +67,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
       # Lambda assets are bundled from uv.lock at synth time (lambda_bundle.py).
       - uses: astral-sh/setup-uv@v6
         with:
@@ -81,6 +83,12 @@ jobs:
 
       - name: Resolve account
         run: echo "CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_ENV"
+
+      # Uploaded by the Web stack (CloudFront + S3) during deploy. Reads the Cognito and AppSync
+      # ids from the deployed stacks.
+      - name: Build web app
+        working-directory: .
+        run: scripts/build_web_prod.sh
 
       - name: Diff (for the run log)
         run: npx --yes "aws-cdk@${CDK_VERSION}" diff -c env=prod --all
@@ -120,3 +128,9 @@ jobs:
             echo "::error::Expected 401 from /projects without a token, got $code"
             exit 1
           fi
+          # Through CloudFront (its own domain, so this works before/without custom DNS).
+          web=$(jq -r '."Builderwars-prod-Web".DistributionDomainName' "${RUNNER_TEMP}/prod-outputs.json")
+          curl --fail --silent --show-error --output /dev/null "https://${web}/"
+          curl --fail --silent --show-error --output /dev/null "https://${web}/projects/some-id"  # SPA route
+          curl --fail --silent --show-error "https://${web}/api/health"
+          echo

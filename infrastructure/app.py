@@ -21,6 +21,7 @@ from stacks.iot import IotStack
 from stacks.messaging import MessagingStack
 from stacks.realtime import RealtimeStack
 from stacks.storage import StorageStack
+from stacks.web import WebStack
 from stacks.workers import WorkersStack
 
 
@@ -71,6 +72,7 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         database_secret=database_secret,
         env=env,
     )
+    web = WebStack(app, f"{prefix}-Web", config=config, http_api=api.http_api, env=env)
     stacks: dict[str, cdk.Stack] = {
         "identity": identity,
         "storage": storage,
@@ -79,6 +81,7 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         "realtime": realtime,
         "api": api,
         "workers": workers,
+        "web": web,
     }
     if database is not None:
         stacks["database"] = database
