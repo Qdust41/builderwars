@@ -179,6 +179,8 @@ logs like real ones (the first line says simulated faults are on). `--sim-errors
 - "Could not exclusively lock port" means another process has the FREE-WILi's port open. The
   CLI retries for a few seconds (ModemManager probes freshly plugged boards on Linux), then
   says which process holds it, e.g. another `builderwars` on the same laptop.
+- If the FREE-WILi is slow to answer ("Failed to read response frame"), the run keeps its
+  ports open and asks again; only after 3 misses in a row does it close and re-open them.
 - Telemetry is batched (every 5 s or 32 samples) and logs, status and heartbeats are sent as
   they happen. If the network or the API is down, it keeps sampling and buffers the last 1000
   messages in memory, then sends them when it can.

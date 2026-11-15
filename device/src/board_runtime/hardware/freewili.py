@@ -39,6 +39,10 @@ INSTALL_HINT = (
 )
 
 
+# Errors/time-outs in a row before the FREE-WILi's ports are closed and opened again.
+REOPEN_AFTER_FAILURES = 3
+
+
 class FreeWiliNotInstalledError(RuntimeError):
     """The vendor ``freewili`` package is missing. Fatal: not a transient board problem."""
 
@@ -192,6 +196,7 @@ class FreeWiliSensors:
         self.busy_wait_s = float(busy_wait_s)
         self.info: BoardInfo | None = None
         self._buttons_ok = True
+        self._failures = 0  # errors/time-outs in a row from the FREE-WILi
 
     @classmethod
     def adopt(cls, board: Any, info: BoardInfo, *, port: str | None = None) -> FreeWiliSensors:
@@ -254,6 +259,7 @@ class FreeWiliSensors:
             io: _Result = device.get_io(self._processor("Main"))
             if io.is_err():
                 self._fail(f"reading GPIO from the main CPU failed: {io.unwrap_err()}")
+            self._failures = 0
             buttons: _Result | None = None
             if self._buttons_ok:
                 buttons = device.read_all_buttons(self._processor("Display"))
@@ -284,9 +290,19 @@ class FreeWiliSensors:
         return readings
 
     def _fail(self, message: str) -> None:
-        self.close()
+        """The FREE-WILi answered with an error or not in time. Its ports stay open and the
+        next read just asks again: closing and re-opening on every hiccup is what left the
+        display port half-open ("Could not exclusively lock port"). Only after
+        ``REOPEN_AFTER_FAILURES`` in a row are the ports closed and the board found again."""
+        self._failures += 1
+        if self._failures >= REOPEN_AFTER_FAILURES:
+            self._failures = 0
+            self.close()
+            message += f" ({REOPEN_AFTER_FAILURES} times in a row; re-opening the FREE-WILi)"
         raise BoardUnavailableError(
-            message, "the board answered with an error; replug it if this keeps happening"
+            message,
+            "the FREE-WILi didn't answer in time; if this keeps happening, replug it and "
+            "check `builderwars test` reads it",
         )
 
     def close(self) -> None:
@@ -306,7 +322,29 @@ def _open_quietly(board: Any, timeout_s: float) -> tuple[Any, str]:
 
 
 def close_quietly(board: Any) -> None:
-    try:
-        board.close()
-    except Exception:  # pragma: no cover - best effort on a dead port
-        log.debug("ignoring error while closing FREE-WILi", exc_info=True)
+    """Close both of the FREE-WILi's ports, each on its own.
+
+    ``FreeWili.close()`` closes the main port, then the display port; when closing the main
+    port fails (it first sends "menu on" and waits up to 6 s, which times out on a board that
+    stopped answering) the display port stays open in this process, and every re-open then
+    fails with "Could not exclusively lock port". So each port is closed separately, without
+    sending anything, and a failure on one doesn't keep the other open.
+    """
+    found = (getattr(board, "_main_serial", None), getattr(board, "_display_serial", None))
+    serials: list[Any] = [port for port in found if port is not None]
+    if not serials:  # not the freewili class we know: its own close is all we have
+        try:
+            board.close()
+        except Exception:
+            log.debug("ignoring error while closing FREE-WILi", exc_info=True)
+        return
+    for serial in serials:
+        try:
+            serial.close(restore_menu=False, block=True, timeout_sec=3.0)
+        except TypeError:  # an older freewili without these arguments
+            try:
+                serial.close()
+            except Exception:
+                log.debug("ignoring error while closing a FREE-WILi port", exc_info=True)
+        except Exception:
+            log.debug("ignoring error while closing a FREE-WILi port", exc_info=True)
