@@ -11,6 +11,10 @@ Commands from the dashboard (ping, uptime) have no MQTT subscription to arrive o
 the runtime subscribes, a background thread polls ``POST /devices/{id}/commands/claim`` every
 ``COMMAND_POLL_INTERVAL_S`` and hands each new command to the runtime, which answers with a
 ``command_result`` through ``publish`` like any other message.
+
+With ``run_id`` every upload says which run sent it, which keeps that run's lock on the board.
+If another run took the board over (``--take-over``) the API answers 409 ``run_superseded``:
+``stop_reason`` is set and the runtime loop stops.
 """
 
 from __future__ import annotations
@@ -38,8 +42,12 @@ class CloudApiTransport:
         device_id: str,
         *,
         poll_interval_s: float | None = COMMAND_POLL_INTERVAL_S,
+        run_id: str | None = None,
     ) -> None:
         self._session = session
+        self.run_id = run_id
+        # Set when this run must stop (its board was taken over); checked by the run loop.
+        self.stop_reason: str | None = None
         device_path = f"/devices/{quote(device_id, safe='')}"
         self._path = f"{device_path}/messages"
         self._claim_path = f"{device_path}/commands/claim"
@@ -78,6 +86,11 @@ class CloudApiTransport:
         try:
             result = self.upload([{"topic": topic, "payload": json.loads(payload)}])
         except ApiError as exc:
+            if exc.status == 409 and exc.code == "run_superseded":
+                if self.stop_reason is None:
+                    log.error("%s", exc.detail)
+                self.stop_reason = exc.detail
+                raise TransportError(exc.detail) from exc
             if exc.status in (400, 413, 422):
                 # The API will never accept this message; drop it rather than block the queue.
                 log.warning("the API refused a %s message: %s", topic, exc)
@@ -96,8 +109,11 @@ class CloudApiTransport:
 
     def upload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         """POST messages as they are; raises :class:`AccountError` / :class:`ApiError`."""
+        body: dict[str, Any] = {"messages": messages}
+        if self.run_id:
+            body["run_id"] = self.run_id
         with self._lock:
-            result = self._session.request("POST", self._path, {"messages": messages})
+            result = self._session.request("POST", self._path, body)
         return result if isinstance(result, dict) else {}
 
     def _warn(self, exc: AccountError) -> None:

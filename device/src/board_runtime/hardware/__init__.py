@@ -2,6 +2,7 @@ from board_runtime.hardware.configured import (
     ConfiguredSensors,
     SensorReadError,
     SimulatedConfiguredSensors,
+    SimulatedFaults,
 )
 from board_runtime.hardware.freewili import (
     BoardInfo,
@@ -21,5 +22,6 @@ __all__ = [
     "SensorReadError",
     "SensorReader",
     "SimulatedConfiguredSensors",
+    "SimulatedFaults",
     "SimulatedSensors",
 ]

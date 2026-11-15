@@ -4,6 +4,7 @@ import {
   CircuitBoard,
   Cpu,
   Laptop,
+  Lock,
   Pencil,
   Plus,
   Usb,
@@ -49,6 +50,7 @@ export function SetupChain({
   const boards = setup?.boards ?? [];
   const sensors = setup?.sensors ?? [];
   const simulated = host?.sensor_source === "simulated";
+  const run = setup?.run ?? null;
 
   return (
     <div className="grid items-stretch gap-3 p-5 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1.6fr)]">
@@ -60,6 +62,16 @@ export function SetupChain({
               builderwars {host.cli_version} · Python {host.python_version}
             </Line>
             <Line>Last started {timeAgo(setup?.reported_at)}</Line>
+            {run ? (
+              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-good">
+                <Lock className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 truncate">
+                  Board locked by {run.user_email ?? "a member"}'s run
+                </span>
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-muted">No run is using the board</p>
+            )}
             {host.sensor_source && (
               <p className={`mt-2 text-xs ${simulated ? "text-warn" : "text-muted"}`}>
                 {SOURCE_TEXT[host.sensor_source] ?? host.sensor_source}

@@ -380,11 +380,16 @@ class CloudSession:
         if 200 <= status < 300:
             return parsed
         detail = parsed.get("detail") if isinstance(parsed, dict) else None
-        raise ApiError(status, detail if isinstance(detail, str) else f"HTTP {status}")
+        code = parsed.get("code") if isinstance(parsed, dict) else None
+        raise ApiError(
+            status,
+            detail if isinstance(detail, str) else f"HTTP {status}",
+            code=code if isinstance(code, str) else None,
+        )
 
 
 class ApiError(AccountError):
-    def __init__(self, status: int, detail: str) -> None:
+    def __init__(self, status: int, detail: str, *, code: str | None = None) -> None:
         hint = None
         if status == 401:
             hint = "run `builderwars login` again"
@@ -394,3 +399,5 @@ class ApiError(AccountError):
             hint = "ask the project's owner or an admin for the member role"
         super().__init__(f"API error {status}: {detail}", hint)
         self.status = status
+        self.detail = detail
+        self.code = code  # e.g. "board_in_use", "run_superseded"

@@ -49,3 +49,6 @@ FREE-WILi's I2C, SPI, UART and GPIO pins.
 - Dashboard commands reach CLI-connected boards by polling: the CLI calls
   `POST /devices/{id}/commands/claim` every 2 s, which marks queued commands sent. A device that
   has sent nothing for 75 s reads as offline, so "Live" only shows while a run is going.
+- 2026-11-15: sensors added while a run is going are picked up even when the run started with
+  none (it no longer stays on the FREE-WILi's own pins); `--simulate` makes up faults
+  (`--sim-errors`); only one run holds a board at a time (ADR 0011).

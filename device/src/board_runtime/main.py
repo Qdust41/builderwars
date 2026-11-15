@@ -221,7 +221,7 @@ def build_transport(config: DeviceConfig) -> Transport:
             session = CloudSession.load(config.state_dir or default_state_dir())
         except AccountError as exc:
             raise TransportError(f"{exc} ({exc.hint})" if exc.hint else str(exc)) from exc
-        return CloudApiTransport(session, config.device_id)
+        return CloudApiTransport(session, config.device_id, run_id=config.run_id)
     return StdoutTransport()
 
 
@@ -237,8 +237,11 @@ def run_loop(
     samples: int | None = None,
     sensors: SensorReader | None = None,
     transport: Transport | None = None,
-) -> None:
-    """Run the sample/heartbeat loop until ``samples`` are taken or Ctrl+C."""
+) -> str | None:
+    """Run the sample/heartbeat loop until ``samples`` are taken or Ctrl+C.
+
+    Returns why it stopped early on its own (e.g. another run took the board over), or None.
+    """
     sequence = FileSequenceStore(config.state_dir, config.device_id) if config.state_dir else None
     csv_sink = CsvLogSink(config.log_csv_path) if config.log_csv_path is not None else None
     if csv_sink is not None:
@@ -257,9 +260,13 @@ def run_loop(
     app_log.info("host runtime started (sensors=%s)", config.sensors.value)
     count = 0
     last_heartbeat = time.monotonic()
+    stop_reason: str | None = None
     try:
         while samples is None or count < samples:
             runtime.sample()
+            stop_reason = getattr(runtime.transport, "stop_reason", None)
+            if stop_reason:
+                break
             count += 1
             if time.monotonic() - last_heartbeat >= config.heartbeat_interval_s:
                 runtime.heartbeat()
@@ -269,9 +276,11 @@ def run_loop(
     except KeyboardInterrupt:
         pass
     finally:
-        app_log.info("host runtime stopping")
+        if not stop_reason:  # a superseded run can't send any more
+            app_log.info("host runtime stopping")
         runtime.stop()
         app_log.removeHandler(forwarder)
+    return stop_reason
 
 
 def main(argv: list[str] | None = None) -> None:

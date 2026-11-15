@@ -13,22 +13,33 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from application.ports import (
     DeviceRepository,
     DeviceSetupRepository,
     SensorRepository,
     TargetBoardRepository,
+    UserDirectory,
 )
 from application.services.authorization import Authorizer
 from device_protocol.sensors import MAX_SENSORS_PER_DEVICE, SensorSpec
 from device_protocol.setup import SetupReport
 from domain.common import ConflictError, NotFoundError, utcnow
-from domain.devices import MAX_TARGET_BOARDS, Device, DeviceSetup, Sensor, TargetBoard
+from domain.devices import (
+    MAX_TARGET_BOARDS,
+    BoardInUseError,
+    Device,
+    DeviceSetup,
+    RunSupersededError,
+    Sensor,
+    TargetBoard,
+)
 from domain.projects import Permission
 
 MAX_BOARD_NAME = 120
+# Uploads refresh the run's lock at most this often (it lapses after RUN_LOCK_TTL).
+_TOUCH_EVERY = timedelta(seconds=15)
 MAX_BOARD_NOTES = 2000
 
 
@@ -39,6 +50,9 @@ class SetupView:
     setup: DeviceSetup
     boards: list[TargetBoard]
     sensors: list[Sensor]
+    # The run holding the board right now, if any (the lock), and who started it.
+    run_active: bool = False
+    run_by_email: str | None = None
 
 
 class DeviceSetupService:
@@ -50,8 +64,10 @@ class DeviceSetupService:
         sensors: SensorRepository,
         authorizer: Authorizer,
         *,
+        users: UserDirectory | None = None,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
+        self._users = users
         self._devices = devices
         self._setups = setups
         self._boards = boards
@@ -75,25 +91,72 @@ class DeviceSetupService:
     # -- the whole picture ------------------------------------------------------------------
     def get_setup(self, *, user_id: str, device_id: str) -> SetupView:
         self._device(user_id, device_id, Permission.VIEW_PROJECT)
+        setup = self._setup(device_id)
+        active = setup.run_active_at(self._clock())
+        email = self._email(setup.run_by) if active else None
         return SetupView(
-            setup=self._setup(device_id),
+            setup=setup,
             boards=self._boards.list_for_device(device_id),
             sensors=self._sensors.list_for_device(device_id),
+            run_active=active,
+            run_by_email=email,
         )
+
+    def _email(self, user_id: str | None) -> str | None:
+        if not user_id or self._users is None:
+            return None
+        try:
+            user = self._users.get(user_id)
+        except Exception:  # the directory is only for a friendlier label
+            return None
+        return user.email if user else None
 
     # -- laptop + FREE-WILi (reported by the CLI) -------------------------------------------
     def report_connection(
         self, *, user_id: str, device_id: str, report: SetupReport
     ) -> DeviceSetup:
         self._device(user_id, device_id, Permission.UPLOAD_DEVICE_DATA)
-        setup = self._setup(device_id).with_report(
+        now = self._clock()
+        setup = self._setup(device_id)
+        if report.run_id:  # lock the board for this run first: BoardInUseError if held
+            try:
+                setup = setup.claim_run(
+                    report.run_id, by=user_id, at=now, take_over=report.take_over
+                )
+            except BoardInUseError:
+                who = self._email(setup.run_by)
+                raise BoardInUseError(f"this board is in use by {setup.holder_text(who)}") from None
+        setup = setup.with_report(
             host=report.host.model_dump(mode="json"),
             bridge=report.bridge.model_dump(mode="json") if report.bridge else None,
             by=user_id,
-            at=self._clock(),
+            at=now,
         )
         self._setups.save(setup)
         return setup
+
+    def release_run(self, *, user_id: str, device_id: str, run_id: str) -> None:
+        """``builderwars run`` stopped: free the board (no-op if another run holds it)."""
+        self._device(user_id, device_id, Permission.UPLOAD_DEVICE_DATA)
+        setup = self._setups.get(device_id)
+        if setup is not None and setup.run_id == run_id:
+            self._setups.save(setup.release_run(run_id, at=self._clock()))
+
+    def keep_run(self, *, user_id: str, device_id: str, run_id: str) -> None:
+        """Data is arriving from ``run_id`` (before it is stored): keep its lock alive, or
+        take the lock back if it had lapsed. ``RunSupersededError`` if another live run took
+        the board over, so the old run stops instead of mixing its data in."""
+        self._device(user_id, device_id, Permission.UPLOAD_DEVICE_DATA)
+        now = self._clock()
+        setup = self._setup(device_id)
+        if setup.run_id != run_id and setup.run_active_at(now):
+            who = self._email(setup.run_by)
+            raise RunSupersededError(
+                f"the board was taken over by {setup.holder_text(who)}; this run stops"
+            )
+        if setup.run_id == run_id and setup.run_seen_at and now - setup.run_seen_at < _TOUCH_EVERY:
+            return  # fresh enough; skip a write per upload
+        self._setups.save(setup.claim_run(run_id, by=user_id, at=now))
 
     # -- target boards (described by people) -----------------------------------------------
     def add_board(self, *, user_id: str, device_id: str, name: str, notes: str = "") -> TargetBoard:

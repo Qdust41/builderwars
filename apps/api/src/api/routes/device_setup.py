@@ -33,9 +33,20 @@ def report_device_connection(
     device_id: str, body: SetupReport, user: UserDep, service: DeviceSetupServiceDep
 ) -> DeviceSetupOut:
     """Sent by ``builderwars run`` when it starts: which laptop it runs on and which
-    FREE-WILi is plugged in (``device:upload``, so any member running the CLI)."""
+    FREE-WILi is plugged in (``device:upload``, so any member running the CLI). With
+    ``run_id`` it also locks the board for that run; 409 ``board_in_use`` while another run
+    holds it, unless ``take_over``."""
     service.report_connection(user_id=user.user_id, device_id=device_id, report=body)
     return DeviceSetupOut.of(service.get_setup(user_id=user.user_id, device_id=device_id))
+
+
+@router.delete("/devices/{device_id}/setup/run/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def release_device_run(
+    device_id: str, run_id: str, user: UserDep, service: DeviceSetupServiceDep
+) -> Response:
+    """Sent by ``builderwars run`` when it stops: frees the board for the next run."""
+    service.release_run(user_id=user.user_id, device_id=device_id, run_id=run_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # -- target boards ------------------------------------------------------------------------------

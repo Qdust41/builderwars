@@ -225,6 +225,11 @@ def test_device_setup_round_trips(repos: Any) -> None:
     again = setup.with_report(host={"hostname": "other"}, bridge=None, by="bob", at=T0)
     repos.setups.save(again)
     assert repos.setups.get(device.id) == again
+    locked = again.claim_run("run_abc", by="bob", at=T0)
+    repos.setups.save(locked)
+    assert repos.setups.get(device.id) == locked
+    repos.setups.save(locked.release_run("run_abc", at=T0))
+    assert repos.setups.get(device.id).run_id is None
 
 
 def _sensor(device_id: str, board_id: str, key: str, at: datetime = T0) -> Sensor:

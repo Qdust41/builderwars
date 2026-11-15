@@ -104,7 +104,7 @@ common parts from the table ([ADR 0010](docs/decisions/0010-test-setup-and-senso
 | `builderwars login [--email E] [--api URL]` | Sign in to your Builderwars account |
 | `builderwars whoami` / `logout` | Show or forget the saved sign-in |
 | `builderwars devices` | The devices in your projects, with their ids |
-| `builderwars run [port] [--cloud] [--simulate] [--device-id ID] [-n N] [-i SECONDS]` | Run the host runtime |
+| `builderwars run [port] [--cloud] [--simulate [--sim-errors RATE]] [--take-over] [--device-id ID] [-n N] [-i SECONDS]` | Run the host runtime |
 | `builderwars sensors DEVICE [--read] [--port P]` | List a device's sensors; `--read` reads each once on the FREE-WILi |
 | `builderwars upload FILE --device-id ID` | Upload saved telemetry/logs to a device |
 | `builderwars logs [DEVICE] [--since T] [--until T] [-o PATH] [--force]` | Download a device's cloud logs as CSV |
@@ -140,18 +140,34 @@ name. Commands that take `--device-id` need that id; `logs` also accepts the dev
 builderwars run --cloud --device-id dev_... /dev/ttyACM0   # this FREE-WILi
 builderwars run --cloud --device-id dev_...                # the first FREE-WILi found
 builderwars run --cloud --device-id dev_... --simulate     # no hardware: made-up values
+builderwars run --cloud --device-id dev_... --simulate --sim-errors 0   # ... without made-up faults
+builderwars run --cloud --device-id dev_... --take-over    # stop another run holding the board
 builderwars run --cloud --device-id dev_... -n 60 -i 0.5   # stop after 60 samples, 2 per second
 ```
 
+- **One run at a time:** a `run --cloud` locks the device's board when it starts, and the device
+  page shows who holds it and on which laptop. Another `run` for the same device is refused
+  ("this board is in use by ...") until the first stops (Ctrl+C, closing the terminal or `kill`
+  all release it), or goes 75 s without sending. `--take-over` takes the board anyway; the old
+  run then stops with "the board was taken over by ...". `builderwars upload` of saved data is
+  never blocked.
+
 - It downloads the **sensors defined on the device page** and reads each enabled one through the
   FREE-WILi at its own poll rate; edits on the page are picked up within 30 s. A sensor that
-  can't be read (wrong address, no reply) is reported once in the device's logs and skipped.
-  With no sensors defined yet it sends the FREE-WILi's own pin levels.
+  can't be read (wrong address, no reply) is reported once in the device's logs and skipped;
+  each sensor that works logs its first value ("sensor board_temp_c reads 25.0 °C"). With no
+  sensors defined yet it sends the FREE-WILi's own pin levels, and switches to the sensors as
+  soon as some are added. The same I2C address on two target boards is warned about: the
+  FREE-WILi has one I2C bus for all of them.
 - It tells the device page which laptop it runs on and which FREE-WILi it opened.
 - **With a port** it uses that FREE-WILi (either of its two ttys works, and `ttyACM0` is
   short for `/dev/ttyACM0`); **without one** the first FREE-WILi found. **`--simulate`** sends
-  made-up values for the defined sensors instead, handy while the board is out of action. The
-  laptop card on the device page shows when a run is simulated.
+  made-up values for the defined sensors instead, handy while the board is out of action. It
+  also makes up the faults a real bench has, about 5% of the time: a sensor that stops
+  answering for a few samples, a glitchy value, the FREE-WILi dropping off USB (the device goes
+  degraded), and error logs from the board, all marked "(simulated)". `--sim-errors RATE` (0..1)
+  changes how often; 0 turns them off. The laptop card on the device page shows when a run is
+  simulated.
 - The UART baud rate and the SPI mode/clock are set on the FREE-WILi itself; the `freewili`
   library can't change them from the laptop.
 - `--cloud` needs the registered device id (`--device-id` or `DEVICE_ID`).

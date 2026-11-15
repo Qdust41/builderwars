@@ -9,13 +9,29 @@ the setup apart means a telemetry batch can never overwrite a sensor someone jus
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from domain.common import new_id, utcnow
+from domain.common import ConflictError, new_id, utcnow
 
 # One FREE-WILi drives at most this many boards under test at once (owner decision 2026-11-15).
 MAX_TARGET_BOARDS = 4
+# A run holds the board while it keeps sending; this long without a message frees it (a laptop
+# that crashed or lost its network can't hold the board forever). Same as Device.STALE_AFTER.
+RUN_LOCK_TTL = timedelta(seconds=75)
+
+
+class BoardInUseError(ConflictError):
+    """Another ``builderwars run`` holds the board (owner decision 2026-11-15: one run at a
+    time). ``code`` lets the CLI tell this apart from other conflicts."""
+
+    code = "board_in_use"
+
+
+class RunSupersededError(ConflictError):
+    """This run's lock was taken over by another run (``--take-over``); it must stop."""
+
+    code = "run_superseded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +57,44 @@ class DeviceSetup:
     reported_at: datetime | None = None
     reported_by: str | None = None
     updated_at: datetime = field(default_factory=utcnow)
+    # The ``builderwars run`` currently holding the board (a lock), if any. It is held while
+    # ``run_seen_at`` is recent (RUN_LOCK_TTL), and released when the run stops.
+    run_id: str | None = None
+    run_by: str | None = None
+    run_started_at: datetime | None = None
+    run_seen_at: datetime | None = None
+
+    def run_active_at(self, now: datetime, *, ttl: timedelta = RUN_LOCK_TTL) -> bool:
+        return (
+            self.run_id is not None
+            and self.run_seen_at is not None
+            and now - self.run_seen_at <= ttl
+        )
+
+    def claim_run(
+        self, run_id: str, *, by: str, at: datetime, take_over: bool = False
+    ) -> DeviceSetup:
+        """Lock the board for ``run_id``; ``BoardInUseError`` if another live run holds it."""
+        if self.run_id == run_id:
+            return replace(self, run_seen_at=at, updated_at=at)
+        if self.run_active_at(at) and not take_over:
+            raise BoardInUseError(f"this board is in use by {self.holder_text()}")
+        return replace(
+            self, run_id=run_id, run_by=by, run_started_at=at, run_seen_at=at, updated_at=at
+        )
+
+    def holder_text(self, who: str | None = None) -> str:
+        """e.g. "alice@example.com's run on bench-laptop (started 11:46:45 UTC)"."""
+        host = (self.host or {}).get("hostname") or "another laptop"
+        since = self.run_started_at.strftime("%H:%M:%S UTC") if self.run_started_at else "?"
+        return f"{who + chr(39) + 's' if who else 'a'} run on {host} (started {since})"
+
+    def release_run(self, run_id: str, *, at: datetime) -> DeviceSetup:
+        if self.run_id != run_id:
+            return self
+        return replace(
+            self, run_id=None, run_by=None, run_started_at=None, run_seen_at=None, updated_at=at
+        )
 
     def with_report(
         self,

@@ -43,10 +43,21 @@ class BridgeReport(_Report):
 
 class SetupReport(_Report):
     """``PUT /devices/{id}/setup/connection``: sent by the CLI when ``run`` starts.
-    ``bridge`` is ``None`` when no FREE-WILi is attached (``--simulate``)."""
+    ``bridge`` is ``None`` when no FREE-WILi is attached (``--simulate``). With ``run_id`` the
+    run also locks the board until it stops (or goes quiet for 75 s)."""
 
     host: HostReport
     bridge: BridgeReport | None = None
+    run_id: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="Locks the board for this run: only one run at a time (409 board_in_use)",
+    )
+    take_over: bool = Field(
+        default=False, description="Take the lock from a run that still holds the board"
+    )
 
 
 __all__ = ["BridgeReport", "HostReport", "SetupReport"]

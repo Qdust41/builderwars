@@ -14,6 +14,7 @@ from board_runtime.hardware import (
     ConfiguredSensors,
     FreeWiliSensors,
     SimulatedConfiguredSensors,
+    SimulatedFaults,
 )
 from device_protocol.sensor_presets import SENSOR_PRESETS
 from device_protocol.sensors import SensorSpec
@@ -211,3 +212,119 @@ def test_simulation_uses_the_defined_sensor_names() -> None:
     readings = sim.read()
     assert set(readings) == {"tmp102_temp_c", "digital_in"}
     assert readings["digital_in"] in (0, 1)
+
+
+# -- every sensor defined is read, also ones added while running ----------------------------
+class AnyChipBoard(FakeBoard):
+    """Every I2C address answers, so each preset can be read in one pass."""
+
+    def read_i2c(self, address: int, reg: int, size: int, processor: Any) -> Any:
+        self.calls.append(("read_i2c", address, reg, size))
+        return _Ok(bytes([0x19, 0x00, 0x00, 0x00])[:size])
+
+    def read_write_spi_data(self, data: bytes, processor: Any) -> Any:
+        self.calls.append(("spi", data))
+        return _Ok(bytes([0x01, 0x90, 0x00, 0x00])[: len(data)])
+
+
+def test_every_preset_is_read_in_one_pass(caplog: pytest.LogCaptureFixture) -> None:
+    board, clock = AnyChipBoard(), Clock()
+    keys = {p.id: f"s{n}" for n, p in enumerate(SENSOR_PRESETS)}
+    specs = [_spec(p.id, key=keys[p.id], poll_interval_s=1) for p in SENSOR_PRESETS]
+    reader = _reader(board, specs, clock)
+    with caplog.at_level(logging.INFO, logger="board_runtime.app"):
+        readings = reader.read()
+    assert set(readings) == set(keys.values())
+    assert all(isinstance(v, (int, float)) for v in readings.values())
+    # Each sensor says once that it works, so the dashboard log shows what is being read.
+    said = [r.getMessage() for r in caplog.records if r.getMessage().startswith("sensor s")]
+    assert len(said) == len(specs)
+    clock.now += 1
+    with caplog.at_level(logging.INFO, logger="board_runtime.app"):
+        caplog.clear()
+        reader.read()
+    assert not [r for r in caplog.records if r.getMessage().startswith("sensor s")]
+
+
+def test_sensors_added_while_running_replace_the_pins() -> None:
+    board, clock = FakeBoard(), Clock()
+    current: list[SensorSpec] = []
+    reader = _reader(board, [], clock, refresh=lambda: current, fallback=_Pins())
+    assert reader.read() == {"io_26": 1}  # nothing defined yet: the FREE-WILi's own pins
+    current = [_spec("tmp102-temp")]
+    clock.now += 31
+    assert reader.read() == {"tmp102_temp_c": 25.0}
+    current = []
+    clock.now += 31
+    assert reader.read() == {"io_26": 1}
+
+
+class _Pins:
+    def read(self) -> dict[str, Any]:
+        return {"io_26": 1}
+
+
+def test_simulation_picks_up_sensors_added_later() -> None:
+    clock = Clock()
+    current: list[SensorSpec] = []
+    sim = SimulatedConfiguredSensors(
+        [], seed=1, clock=clock, refresh=lambda: current, fallback=_Pins()
+    )
+    assert sim.read() == {"io_26": 1}
+    current = [_spec("tmp102-temp")]
+    clock.now += 31
+    assert set(sim.read()) == {"tmp102_temp_c"}
+
+
+def test_simulated_faults_show_up_as_errors(caplog: pytest.LogCaptureFixture) -> None:
+    clock = Clock()
+    sim = SimulatedConfiguredSensors(
+        [_spec("tmp102-temp", poll_interval_s=1), _spec("gpio-digital-in", poll_interval_s=1)],
+        seed=3,
+        clock=clock,
+        faults=SimulatedFaults(0.5, seed=3),
+    )
+    unplugged = missing = 0
+    why = ""
+    with caplog.at_level(logging.INFO, logger="board_runtime.app"):
+        for _ in range(200):
+            clock.now += 1
+            try:
+                readings = sim.read()
+            except BoardUnavailableError as exc:
+                unplugged += 1
+                why = str(exc)
+                continue
+            missing += 2 - len(readings)
+    messages = [r.getMessage() for r in caplog.records]
+    assert unplugged > 0
+    assert "simulated" in why
+    assert missing > 0
+    assert any(
+        m.startswith("board: ") and r.levelno == logging.ERROR
+        for m, r in zip(messages, caplog.records, strict=True)
+    )
+    assert any("(simulated)" in m and m.startswith("sensor ") for m in messages)
+    assert any("is reading again" in m for m in messages)
+
+
+def test_no_faults_unless_asked() -> None:
+    clock = Clock()
+    sim = SimulatedConfiguredSensors(
+        [_spec("tmp102-temp", poll_interval_s=1)], seed=1, clock=clock, faults=SimulatedFaults(0)
+    )
+    for _ in range(100):
+        clock.now += 1
+        assert set(sim.read()) == {"tmp102_temp_c"}
+
+
+def test_freewili_without_buttons_still_sends_its_pins() -> None:
+    class NoDisplay(FakeBoard):
+        def read_all_buttons(self, processor: Any) -> Any:
+            return _Err("no display CPU")
+
+    reader = FreeWiliSensors(NoDisplay())
+    first = reader.read()
+    assert first["io_26"] == 1
+    assert not any(k.startswith("button_") for k in first)
+    assert reader.read()["io_26"] == 1

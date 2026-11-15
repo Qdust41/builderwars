@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from api.dependencies import (
     CommandServiceDep,
     DeviceServiceDep,
+    DeviceSetupServiceDep,
     DeviceUploadServiceDep,
     TelemetryServiceDep,
     UserDep,
@@ -220,6 +221,7 @@ def upload_device_messages(
     body: DeviceMessagesUpload,
     user: UserDep,
     service: DeviceUploadServiceDep,
+    setups: DeviceSetupServiceDep,
 ) -> DeviceMessagesUploadOut:
     """Record a board's messages uploaded by a signed-in member (the ``builderwars`` CLI).
 
@@ -229,6 +231,8 @@ def upload_device_messages(
     its telemetry and logs live. One rejected message does not fail the others: check
     ``results`` (same order as ``messages``).
     """
+    if body.run_id:  # a live run: refuse data from a run whose board was taken over
+        setups.keep_run(user_id=user.user_id, device_id=device_id, run_id=body.run_id)
     results = service.upload(
         user_id=user.user_id,
         device_id=device_id,

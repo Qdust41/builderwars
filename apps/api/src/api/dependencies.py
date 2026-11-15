@@ -314,7 +314,7 @@ def build_container(
             realtime=messaging.realtime,
         ),
         setups=DeviceSetupService(
-            repos.devices, repos.setups, repos.boards, repos.sensors, authorizer
+            repos.devices, repos.setups, repos.boards, repos.sensors, authorizer, users=users
         ),
         local=local,
         pool=pool,

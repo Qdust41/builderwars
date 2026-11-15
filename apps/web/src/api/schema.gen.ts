@@ -289,11 +289,33 @@ export interface paths {
         /**
          * Report Device Connection
          * @description Sent by ``builderwars run`` when it starts: which laptop it runs on and which
-         *     FREE-WILi is plugged in (``device:upload``, so any member running the CLI).
+         *     FREE-WILi is plugged in (``device:upload``, so any member running the CLI). With
+         *     ``run_id`` it also locks the board for that run; 409 ``board_in_use`` while another run
+         *     holds it, unless ``take_over``.
          */
         put: operations["report_device_connection_devices__device_id__setup_connection_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/setup/run/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Release Device Run
+         * @description Sent by ``builderwars run`` when it stops: frees the board for the next run.
+         */
+        delete: operations["release_device_run_devices__device_id__setup_run__run_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -762,6 +784,11 @@ export interface components {
         DeviceMessagesUpload: {
             /** Messages */
             messages: components["schemas"]["UploadedDeviceMessage"][];
+            /**
+             * Run Id
+             * @description The live ``builderwars run`` sending these (keeps its lock on the board; 409 run_superseded if another run took the board over). Omit for saved-data uploads.
+             */
+            run_id?: string | null;
         };
         /** DeviceMessagesUploadOut */
         DeviceMessagesUploadOut: {
@@ -798,6 +825,28 @@ export interface components {
             project_id: string;
         };
         /**
+         * DeviceRunOut
+         * @description The ``builderwars run`` that has locked the board: one run at a time.
+         */
+        DeviceRunOut: {
+            /** Hostname */
+            hostname?: string | null;
+            /**
+             * Last Seen At
+             * Format: date-time
+             */
+            last_seen_at: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** User Email */
+            user_email?: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /**
          * DeviceSetupOut
          * @description The whole chain for the device page. ``host``/``bridge`` are null until the CLI has
          *     run against this device; ``bridge`` is also null for a ``--simulate`` run.
@@ -813,6 +862,8 @@ export interface components {
             max_boards: number;
             /** Reported At */
             reported_at: string | null;
+            /** @description The `builderwars run` holding the board right now, if any */
+            run?: components["schemas"]["DeviceRunOut"] | null;
             /** Sensors */
             sensors: components["schemas"]["SensorOut"][];
         };
@@ -1263,11 +1314,23 @@ export interface components {
         /**
          * SetupReport
          * @description ``PUT /devices/{id}/setup/connection``: sent by the CLI when ``run`` starts.
-         *     ``bridge`` is ``None`` when no FREE-WILi is attached (``--simulate``).
+         *     ``bridge`` is ``None`` when no FREE-WILi is attached (``--simulate``). With ``run_id`` the
+         *     run also locks the board until it stops (or goes quiet for 75 s).
          */
         SetupReport: {
             bridge?: components["schemas"]["BridgeReport"] | null;
             host: components["schemas"]["HostReport"];
+            /**
+             * Run Id
+             * @description Locks the board for this run: only one run at a time (409 board_in_use)
+             */
+            run_id?: string | null;
+            /**
+             * Take Over
+             * @description Take the lock from a run that still holds the board
+             * @default false
+             */
+            take_over: boolean;
         };
         /** TargetBoardIn */
         TargetBoardIn: {
@@ -1964,6 +2027,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DeviceSetupOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_device_run_devices__device_id__setup_run__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

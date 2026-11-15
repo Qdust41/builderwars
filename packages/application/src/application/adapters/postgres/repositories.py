@@ -224,6 +224,10 @@ def _setup(row: Row) -> DeviceSetup:
         reported_at=row["reported_at"],
         reported_by=row["reported_by"],
         updated_at=row["updated_at"],
+        run_id=row["run_id"],
+        run_by=row["run_by"],
+        run_started_at=row["run_started_at"],
+        run_seen_at=row["run_seen_at"],
     )
 
 
@@ -235,10 +239,13 @@ class PostgresDeviceSetupRepository(_Repo):
     def save(self, setup: DeviceSetup) -> None:
         self._exec(
             "INSERT INTO device_setups (device_id, host, bridge, reported_at, reported_by,"
-            " updated_at) VALUES (%s, %s, %s, %s, %s, %s)"
+            " updated_at, run_id, run_by, run_started_at, run_seen_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT (device_id) DO UPDATE SET host = EXCLUDED.host,"
             " bridge = EXCLUDED.bridge, reported_at = EXCLUDED.reported_at,"
-            " reported_by = EXCLUDED.reported_by, updated_at = EXCLUDED.updated_at",
+            " reported_by = EXCLUDED.reported_by, updated_at = EXCLUDED.updated_at,"
+            " run_id = EXCLUDED.run_id, run_by = EXCLUDED.run_by,"
+            " run_started_at = EXCLUDED.run_started_at, run_seen_at = EXCLUDED.run_seen_at",
             (
                 setup.device_id,
                 Jsonb(setup.host) if setup.host is not None else None,
@@ -246,6 +253,10 @@ class PostgresDeviceSetupRepository(_Repo):
                 setup.reported_at,
                 setup.reported_by,
                 setup.updated_at,
+                setup.run_id,
+                setup.run_by,
+                setup.run_started_at,
+                setup.run_seen_at,
             ),
         )
 
