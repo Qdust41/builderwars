@@ -32,6 +32,18 @@ Telemetry, logs and command results then arrive live; **Send ping** round-trips 
 host. The local API routes that make this work (`/local/*`) only exist when the API
 runs with `APP_ENV=local` or `test` (ADR 0008).
 
+## In prod
+
+Every merge to `main` builds the app (`scripts/build_web_prod.sh`, which reads the Cognito and
+AppSync ids from the deployed stacks) and serves it from CloudFront at
+<https://builderwars.jimweaver.com>, with `/api/*` routed to the HTTP API. To run the dev server
+against prod instead, see step 8 of the [deployment guide](../../docs/deployment-guide.md).
+
+Boards feed the device page through the `builderwars` CLI (`builderwars run --cloud`, see the
+root [README](../../README.md#the-builderwars-cli)). Locally you can do the same against the
+local API: `uv run builderwars login --api http://localhost:8000`, then
+`uv run builderwars run --cloud --device-id <dev_...>`.
+
 ## Sign-in
 
 `VITE_AUTH_MODE=dev-header` (default, local only) sends `VITE_DEV_USER` as `X-Dev-User`.

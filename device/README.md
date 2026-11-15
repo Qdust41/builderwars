@@ -1,7 +1,9 @@
 # Host runtime (`board_runtime`)
 
 Runs on the **host PC wired to a FREE-WILi 1-OG** over USB (decision #1, ADR 0004). The host is
-the platform's "device": it samples the board, batches telemetry, and talks to AWS IoT Core.
+the platform's "device": it samples the board, batches telemetry, and sends it to the cloud,
+today through the API as the signed-in user (`builderwars run --cloud`), later possibly straight
+to AWS IoT Core.
 Requires **CPython 3.10+** (CI runs these tests on 3.10).
 
 ## Testing a board: `builderwars`
@@ -22,40 +24,21 @@ it names the group that owns it (`uucp` on Arch, `dialout` on Debian/Ubuntu) and
 
 ## Sending to Builderwars: sign in, then stream or upload
 
-Boards have no AWS IoT certificates for now. Instead you sign in to the CLI with your own
-Builderwars account (the web app's email + password), and the CLI sends the board's telemetry
-and logs to the API as you. Anyone viewing the device in the web app sees them live (ADR 0009).
+Boards have no AWS IoT certificates for now. You sign in to the CLI with your own Builderwars
+account and the CLI sends the board's telemetry and logs to the API as you (ADR 0009):
 
 ```bash
-builderwars login                     # email + password; prod API by default
-builderwars devices                   # your registered devices and their ids
-builderwars run --cloud --device-id dev_... /dev/ttyACM0   # stream the board live (Ctrl+C)
-builderwars run --cloud --device-id dev_...                # same with simulated sensors
-builderwars upload dev-local --device-id dev_...           # upload a saved log CSV
-builderwars run -n 60 > run.jsonl; builderwars upload run.jsonl --device-id dev_...
-builderwars logs dev_...                                   # cloud logs -> ./dev_...-logs.csv
-builderwars logs "Bench board" --since 2026-11-14 -o bench.csv   # by name, a time window
-builderwars whoami / builderwars logout
+builderwars login
+builderwars devices
+builderwars run --cloud --device-id dev_... /dev/ttyACM0   # leave out the port for simulated sensors
+builderwars upload dev-local --device-id dev_...
+builderwars logs dev_... --since 2026-11-14 -o bench.csv
 ```
 
-- You need the **member** role (or higher) on the device's project; viewers can't upload.
-- The password goes to Cognito only and is never saved. `<state-dir>/account.json` (mode 0600)
-  keeps a refresh token, good for 30 days; then `builderwars login` again.
-- `--api https://...` (or `BUILDERWARS_API_URL`) points at another deployment;
-  `--api http://localhost:8000` uses a local API, where login only asks for a dev user name.
-- Uploads are idempotent: messages already stored (e.g. logs that went up live and are also in
-  the CSV) are counted as "already uploaded", not stored twice. Files recorded under another id
-  (`dev-local`, `sim-001`) are re-addressed to the device you upload to.
-- If the network or the API is down, `run --cloud` keeps sampling and buffers messages in memory
-  (the last 1000), then sends them when it can.
-- `builderwars logs <device>` downloads everything the cloud stored for the device (log lines
-  and device events, oldest first) into a CSV with the columns `timestamp, device_id, kind,
-  level, message, message_id`. Any project member can run it, viewers included. `--since` /
-  `--until` take a date or date-time (local time unless it ends in `Z` or has an offset),
-  `-o -` writes to stdout, and an existing file is only replaced with `--force`. Without a
-  device it lists the log CSVs on this computer, like `show`. It reads
-  `GET /devices/{id}/logs/history`, paged 1000 entries at a time.
-- Not yet: commands from the dashboard (ping, uptime) don't reach a board in this mode.
+The full CLI reference (install, every command and flag, sign-in storage, upload and CSV
+details) is in the root [README](../README.md#the-builderwars-cli). Implementation:
+`cli.py` (argument parsing and commands) and `cloud/` (Cognito sign-in, token file, the
+`CloudApiTransport` that posts to `POST /devices/{id}/messages`, and the log-history download).
 
 ## Local development (no board, no AWS)
 
@@ -76,7 +59,10 @@ DEVICE_ID=<dev_...> DEVICE_TRANSPORT=local-api LOCAL_API_URL=http://localhost:80
 `local-api` is a development transport only: it is not an authenticated IoT device, and the
 API serves its routes only when `APP_ENV` is `local` or `test` (ADR 0008).
 
-## On a real host (not yet exercised end to end)
+## Direct MQTT to AWS IoT (parked)
+
+This path needs a per-device IoT certificate, which nothing provisions for now (ADR 0009); use
+`builderwars run --cloud` instead. It is kept working for later and has not run end to end.
 
 ```bash
 python3 -m venv ~/.builderwars/venv && . ~/.builderwars/venv/bin/activate
@@ -120,4 +106,6 @@ cloud's `device_logs`, and re-loading a dump skips rows already present.
 | `logging/` | `logging.Handler` -> protocol `log` messages | done |
 | `commands/` | Allowlisted command dispatcher (`ping`, `get_uptime`) | done; no shell command, ever |
 | `firmware.py` | sha256 verification before flashing; UF2 flasher | verify done; flashing stub (spec 09) |
+| `cli.py` | The `builderwars` command (board checks, `run`, `sim`, local CSVs, cloud commands) | done |
+| `cloud/` | Sign-in and token file (`account.py`), API upload transport with a 1000-message buffer (`transport.py`), reading saved files for `upload` (`files.py`), log-history CSV export (`logs.py`) | done |
 | `main.py` | Runtime loop; `status: degraded` + events while the board is unplugged | done |
