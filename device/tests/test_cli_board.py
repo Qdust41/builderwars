@@ -133,7 +133,8 @@ def test_no_board_found(boards, capsys) -> None:
     assert "no FREE-WILi board found on USB" in capsys.readouterr().out
 
 
-def test_busy_port_explains_who_to_close(boards, capsys) -> None:
+def test_busy_port_explains_who_to_close(boards, capsys, monkeypatch) -> None:
+    monkeypatch.setattr("board_runtime.hardware.ports.holders", lambda port: [])
     board = FakeBoard(open_error="[Errno 16] Device or resource busy")
     boards.append(board)
     assert cli.main(["/dev/null"]) == 1
@@ -141,6 +142,30 @@ def test_busy_port_explains_who_to_close(boards, capsys) -> None:
     assert "could not open the board's serial ports" in out
     assert "another program has the port open" in out
     assert board.closed
+
+
+def test_exclusive_lock_error_names_the_builderwars_holding_the_port(
+    boards, capsys, monkeypatch
+) -> None:
+    seen: list[str] = []
+
+    def holders(port: str) -> list[tuple[int, str]]:
+        seen.append(port)
+        return [(4242, "python -m board_runtime.cli run --cloud --device-id dev_1")]
+
+    monkeypatch.setattr("board_runtime.hardware.ports.holders", holders)
+    boards.append(
+        FakeBoard(
+            open_error="[Errno 11] Could not exclusively lock port /dev/ttyACM2: "
+            "[Errno 11] Resource temporarily unavailable"
+        )
+    )
+    assert cli.main(["/dev/null"]) == 1
+    out = capsys.readouterr().out
+    assert seen == ["/dev/ttyACM2"]  # the display port named in the error, not the main one
+    assert "pid 4242" in out
+    assert "another builderwars on this laptop" in out
+    assert "kill 4242" in out
 
 
 def test_read_error_fails_with_the_board_message(boards, capsys) -> None:
@@ -220,3 +245,68 @@ def test_device_port_env_implies_freewili_and_bad_values_are_explained() -> None
         DeviceConfig.from_env({"DEVICE_ID": "d", "DEVICE_SENSORS": "usb"})
     with pytest.raises(ConfigError, match="DEVICE_SAMPLE_INTERVAL_S='fast' is not a number"):
         DeviceConfig.from_env({"DEVICE_ID": "d", "DEVICE_SAMPLE_INTERVAL_S": "fast"})
+
+
+# -- a busy port: retried, and a held board is refused before the port is touched ------------
+class BusyThenFree(FakeBoard):
+    """Busy (another process has it) for the first ``busy`` opens, then opens fine."""
+
+    def __init__(self, busy: int) -> None:
+        super().__init__()
+        self.busy = busy
+        self.opens = 0
+
+    def open(self, block, timeout_sec):
+        self.opens += 1
+        if self.opens <= self.busy:
+            print("[Errno 11] Could not exclusively lock port /dev/zero: [Errno 11] Resource ...")
+            return Err("Failed to open in 6.0 seconds: ")
+        return Ok()
+
+
+def test_a_busy_port_is_retried_until_it_frees(boards, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(fw.time, "sleep", lambda s: None)
+    board = BusyThenFree(busy=2)
+    boards.append(board)
+    sensors = fw.FreeWiliSensors(port=None, busy_wait_s=30)
+    assert sensors.connect() is board
+    assert board.opens == 3
+    assert "Errno 11" not in capsys.readouterr().out  # the library's print is captured
+
+
+def test_a_port_that_stays_busy_says_who_has_it(boards, monkeypatch) -> None:
+    monkeypatch.setattr(fw.time, "sleep", lambda s: None)
+    monkeypatch.setattr("board_runtime.hardware.ports.holders", lambda port: [(7, "minicom")])
+    boards.append(BusyThenFree(busy=99))
+    with pytest.raises(fw.BoardUnavailableError) as raised:
+        fw.FreeWiliSensors(port=None, busy_wait_s=0).connect()
+    assert "Could not exclusively lock port /dev/zero" in str(raised.value)
+    assert "pid 7: minicom" in (raised.value.hint or "")
+
+
+def test_run_refuses_a_held_board_before_opening_the_freewili(
+    boards, monkeypatch, tmp_path, capsys
+) -> None:
+    from board_runtime.cloud import ApiError, SensorList
+
+    board = BusyThenFree(busy=99)
+    boards.append(board)
+
+    class HeldElsewhere:
+        account = SimpleNamespace(email="me@example.com")
+
+        def request(self, method, path, body=None):
+            if method == "PUT":
+                raise ApiError(
+                    409,
+                    "this board is in use by bob@example.com's run on lab-pc (started 10:00 UTC)",
+                    code="board_in_use",
+                )
+            return {"display_name": "Bench"}
+
+    monkeypatch.setattr(cli, "_session", lambda state_dir: HeldElsewhere())
+    monkeypatch.setattr("board_runtime.cloud.fetch_sensors", lambda s, d: SensorList())
+    code = cli.main(["run", "--cloud", "--device-id", "dev_1", "--state-dir", str(tmp_path)])
+    assert code == 1
+    assert "bob@example.com's run on lab-pc" in capsys.readouterr().err
+    assert board.opens == 0  # the port the other run holds was never touched

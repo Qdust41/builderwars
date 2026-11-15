@@ -204,3 +204,21 @@ def test_i2c_address_clash_across_boards_is_warned() -> None:
     assert len(warnings) == 1
     assert "0x48" in warnings[0]
     assert "Motor, Power" in warnings[0]
+
+
+def test_device_id_in_a_terminal_means_the_cloud_when_signed_in(tmp_path, monkeypatch) -> None:
+    import argparse
+    import sys
+
+    from board_runtime.cli import _implied_cloud
+    from board_runtime.cloud import Account
+
+    args = argparse.Namespace(device_id="dev_1", state_dir=tmp_path)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    assert not _implied_cloud(args, {})  # not signed in
+    Account(api_url="http://localhost:8000", email="me", auth_mode="dev-header").save(tmp_path)
+    assert _implied_cloud(args, {})
+    assert not _implied_cloud(args, {"DEVICE_TRANSPORT": "stdout"})
+    assert not _implied_cloud(argparse.Namespace(device_id=None, state_dir=tmp_path), {})
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False)  # `run ... > file.jsonl`
+    assert not _implied_cloud(args, {})

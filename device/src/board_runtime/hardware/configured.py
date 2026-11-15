@@ -366,8 +366,17 @@ class SimulatedFaults:
         self._rng = random.Random(seed)  # noqa: S311 - simulation only
         self._unplugged = 0  # samples left with the FREE-WILi "unplugged"
         self._broken: dict[str, int] = {}  # sensor key -> samples left failing
+        self._announced = False
 
     def before_read(self) -> None:
+        if not self._announced and self.rate > 0:
+            # In the device's logs too, so the dashboard says why errors are coming.
+            self._announced = True
+            app_log.warning(
+                "simulated faults are on (--sim-errors %g): sensor read errors, USB drop-outs "
+                "and board error logs below are made up",
+                self.rate,
+            )
         if self._unplugged > 0:
             self._unplugged -= 1
             raise BoardUnavailableError(
