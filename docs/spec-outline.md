@@ -137,6 +137,11 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
 - Retention: raw S3 30/90/365 days by env (existing `infrastructure/config.py`); RDS
   retention defined in spec (recommend: status/log 90 days, telemetry 365 days, commands
   permanent).
+- Storage (built, ADR 0006): `processed_messages` (idempotency keys, `INSERT … ON CONFLICT DO
+  NOTHING`), `device_sequences` (per-device high-water mark, row-locked), `raw_device_messages`
+  (body + sha256, unique per device and message id), `quarantined_device_messages`,
+  `device_telemetry` (one row per sample, jsonb metrics), `device_logs`, `device_events`. No
+  foreign keys to `devices`, so unknown devices are still recorded or quarantined.
 - Acceptance: 10 boards × 1 batched msg/5 s (each batch ≤32 samples) sustained for 24 h
   (load test against prod before real users, or a local replay of recorded traffic; no
   staging, decision #12) with zero unexplained gaps; an invalid message is quarantined and a message
@@ -160,6 +165,9 @@ The CPython runtime that runs on the host PC (decision #1, #2, #14).
   **member lacking a permission** gets 403.
 - API: FastAPI on Lambda (Mangum) behind API Gateway; Cognito authorizer (dev env:
   `dev-header` auth mode from `apps/api/src/api/settings.py`).
+- Storage (built, ADR 0006): `projects`, `project_memberships` (primary key project + user, so
+  re-adding changes the role), `devices`, `sessions`, `jobs`, `device_commands`; all keyed to
+  `projects` with `ON DELETE CASCADE`.
 - Acceptance: role matrix table in spec maps 1:1 to policy tests in `tests/contract`.
 
 ## 06 — Realtime sessions

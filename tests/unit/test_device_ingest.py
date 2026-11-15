@@ -7,6 +7,7 @@ from uuid import uuid4
 from application.services import IngestOutcome
 from device_protocol import DeviceEnvelope, MessageType, RejectionReason, encode_message
 from domain.devices import CommandStatus, ConnectionStatus, Device, DeviceCommand
+from domain.projects import Project
 
 NOW = datetime(2026, 11, 14, 18, 30, tzinfo=UTC)
 
@@ -33,6 +34,18 @@ def _body(device_id="dev-1", message_type=MessageType.TELEMETRY, payload=None, *
 
 def _ingest(ingest, body, topic="devices/dev-1/telemetry"):
     return ingest.service.ingest(topic=topic, body=body, received_at=NOW)
+
+
+def _project(ingest, project_id: str = "p") -> str:
+    """Registered devices and commands belong to a project (a foreign key in PostgreSQL)."""
+    ingest.projects.add(Project(id=project_id, name="Bench", owner_user_id="u"))
+    return project_id
+
+
+def _register(ingest, device_id: str) -> Device:
+    device = Device(id=device_id, project_id=_project(ingest), display_name="d", hardware_model="m")
+    ingest.devices.add(device)
+    return device
 
 
 def test_batched_telemetry_records_every_sample_with_its_own_timestamp(ingest) -> None:
@@ -141,7 +154,7 @@ def test_device_events_are_recorded(ingest) -> None:
 
 
 def test_registered_device_status_and_firmware_are_updated(ingest) -> None:
-    device = Device(project_id="p", display_name="d", hardware_model="freewili-1-og")
+    device = Device(project_id=_project(ingest), display_name="d", hardware_model="freewili-1-og")
     ingest.devices.add(device)
     _, body = _body(device_id=device.id, firmware_version="1.2.3")
     _ingest(ingest, body, f"devices/{device.id}/telemetry")
@@ -167,6 +180,7 @@ def _result_body(device_id: str, command_id: str, status: str = "succeeded") -> 
 
 
 def test_command_result_completes_the_command(ingest) -> None:
+    _register(ingest, "dev-1")
     command = DeviceCommand(project_id="p", device_id="dev-1", name="ping", requested_by="u")
     ingest.commands.add(command.mark_sent(NOW))
     _ingest(ingest, _result_body("dev-1", command.id), "devices/dev-1/responses")
@@ -176,6 +190,7 @@ def test_command_result_completes_the_command(ingest) -> None:
 
 
 def test_a_device_cannot_complete_another_devices_command(ingest) -> None:
+    _register(ingest, "dev-1")
     command = DeviceCommand(project_id="p", device_id="dev-1", name="ping", requested_by="u")
     ingest.commands.add(command.mark_sent(NOW))
     _ingest(ingest, _result_body("dev-2", command.id), "devices/dev-2/responses")

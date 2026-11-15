@@ -5,6 +5,9 @@ Run locally:  uv run uvicorn api.main:app --reload
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -25,7 +28,13 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     """``container`` replaces the adapters ``settings`` would choose (tests only)."""
     container = container or build_container(settings or Settings())
     settings = container.settings
-    app = FastAPI(title="Builderwars Platform API", version="0.1.0")
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        container.close()
+
+    app = FastAPI(title="Builderwars Platform API", version="0.1.0", lifespan=lifespan)
     app.state.container = container
 
     app.add_middleware(
