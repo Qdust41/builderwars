@@ -90,8 +90,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Lambda assets are bundled from uv.lock at synth time (lambda_bundle.py, ADR 0006).
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
       - run: pip install -r requirements.txt
-      - name: Synthesize (no deploy, no AWS credentials)
+      - name: Synthesize and bundle Lambda assets (no deploy, no AWS credentials)
         run: python app.py && CDK_CONTEXT_JSON='{"env":"prod"}' python app.py
       - name: Synth assertions
         run: python -m pytest -q tests

@@ -1,8 +1,8 @@
 # Deployment guide (prod, end to end)
 
 Everything the owner does by hand to go from an empty AWS account to a FREE-WILi board sending
-data that shows up in the web dashboard. Nothing in this repo deploys on its own: CI only
-synthesises templates. `docs/aws-deployment.md` keeps the short command list and the cost table;
+data that shows up in the web dashboard. The first deploy is by hand; after that, merging to
+`main` deploys prod through GitHub Actions (see "Deploying from GitHub Actions"). `docs/aws-deployment.md` keeps the short command list and the cost table;
 this page is the full walkthrough around it.
 
 Decisions this follows (don't re-decide them here):
@@ -122,6 +122,7 @@ Keep this shell (with `.venv` active) for steps 5-7.
 export AWS_PROFILE=builderwars-prod
 export CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 export CDK_DEFAULT_REGION=us-east-1
+export AWS_REGION=us-east-1   # required: the CDK CLI replaces CDK_DEFAULT_REGION with the SDK region
 npx aws-cdk@2 bootstrap aws://$CDK_DEFAULT_ACCOUNT/us-east-1
 ```
 
@@ -371,11 +372,36 @@ over MQTT. Before PR #10 the dump also targets `device_logs`, which prod has in 
 rows already present. `docs/log-ingestion-spec.md` describes a
 future upload path; it is not built.
 
-## Updating prod later
+## Deploying from GitHub Actions
+
+Once the first deploy is done, `.github/workflows/deploy.yml` keeps prod current: **merging to
+`main` is the review point**. After CI passes on a push to `main`, it deploys every stack, runs the
+Migrate Lambda and checks `/health` (and that `/projects` returns 401). Pull requests and other
+branches never deploy. A manual redeploy of `main`: Actions → Deploy prod → Run workflow.
+Deploys run one at a time; a newer merge waits for the running one.
+
+AWS access is keyless (GitHub OIDC). One-time setup, already done for account 516268691419:
+
+- [x] IAM OIDC provider for `token.actions.githubusercontent.com` (audience `sts.amazonaws.com`).
+- [x] IAM role `builderwars-github-deploy`, trusted only for
+      `repo:Qdust41/builderwars:ref:refs/heads/main`. Its inline policy allows only: assume the
+      `cdk-hnb659fds-*` bootstrap roles in us-east-1, describe `Builderwars-prod-*` stacks, invoke
+      the Migrate Lambda. CloudFormation makes the actual changes through the bootstrap
+      execution role.
+- [ ] GitHub: repository variable `AWS_DEPLOY_ROLE_ARN` =
+      `arn:aws:iam::516268691419:role/builderwars-github-deploy`
+      (Settings → Secrets and variables → Actions → Variables).
+- [ ] GitHub: protect `main` (require a pull request and the CI checks), since every merge goes
+      to prod.
+
+Renaming the repository or its owner breaks the trust condition: update the role's trust policy.
+
+## Updating prod by hand
 
 ```bash
 git pull
 cd infrastructure && source .venv/bin/activate
+export AWS_REGION=us-east-1 CDK_DEFAULT_REGION=us-east-1
 npx aws-cdk@2 diff -c env=prod --all
 npx aws-cdk@2 deploy -c env=prod --all
 # then step 7 again if the change added a migration (harmless if not)
@@ -391,6 +417,8 @@ Certificates don't change between deploys.
 | `cdk deploy` fails with "uv is required to bundle Lambda code" | `uv` not on `PATH` | Install uv 0.11.32, or have Docker running |
 | `cdk deploy` "SSO session expired" / `ExpiredToken` | SSO login lapsed | `aws sso login --profile builderwars-prod` |
 | Stacks named `Builderwars-dev-*` appeared | `-c env=prod` was left out | `npx aws-cdk@2 destroy -c env=dev --all`, redeploy with `-c env=prod` |
+| Stacks appeared in another region (e.g. us-east-2) | `AWS_REGION` not set; the CDK CLI used the profile's region | Destroy them there, `export AWS_REGION=us-east-1`, redeploy |
+| Deploy workflow: "Not authorized to perform sts:AssumeRoleWithWebIdentity" | run not on `main`, repo renamed, or `AWS_DEPLOY_ROLE_ARN` wrong | Check the role's trust policy and the repository variable |
 | API errors right after deploy; Lambda logs say the schema is out of date | migrations not run | Step 7 |
 | Web app: sign-in works, every call 401 | wrong pool/client id in `VITE_COGNITO_*` | Re-copy from the Identity stack outputs |
 | No verification email | spam folder, or the 50/day cap | Create the user in the Cognito console |
@@ -422,7 +450,6 @@ certificates you made in step 11 are not part of any stack: delete them in the I
   no hosted-UI domain. Needed later for web hosting on your own domain.
 - **SES:** Cognito's built-in sender is used for now.
 - **Secrets you create by hand:** none. The RDS password is generated into Secrets Manager.
-- **GitHub → AWS deploy credentials:** CI only synthesises; deploys are run by hand.
 
 ## Before real users
 

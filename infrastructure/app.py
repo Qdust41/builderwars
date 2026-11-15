@@ -39,6 +39,12 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
     realtime = RealtimeStack(
         app, f"{prefix}-Realtime", config=config, user_pool=identity.user_pool, env=env
     )
+    database = (
+        DatabaseStack(app, f"{prefix}-Database", config=config, env=env)
+        if config.enable_rds
+        else None
+    )
+    database_secret = database.secret if database else None
     api = ApiStack(
         app,
         f"{prefix}-Api",
@@ -48,6 +54,8 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         jobs_queue=messaging.jobs_queue,
         commands_queue=messaging.commands_queue,
         artifacts_bucket=storage.artifacts_bucket,
+        events_api=realtime.events_api,
+        database_secret=database_secret,
         env=env,
     )
     workers = WorkersStack(
@@ -59,6 +67,8 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         commands_queue=messaging.commands_queue,
         device_data_bucket=storage.device_data_bucket,
         artifacts_bucket=storage.artifacts_bucket,
+        iot_data_endpoint=iot.data_endpoint,
+        database_secret=database_secret,
         env=env,
     )
     stacks: dict[str, cdk.Stack] = {
@@ -70,8 +80,8 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         "api": api,
         "workers": workers,
     }
-    if config.enable_rds:
-        stacks["database"] = DatabaseStack(app, f"{prefix}-Database", config=config, env=env)
+    if database is not None:
+        stacks["database"] = database
     for stack in stacks.values():
         cdk.Tags.of(stack).add("project", "builderwars")
         cdk.Tags.of(stack).add("environment", config.name)

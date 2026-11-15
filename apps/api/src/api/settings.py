@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     # postgresql://user:password@host:5432/db. Required when REPOSITORY_BACKEND=postgres.
     database_url: SecretStr | None = None
     database_pool_max_size: int = 5
+    # AWS only (set by infrastructure/stacks/api.py). DATABASE_SECRET_ARN is the RDS-generated
+    # secret, resolved into DATABASE_URL at cold start when DATABASE_URL is not set (ADR 0007).
+    database_secret_arn: str | None = None
+    jobs_queue_url: str | None = None
+    commands_queue_url: str | None = None
+    events_http_dns: str | None = None  # AppSync Events HTTP endpoint host
+    aws_region: str | None = None  # Lambda sets AWS_REGION
 
     # AUTH_MODE=cognito. Ids, not secrets: the stack passes them as Lambda environment.
     cognito_region: str = "us-east-1"
@@ -73,6 +80,22 @@ def validate_settings(settings: Settings) -> Settings:
         if settings.repository_backend is RepositoryBackend.MEMORY:
             raise UnsafeConfigurationError(
                 f"REPOSITORY_BACKEND=memory is not allowed when APP_ENV={settings.app_env.value}"
+            )
+        # Without these a deployed API would accept jobs, commands and session events that
+        # nothing ever delivers.
+        missing = [
+            name
+            for name, value in (
+                ("JOBS_QUEUE_URL", settings.jobs_queue_url),
+                ("COMMANDS_QUEUE_URL", settings.commands_queue_url),
+                ("EVENTS_HTTP_DNS", settings.events_http_dns),
+                ("AWS_REGION", settings.aws_region),
+            )
+            if not value
+        ]
+        if missing:
+            raise UnsafeConfigurationError(
+                f"{', '.join(missing)} must be set when APP_ENV={settings.app_env.value}"
             )
     if settings.auth_mode is AuthMode.COGNITO:
         missing = [
