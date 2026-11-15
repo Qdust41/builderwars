@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 from domain.common import new_id, utcnow
+
+# A device that has said nothing for this long counts as offline, even if its last message said
+# online (the CLI was killed, the laptop slept, the network dropped). The host sends a
+# heartbeat every 30 s and telemetry every few seconds while it runs.
+STALE_AFTER = timedelta(seconds=75)
 
 
 class ConnectionStatus(StrEnum):
@@ -30,6 +35,14 @@ class Device:
     connection_status: ConnectionStatus = ConnectionStatus.UNKNOWN
     last_seen_at: datetime | None = None
     created_at: datetime = field(default_factory=utcnow)
+
+    def status_at(self, now: datetime, *, stale_after: timedelta = STALE_AFTER) -> ConnectionStatus:
+        """``connection_status``, except that a silent "online" device reads as offline."""
+        if self.connection_status is ConnectionStatus.ONLINE and (
+            self.last_seen_at is None or now - self.last_seen_at > stale_after
+        ):
+            return ConnectionStatus.OFFLINE
+        return self.connection_status
 
     def observed(
         self,

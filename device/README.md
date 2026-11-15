@@ -30,7 +30,8 @@ account and the CLI sends the board's telemetry and logs to the API as you (ADR 
 ```bash
 builderwars login
 builderwars devices
-builderwars run --cloud --device-id dev_... /dev/ttyACM0   # leave out the port for simulated sensors
+builderwars sensors dev_... --read                         # read the device's sensors once
+builderwars run --cloud --device-id dev_... /dev/ttyACM0   # or --simulate without a board
 builderwars upload dev-local --device-id dev_...
 builderwars logs dev_... --since 2026-11-14 -o bench.csv
 ```
@@ -103,9 +104,11 @@ cloud's `device_logs`, and re-loading a dump skips rows already present.
 | `connectivity/buffer.py` | Offline buffer (bounded, RAM, drop-oldest) | done; persistence TODO |
 | `hardware/freewili.py` | FREE-WILi over USB via `freewili`; unplug -> `BoardUnavailableError` | done, untested on hardware; readings are placeholders |
 | `hardware/sensors.py` | `SensorReader` protocol, simulated sensors | done |
+| `hardware/configured.py` | Reads the sensors defined on the device page (I2C/SPI/UART/GPIO) through the FREE-WILi, each at its own rate; `--simulate` counterpart (ADR 0010) | done, tested with fakes, not yet on hardware |
 | `logging/` | `logging.Handler` -> protocol `log` messages | done |
 | `commands/` | Allowlisted command dispatcher (`ping`, `get_uptime`) | done; no shell command, ever |
 | `firmware.py` | sha256 verification before flashing; UF2 flasher | verify done; flashing stub (spec 09) |
 | `cli.py` | The `builderwars` command (board checks, `run`, `sim`, local CSVs, cloud commands) | done |
+| `cloud/setup.py` | Downloads sensor definitions; reports the laptop and FREE-WILi to the device page | done |
 | `cloud/` | Sign-in and token file (`account.py`), API upload transport with a 1000-message buffer (`transport.py`), reading saved files for `upload` (`files.py`), log-history CSV export (`logs.py`) | done |
 | `main.py` | Runtime loop; `status: degraded` + events while the board is unplugged | done |

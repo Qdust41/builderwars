@@ -4,6 +4,7 @@ import {
   formatTick,
   formatValue,
   niceTicks,
+  type MetricMeta,
   type MetricSeries,
 } from "../device/telemetry";
 
@@ -11,6 +12,8 @@ interface Props {
   series: MetricSeries;
   /** Shared time domain so every small multiple lines up. */
   domain: [number, number];
+  /** Names and units from the device's sensor definitions. */
+  meta?: Record<string, MetricMeta>;
 }
 
 const HEIGHT = 156;
@@ -23,11 +26,11 @@ const timeFmt = new Intl.DateTimeFormat(undefined, {
 });
 
 /** One reading over time: a 2px line (a step line for on/off readings) with a crosshair. */
-export function MetricChart({ series, domain }: Props) {
+export function MetricChart({ series, domain, meta }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(320);
   const [hover, setHover] = useState<number>();
-  const { label, unit } = describeMetric(series.name);
+  const { label, unit } = describeMetric(series.name, meta);
 
   useLayoutEffect(() => {
     const el = wrap.current;

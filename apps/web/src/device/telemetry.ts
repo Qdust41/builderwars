@@ -84,7 +84,17 @@ function kindOf(value: TelemetryValue): MetricKind {
 }
 
 /** "temperature_c" -> { label: "Temperature", unit: "°C" }. Unknown suffixes stay in the label. */
-export function describeMetric(name: string): { label: string; unit: string } {
+export interface MetricMeta {
+  label: string;
+  unit: string;
+}
+
+/** Labels from the device's sensor definitions win over guessing from the reading name. */
+export function describeMetric(
+  name: string,
+  known?: Record<string, MetricMeta>,
+): { label: string; unit: string } {
+  if (known?.[name]) return known[name];
   const units: [string, string][] = [
     ["_pct", "%"],
     ["_c", "°C"],
@@ -148,4 +158,18 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
     if (v >= max) break;
   }
   return ticks;
+}
+
+/** Mirrors domain.devices.STALE_AFTER: a device silent for this long reads as offline. */
+export const STALE_AFTER_MS = 75_000;
+
+/** The device's status, counting a silent "online" device as offline. */
+export function effectiveStatus(
+  device: { connection_status: "online" | "offline" | "unknown"; last_seen_at: string | null } | undefined,
+  now = Date.now(),
+): "online" | "offline" | "unknown" {
+  if (!device) return "unknown";
+  if (device.connection_status !== "online") return device.connection_status;
+  const seen = device.last_seen_at ? Date.parse(device.last_seen_at) : NaN;
+  return Number.isFinite(seen) && now - seen <= STALE_AFTER_MS ? "online" : "offline";
 }

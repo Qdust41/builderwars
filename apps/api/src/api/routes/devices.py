@@ -17,6 +17,7 @@ from api.schemas import (
     CommandCreate,
     CommandOut,
     DeviceChannelOut,
+    DeviceCommandsClaimOut,
     DeviceCreate,
     DeviceLogEntryOut,
     DeviceLogHistoryOut,
@@ -77,7 +78,7 @@ def get_device_status(device_id: str, user: UserDep, service: DeviceServiceDep) 
     device = service.get_device(user_id=user.user_id, device_id=device_id)
     return DeviceStatusOut(
         device_id=device.id,
-        connection_status=device.connection_status,
+        connection_status=device.status_at(datetime.now(UTC)),
         firmware_version=device.firmware_version,
         last_seen_at=device.last_seen_at,
     )
@@ -108,6 +109,18 @@ def send_command(
         args=body.args,
     )
     return CommandOut.of(command)
+
+
+@router.post("/devices/{device_id}/commands/claim", response_model=DeviceCommandsClaimOut)
+def claim_device_commands(
+    device_id: str, user: UserDep, service: CommandServiceDep
+) -> DeviceCommandsClaimOut:
+    """Pending commands for a board streamed by the ``builderwars`` CLI (ADR 0009 has no MQTT
+    for it). Polled by ``run --cloud``; each message is ``{topic, payload}`` exactly as the
+    dispatcher would publish it. Answer with ``command_result`` via ``/messages``."""
+    return DeviceCommandsClaimOut(
+        messages=service.claim_for_device(user_id=user.user_id, device_id=device_id)
+    )
 
 
 @router.get("/commands/{command_id}", response_model=CommandOut)

@@ -16,6 +16,13 @@ from board_runtime.cloud.logs import (
     iter_log_history,
     write_log_csv,
 )
+from board_runtime.cloud.setup import (
+    SensorList,
+    bridge_report,
+    fetch_sensors,
+    host_report,
+    report_connection,
+)
 from board_runtime.cloud.transport import CloudApiTransport
 
 __all__ = [
@@ -28,9 +35,14 @@ __all__ = [
     "CloudSession",
     "NotLoggedInError",
     "ReadResult",
+    "SensorList",
+    "bridge_report",
     "export_logs_csv",
+    "fetch_sensors",
+    "host_report",
     "iter_log_history",
     "login",
     "read_messages",
+    "report_connection",
     "write_log_csv",
 ]

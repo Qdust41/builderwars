@@ -8,9 +8,15 @@ import type {
   Job,
   JobType,
   Project,
+  Sensor,
+  SensorInput,
+  SensorPreset,
   Session,
   SessionChannel,
+  TargetBoard,
+  TargetBoardInput,
   TelemetrySample,
+  DeviceSetup,
 } from "./types";
 
 import { auth } from "../auth";
@@ -44,7 +50,11 @@ export class ApiClient {
     private readonly fetchImpl: Fetch = (input, init) => fetch(input, init),
   ) {}
 
-  private async request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: "GET" | "POST" | "PUT" | "DELETE",
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const headers: Record<string, string> = { ...(await this.auth()) };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -62,6 +72,7 @@ export class ApiClient {
       }
       throw new ApiError(res.status, detail);
     }
+    if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
   }
 
@@ -115,6 +126,38 @@ export class ApiClient {
   getSession = (id: string) => this.request<Session>("GET", `/sessions/${encodeURIComponent(id)}`);
   getSessionChannel = (id: string) =>
     this.request<SessionChannel>("GET", `/sessions/${encodeURIComponent(id)}/channel`);
+  /** Laptop, FREE-WILi, target boards and sensors behind a device. */
+  getDeviceSetup = (deviceId: string) =>
+    this.request<DeviceSetup>("GET", `/devices/${encodeURIComponent(deviceId)}/setup`);
+  addBoard = (deviceId: string, board: TargetBoardInput) =>
+    this.request<TargetBoard>("POST", `/devices/${encodeURIComponent(deviceId)}/boards`, board);
+  updateBoard = (deviceId: string, boardId: string, board: TargetBoardInput) =>
+    this.request<TargetBoard>(
+      "PUT",
+      `/devices/${encodeURIComponent(deviceId)}/boards/${encodeURIComponent(boardId)}`,
+      board,
+    );
+  /** Also removes the board's sensors. */
+  deleteBoard = (deviceId: string, boardId: string) =>
+    this.request<void>(
+      "DELETE",
+      `/devices/${encodeURIComponent(deviceId)}/boards/${encodeURIComponent(boardId)}`,
+    );
+  addSensor = (deviceId: string, sensor: SensorInput) =>
+    this.request<Sensor>("POST", `/devices/${encodeURIComponent(deviceId)}/sensors`, sensor);
+  updateSensor = (deviceId: string, sensorId: string, sensor: SensorInput) =>
+    this.request<Sensor>(
+      "PUT",
+      `/devices/${encodeURIComponent(deviceId)}/sensors/${encodeURIComponent(sensorId)}`,
+      sensor,
+    );
+  deleteSensor = (deviceId: string, sensorId: string) =>
+    this.request<void>(
+      "DELETE",
+      `/devices/${encodeURIComponent(deviceId)}/sensors/${encodeURIComponent(sensorId)}`,
+    );
+  /** Common parts (TMP102, INA219, ...) with datasheet settings. */
+  listSensorPresets = () => this.request<SensorPreset[]>("GET", "/sensor-presets");
   createJob = (projectId: string, jobType: JobType) =>
     this.request<Job>("POST", `/projects/${encodeURIComponent(projectId)}/jobs`, {
       job_type: jobType,

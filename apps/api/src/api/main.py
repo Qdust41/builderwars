@@ -13,7 +13,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.dependencies import Container, build_container
-from api.routes import devices, events, health, jobs, local_dev, projects, sessions
+from api.routes import (
+    device_setup,
+    devices,
+    events,
+    health,
+    jobs,
+    local_dev,
+    projects,
+    sessions,
+)
 from api.settings import Settings
 from application.services import CommandQueueFullError
 from domain.common import (
@@ -68,6 +77,7 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
         health.router,
         projects.router,
         devices.router,
+        device_setup.router,
         sessions.router,
         events.router,
         jobs.router,

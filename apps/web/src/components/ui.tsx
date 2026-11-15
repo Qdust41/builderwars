@@ -128,7 +128,23 @@ export function Skeleton({ className = "" }: { className?: string }) {
 export function errorText(err: unknown): string {
   const s = (err instanceof Error ? err.message : String(err)).replace(/^\w*Error:\s*/, "");
   // ApiError carries the API's JSON `detail`; a plain string detail arrives quoted.
-  return /^".*"$/.test(s) ? s.slice(1, -1) : s;
+  if (/^".*"$/.test(s)) return s.slice(1, -1);
+  // A 422 detail is a list of {loc, msg}: show "bus.address: must be ≤ 127" lines.
+  if (s.startsWith("[")) {
+    try {
+      const items = JSON.parse(s) as { loc?: (string | number)[]; msg?: string }[];
+      return items
+        .map((i) => {
+          const where = (i.loc ?? []).filter((p) => p !== "body" && typeof p === "string");
+          const msg = (i.msg ?? "").replace(/^Value error, /, "");
+          return where.length ? `${where.join(".")}: ${msg}` : msg;
+        })
+        .join("; ");
+    } catch {
+      /* not JSON after all */
+    }
+  }
+  return s;
 }
 
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });

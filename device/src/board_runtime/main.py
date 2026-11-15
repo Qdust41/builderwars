@@ -138,7 +138,8 @@ class BoardRuntime:
                 log.warning("hint: %s", exc.hint)
         else:
             self._set_board_available(True)
-            batch = self.batcher.add(readings, at=datetime.now(UTC), now=now)
+            # Configured sensors poll at their own rates, so some ticks have nothing due.
+            batch = self.batcher.add(readings, at=datetime.now(UTC), now=now) if readings else None
             if batch is not None:
                 self.send(MessageType.TELEMETRY, batch)
         if self.batcher.due(now):
@@ -194,6 +195,7 @@ class BoardRuntime:
         if decoded.envelope.device_id != self.config.device_id:
             log.warning("ignoring command addressed to another device")
             return
+        app_log.info("received command %s from the dashboard", decoded.payload.name)
         result = self.dispatcher.dispatch(decoded.payload)
         self.send(MessageType.COMMAND_RESULT, result.model_dump(mode="json"))
         app_log.info("command %s: %s", decoded.payload.name, result.status.value)

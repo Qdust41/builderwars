@@ -1,3 +1,8 @@
+from board_runtime.hardware.configured import (
+    ConfiguredSensors,
+    SensorReadError,
+    SimulatedConfiguredSensors,
+)
 from board_runtime.hardware.freewili import (
     BoardInfo,
     FreeWiliNotInstalledError,
@@ -9,9 +14,12 @@ from board_runtime.hardware.sensors import BoardUnavailableError, SensorReader, 
 __all__ = [
     "BoardInfo",
     "BoardUnavailableError",
+    "ConfiguredSensors",
     "FreeWiliNotInstalledError",
     "FreeWiliSensors",
     "PortProblem",
+    "SensorReadError",
     "SensorReader",
+    "SimulatedConfiguredSensors",
     "SimulatedSensors",
 ]

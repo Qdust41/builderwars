@@ -215,7 +215,10 @@ def test_registered_device_gets_live_telemetry_log_and_command_events(ingest) ->
     ingest.commands.add(command.mark_sent(NOW))
     _ingest(ingest, _result_body(device.id, command.id), f"{topic}/responses")
 
-    events = ingest.realtime.events
+    status, *events = ingest.realtime.events
+    # The first message brings a never-seen device online, once.
+    assert status.type.value == "device.status_changed"
+    assert status.data == {"connection_status": "online", "last_seen_at": NOW.isoformat()}
     assert [e.type.value for e in events] == [
         "device.telemetry",
         "device.log",
@@ -245,8 +248,12 @@ def test_unregistered_devices_and_repeated_results_publish_nothing(ingest) -> No
     ingest.commands.add(command.mark_sent(NOW))
     _ingest(ingest, _result_body("dev-1", command.id), "devices/dev-1/responses")
     _ingest(ingest, _result_body("dev-1", command.id, "failed"), "devices/dev-1/responses")
-    # Only the first result changes the command, and only it is announced.
-    assert [e.type.value for e in ingest.realtime.events] == ["device.command.updated"]
+    # Only the first result changes the command, and only it is announced (dev-1 coming
+    # online is announced once too).
+    assert [e.type.value for e in ingest.realtime.events] == [
+        "device.command.updated",
+        "device.status_changed",
+    ]
     assert ingest.commands.get(command.id).status is CommandStatus.SUCCEEDED
 
 
@@ -262,7 +269,7 @@ def test_an_event_that_breaks_the_contract_is_dropped_not_raised(ingest) -> None
     result = _ingest(ingest, body, "devices/dev-1/responses")
     assert result.outcome is IngestOutcome.PROCESSED
     assert ingest.commands.get(command.id).status is CommandStatus.SUCCEEDED
-    assert ingest.realtime.events == []
+    assert [e.type.value for e in ingest.realtime.events] == ["device.status_changed"]
 
 
 def test_recent_reads_return_the_newest_records_oldest_first(ingest) -> None:

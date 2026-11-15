@@ -28,13 +28,16 @@ from application.ports import CommandQueue, JobQueue, RealtimePublisher, UserDir
 from application.ports.repositories import (
     DeviceCommandRepository,
     DeviceRepository,
+    DeviceSetupRepository,
     JobRepository,
     MembershipRepository,
     ProcessedMessageStore,
     ProjectRepository,
     RawDeviceMessageStore,
+    SensorRepository,
     SequenceTracker,
     SessionRepository,
+    TargetBoardRepository,
     TelemetryRepository,
 )
 from application.services import (
@@ -43,6 +46,7 @@ from application.services import (
     DeviceEventPublisher,
     DeviceMessageIngestService,
     DeviceService,
+    DeviceSetupService,
     DeviceUploadService,
     JobService,
     ProjectService,
@@ -92,6 +96,7 @@ class Container:
     commands: CommandService
     telemetry: TelemetryQueryService
     uploads: DeviceUploadService
+    setups: DeviceSetupService
     local: LocalDevBridge | None = None
     pool: ConnectionPool | None = None  # closed on app shutdown
 
@@ -112,9 +117,13 @@ class _Repositories:
     processed: ProcessedMessageStore
     sequences: SequenceTracker
     raw_messages: RawDeviceMessageStore
+    setups: DeviceSetupRepository
+    boards: TargetBoardRepository
+    sensors: SensorRepository
 
 
 def _memory_repositories() -> _Repositories:
+    sensors = memory.InMemorySensorRepository()
     return _Repositories(
         projects=memory.InMemoryProjectRepository(),
         memberships=memory.InMemoryMembershipRepository(),
@@ -126,6 +135,9 @@ def _memory_repositories() -> _Repositories:
         processed=memory.InMemoryProcessedMessageStore(),
         sequences=memory.InMemorySequenceTracker(),
         raw_messages=memory.InMemoryRawMessageStore(),
+        setups=memory.InMemoryDeviceSetupRepository(),
+        boards=memory.InMemoryTargetBoardRepository(sensors),
+        sensors=sensors,
     )
 
 
@@ -152,6 +164,9 @@ def _postgres_repositories(settings: Settings) -> tuple[_Repositories, Connectio
             processed=repos.processed,
             sequences=repos.sequences,
             raw_messages=repos.raw_messages,
+            setups=repos.setups,
+            boards=repos.boards,
+            sensors=repos.sensors,
         ),
         pool,
     )
@@ -277,7 +292,14 @@ def build_container(
         devices=DeviceService(repos.devices, authorizer),
         sessions=SessionService(repos.sessions, repos.devices, authorizer, messaging.realtime),
         jobs=JobService(repos.jobs, repos.devices, messaging.job_queue, authorizer),
-        commands=CommandService(repos.commands, repos.devices, messaging.command_queue, authorizer),
+        commands=CommandService(
+            repos.commands,
+            repos.devices,
+            messaging.command_queue,
+            authorizer,
+            # Claims by the CLI and lazy time-outs update viewers live.
+            events=DeviceEventPublisher(messaging.realtime),
+        ),
         telemetry=TelemetryQueryService(repos.devices, repos.telemetry, authorizer),
         # Board data uploaded by signed-in members (builderwars CLI); fans out live through
         # the same realtime publisher as everything else (AppSync Events in AWS).
@@ -290,6 +312,9 @@ def build_container(
             sequences=repos.sequences,
             commands=repos.commands,
             realtime=messaging.realtime,
+        ),
+        setups=DeviceSetupService(
+            repos.devices, repos.setups, repos.boards, repos.sensors, authorizer
         ),
         local=local,
         pool=pool,
@@ -384,3 +409,10 @@ JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 CommandServiceDep = Annotated[CommandService, Depends(get_command_service)]
 TelemetryServiceDep = Annotated[TelemetryQueryService, Depends(get_telemetry_service)]
 DeviceUploadServiceDep = Annotated[DeviceUploadService, Depends(get_device_upload_service)]
+
+
+def get_device_setup_service(container: ContainerDep) -> DeviceSetupService:
+    return container.setups
+
+
+DeviceSetupServiceDep = Annotated[DeviceSetupService, Depends(get_device_setup_service)]

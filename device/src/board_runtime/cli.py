@@ -10,7 +10,9 @@
     builderwars to-sql sim-001          # asks [Y/n], writes sim-001.sql next to the CSV
     builderwars login                   # sign in to your Builderwars account
     builderwars devices                 # your registered devices and their ids
-    builderwars run --cloud --device-id dev_...   # stream a board live to the dashboard
+    builderwars run --cloud --device-id dev_...   # read the device's sensors, stream live
+    builderwars run --cloud --simulate --device-id dev_...   # same, made-up values, no board
+    builderwars sensors dev_... --read  # list a device's sensors and read each once
     builderwars upload run.jsonl --device-id dev_...  # upload saved telemetry/logs
     builderwars logs dev_...            # download a device's cloud logs to dev_...-logs.csv
 
@@ -27,8 +29,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import dataclasses
 import logging
 import os
+import shlex
 import sys
 import time
 import traceback
@@ -43,6 +47,11 @@ from board_runtime.config import (
     TransportKind,
     default_state_dir,
     log_csv_path_from_env,
+)
+from board_runtime.hardware.configured import (
+    ConfiguredSensors,
+    SensorReadError,
+    SimulatedConfiguredSensors,
 )
 from board_runtime.hardware.freewili import (
     BoardInfo,
@@ -61,7 +70,7 @@ from board_runtime.hardware.ports import (
     permission_hint,
     same_port,
 )
-from board_runtime.hardware.sensors import BoardUnavailableError
+from board_runtime.hardware.sensors import BoardUnavailableError, SimulatedSensors
 from board_runtime.logging import CSV_COLUMNS
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_INTERRUPTED = 0, 1, 2, 130
@@ -460,8 +469,21 @@ def cmd_home(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cli_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("bw-board-runtime")
+    except Exception:
+        return "dev"
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     port = normalize_port(args.port)
+    simulate = bool(getattr(args, "simulate", False))
+    if simulate and port:
+        _error("--simulate and a port don't go together", "drop one of them")
+        return EXIT_USAGE
     env = dict(os.environ)
     env.setdefault("BUILDERWARS_STATE_DIR", str(args.state_dir))
     if port:
@@ -469,7 +491,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     device_id = args.device_id or env.get("DEVICE_ID")
     if getattr(args, "cloud", False):
         env["DEVICE_TRANSPORT"] = TransportKind.CLOUD.value
-    if not device_id and (env.get("DEVICE_TRANSPORT") or "").strip().lower() == TransportKind.CLOUD:
+    cloud = (env.get("DEVICE_TRANSPORT") or "").strip().lower() == TransportKind.CLOUD
+    if simulate:
+        env["DEVICE_SENSORS"] = SensorKind.SIMULATED.value
+        env.pop("DEVICE_PORT", None)
+    elif cloud and not env.get("DEVICE_SENSORS"):
+        # Streaming to the dashboard reads the real FREE-WILi; simulation must be asked for.
+        env["DEVICE_SENSORS"] = SensorKind.FREEWILI.value
+    if not device_id and cloud:
         _error(
             "--cloud needs the registered device id",
             "pass --device-id dev_... (`builderwars devices` lists yours)",
@@ -499,42 +528,171 @@ def cmd_run(args: argparse.Namespace) -> int:
         TransportKind.LOCAL_API: config.local_api_url,
         TransportKind.STDOUT: "stdout",
     }.get(config.transport, "")
+    session: Any = None
+    sensor_list: Any = None
     if config.transport is TransportKind.CLOUD:
         from urllib.parse import quote
 
-        from board_runtime.cloud import AccountError
+        from board_runtime.cloud import AccountError, fetch_sensors
 
         try:  # fail now, not after the board is connected, if the id or sign-in is wrong
             session = _session(config.state_dir or args.state_dir)
             device = session.request("GET", f"/devices/{quote(config.device_id, safe='')}")
+            sensor_list = fetch_sensors(session, config.device_id)
         except AccountError as exc:
             return _account_error(exc)
         destination = (
             f"Builderwars ({device['display_name']}, as {session.account.email}); "
             "the web dashboard shows them live"
         )
+        for key, why in sensor_list.skipped:
+            print(f"skipping sensor {key}: {why} (update the CLI?)", file=sys.stderr)
 
-    sensors = None
+    specs = [s for s in (sensor_list.sensors if sensor_list else []) if s.enabled]
+    sensors: Any = None
+    board_info: BoardInfo | None = None
     if config.sensors is SensorKind.FREEWILI:
-        sensors = FreeWiliSensors(port=config.serial_port)
+        board = FreeWiliSensors(port=config.serial_port)
         try:
-            sensors.connect()  # fail fast here instead of looping in "degraded"
+            board.connect()  # fail fast here instead of looping in "degraded"
         except FreeWiliNotInstalledError as exc:
             _error("the 'freewili' Python package is not installed", exc.hint)
             return EXIT_USAGE
         except BoardUnavailableError as exc:
-            _error(str(exc), exc.hint)
+            hint = exc.hint or ""
+            if cloud:
+                hint += "\nno board at hand? `--simulate` sends made-up values instead"
+            _error(str(exc), hint.strip() or None)
             return EXIT_FAILED
-        assert sensors.info is not None
-        print(f"connected to {sensors.info.describe()}", file=sys.stderr)
+        board_info = board.info
+        assert board_info is not None
+        print(f"connected to {board_info.describe()}", file=sys.stderr)
+        if specs:
+            from board_runtime.cloud import fetch_sensors
+
+            sensors = ConfiguredSensors(
+                specs,
+                board,
+                refresh=lambda: fetch_sensors(session, config.device_id).sensors,
+            )
+            source = "freewili"
+        else:
+            sensors = board
+            source = "freewili-gpio"
+            if cloud:
+                print(
+                    "no sensors are defined for this device yet: sending the FREE-WILi's own "
+                    "pin levels.\nAdd target boards and sensors on the device page; they are "
+                    "picked up within 30 s.",
+                    file=sys.stderr,
+                )
     else:
-        print("using simulated sensors (pass a port to use a real board)", file=sys.stderr)
+        source = "simulated"
+        if specs:
+            sensors = SimulatedConfiguredSensors(specs)
+            print("SIMULATED values for this device's sensors (no board is read)", file=sys.stderr)
+        else:
+            sensors = SimulatedSensors()
+            hint = "" if simulate else " (pass a port to use a real board)"
+            print(f"using simulated sensors{hint}", file=sys.stderr)
+
+    if specs:
+        width = max(len(s.key) for s in specs) + 2
+        print(f"reading {len(specs)} sensor(s):", file=sys.stderr)
+        for spec in specs:
+            board_name = sensor_list.boards.get(spec.key, "") if sensor_list else ""
+            where = f"  [{board_name}]" if board_name else ""
+            every = f"every {spec.poll_interval_s:g} s"
+            print(f"  {spec.key:<{width}}{describe_bus(spec)}, {every}{where}", file=sys.stderr)
+        fastest = min(s.poll_interval_s for s in specs)
+        if args.interval is None and fastest < config.sample_interval_s:
+            config = dataclasses.replace(config, sample_interval_s=fastest)
+
+    if session is not None:
+        from board_runtime.cloud import bridge_report, host_report, report_connection
+
+        report_connection(
+            session,
+            config.device_id,
+            host_report(cli_version=_cli_version(), sensor_source=source),
+            bridge_report(board_info, library_version=_freewili_version()),
+        )
     print(
         f"device id {config.device_id}; messages go to {destination}; Ctrl+C to stop",
         file=sys.stderr,
     )
     run_loop(config, samples=args.samples, sensors=sensors)
     return EXIT_OK
+
+
+def describe_bus(spec: Any) -> str:
+    """One line saying where a sensor is read, e.g. ``I2C 0x48 reg 0x00 (2 bytes)``."""
+    bus = spec.bus
+    if bus.protocol == "i2c":
+        setup = f", {len(bus.setup_writes)} setup write(s)" if bus.setup_writes else ""
+        return f"I2C 0x{bus.address:02X} reg 0x{bus.reg:02X} ({bus.length} bytes{setup})"
+    if bus.protocol == "spi":
+        sent = " ".join(f"{b:02X}" for b in bus.write)
+        return (
+            f"SPI send [{sent}], keep bytes {bus.read_offset}..{bus.read_offset + bus.length - 1}"
+        )
+    if bus.protocol == "uart":
+        return f"UART {bus.command!r}" if bus.command else "UART (listen)"
+    return f"GPIO{bus.pin}"
+
+
+def cmd_sensors(args: argparse.Namespace) -> int:
+    """List a device's sensors; with --read, read each once through the FREE-WILi."""
+    from board_runtime.cloud import AccountError, fetch_sensors
+
+    try:
+        session = _session(args.state_dir)
+        device_id, name = _resolve_device(session, args.device)
+        listed = fetch_sensors(session, device_id)
+    except AccountError as exc:
+        return _account_error(exc)
+    for key, why in listed.skipped:
+        print(f"skipping sensor {key}: {why} (update the CLI?)", file=sys.stderr)
+    if not listed.sensors:
+        print(f"{name} has no sensors yet. Add target boards and sensors on its device page.")
+        return EXIT_OK
+    width = max(len(s.key) for s in listed.sensors) + 2
+    if not args.read:
+        print(f"Sensors of {name} ({device_id}):")
+        for spec in listed.sensors:
+            state = "" if spec.enabled else "  (disabled)"
+            unit = f" [{spec.unit}]" if spec.unit else ""
+            board_name = listed.boards.get(spec.key)
+            where = f"  on {board_name}" if board_name else ""
+            print(f"  {spec.key:<{width}}{describe_bus(spec)}{unit}{where}{state}")
+        print(f"Read them once on the board: builderwars sensors {shlex.quote(args.device)} --read")
+        return EXIT_OK
+
+    board = FreeWiliSensors(port=normalize_port(args.port))
+    try:
+        device = board.connect()
+    except FreeWiliNotInstalledError as exc:
+        _error("the 'freewili' Python package is not installed", exc.hint)
+        return EXIT_USAGE
+    except BoardUnavailableError as exc:
+        _error(str(exc), exc.hint)
+        return EXIT_FAILED
+    assert board.info is not None
+    print(f"reading through {board.info.describe()}")
+    reader = ConfiguredSensors(listed.sensors, board)
+    failed = 0
+    try:
+        for spec in listed.sensors:
+            try:
+                value = reader.read_one(device, spec)
+            except (SensorReadError, ValueError) as exc:
+                failed += 1
+                print(f"  {spec.key:<{width}}FAILED: {exc}")
+                continue
+            print(f"  {spec.key:<{width}}{value}{' ' + spec.unit if spec.unit else ''}")
+    finally:
+        board.close()
+    return EXIT_FAILED if failed else EXIT_OK
 
 
 def cmd_sim(args: argparse.Namespace) -> int:
@@ -904,9 +1062,11 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="run the host runtime (sample, batch, publish) on a board or simulated sensors",
         description=(
-            "Run the full host runtime. With a port it uses that FREE-WILi; without one it "
-            "follows DEVICE_SENSORS / DEVICE_PORT (default: simulated). Other settings come "
-            "from the DEVICE_* / IOT_* environment variables (see device/README.md)."
+            "Run the full host runtime. With --cloud it downloads the sensors defined on the "
+            "device page and reads them through the FREE-WILi (the given port, or the first "
+            "one found); --simulate sends made-up values instead. Without --cloud, a port "
+            "means that FREE-WILi's own pins and no port means simulated values. Other "
+            "settings come from the DEVICE_* / IOT_* environment variables (device/README.md)."
         ),
     )
     p_run.add_argument("port", nargs="?", help="FREE-WILi serial port, e.g. /dev/ttyACM0")
@@ -916,7 +1076,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--cloud",
         action="store_true",
-        help="send to Builderwars as the signed-in user (`builderwars login`); live dashboard",
+        help="send to Builderwars as the signed-in user (`builderwars login`); live dashboard. "
+        "Reads the sensors defined on the device page through the FREE-WILi",
+    )
+    p_run.add_argument(
+        "--simulate",
+        action="store_true",
+        help="no hardware: send made-up values (for the device's defined sensors, if any)",
     )
     p_run.set_defaults(func=cmd_run)
 
@@ -971,6 +1137,18 @@ def build_parser() -> argparse.ArgumentParser:
         "devices", parents=[common], help="list the devices in your projects, with their ids"
     )
     p_devices.set_defaults(func=cmd_devices)
+
+    p_sensors = sub.add_parser(
+        "sensors",
+        parents=[common],
+        help="list a device's sensors (defined on the device page); --read reads each once",
+    )
+    p_sensors.add_argument("device", help="device id or name (`builderwars devices`)")
+    p_sensors.add_argument(
+        "--read", action="store_true", help="read every sensor once through the FREE-WILi"
+    )
+    p_sensors.add_argument("--port", help="FREE-WILi serial port (default: first board found)")
+    p_sensors.set_defaults(func=cmd_sensors)
 
     p_upload = sub.add_parser(
         "upload",

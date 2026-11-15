@@ -23,3 +23,21 @@ export type CommandArg = DeviceCommand["args"][string];
 export type TelemetrySample = Schemas["TelemetrySampleOut"];
 export type TelemetryValue = TelemetrySample["readings"][string];
 export type DeviceLogEntry = Schemas["DeviceLogEntryOut"];
+
+// Test setup: laptop -> FREE-WILi -> up to 4 target boards, and their sensors.
+export type DeviceSetup = Schemas["DeviceSetupOut"];
+export type HostReport = Schemas["HostReport"];
+export type BridgeReport = Schemas["BridgeReport"];
+export type TargetBoard = Schemas["TargetBoardOut"];
+export type TargetBoardInput = Schemas["TargetBoardIn"];
+export type Sensor = Schemas["SensorOut"];
+export type SensorInput = Schemas["SensorIn"];
+export type SensorBus = SensorInput["bus"];
+export type SensorDecode = Schemas["SensorDecode"];
+export type SensorDataType = SensorDecode["data_type"];
+export type SensorProtocol = SensorBus["protocol"];
+export type I2CBus = Schemas["I2CBus"];
+export type SPIBus = Schemas["SPIBus"];
+export type UARTBus = Schemas["UARTBus"];
+export type GPIOBus = Schemas["GPIOBus"];
+export type SensorPreset = Schemas["SensorPreset"];

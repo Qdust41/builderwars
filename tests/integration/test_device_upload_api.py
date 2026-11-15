@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import UTC, datetime
+import logging
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +19,10 @@ from api.settings import AppEnv, Settings
 from board_runtime.cloud import Account, CloudApiTransport, CloudSession, login, read_messages
 from board_runtime.config import DeviceConfig, TransportKind
 from board_runtime.hardware import SimulatedSensors
-from board_runtime.logging import CsvLogSink
-from board_runtime.main import BoardRuntime
+from board_runtime.logging import CsvLogSink, DeviceLogForwarder
+from board_runtime.main import BoardRuntime, app_log
 from device_protocol import DeviceEnvelope, MessageType, encode_message, topic_for_message
+from domain.devices import ConnectionStatus
 
 pytestmark = pytest.mark.integration
 
@@ -80,7 +83,11 @@ def test_uploaded_messages_are_stored_and_published_live(client: TestClient) -> 
 
     channel = client.get(f"/devices/{did}/channel", headers=_as("alice")).json()["channel"]
     published = [e for e in _hub(client).published if e.channel == channel]
-    assert [e.type.value for e in published] == ["device.telemetry", "device.log"]
+    assert [e.type.value for e in published] == [
+        "device.status_changed",  # the device came online
+        "device.telemetry",
+        "device.log",
+    ]
 
     # Uploading the same messages again (a retry, or a file that overlaps) stores nothing new.
     again = client.post(
@@ -310,3 +317,112 @@ def test_cli_logs_downloads_the_cloud_history_to_csv(
     assert cli.main(["--state-dir", str(tmp_path), "logout"]) == 0
     assert cli.main(["--state-dir", str(tmp_path), "logs", did, "--force"]) == 1
     assert "builderwars login" in capsys.readouterr().err
+
+
+def test_dashboard_commands_reach_a_cli_board_and_status_follows_the_run(
+    client: TestClient, tmp_path: Path
+) -> None:
+    pid, did = _device(client)
+    send = _send_via(client)
+    login(
+        api_url="http://localhost:8000/",
+        email="alice",
+        password=lambda: pytest.fail("no password in dev mode"),
+        new_password=lambda: "",
+        state_dir=tmp_path,
+        send=send,
+    )
+    session = CloudSession.load(tmp_path, send=send)
+    config = DeviceConfig(
+        device_id=did,
+        hardware_model="freewili",
+        firmware_version="1.0.0",
+        transport=TransportKind.CLOUD,
+    )
+    transport = CloudApiTransport(session, did, poll_interval_s=None)  # polled by hand below
+    runtime = BoardRuntime(config, transport, SimulatedSensors(seed=1))
+    forwarder = DeviceLogForwarder(runtime.send_log)  # as run_loop does
+    app_log.addHandler(forwarder)
+    app_log.setLevel(logging.INFO)
+
+    assert client.get(f"/devices/{did}", headers=_as("alice")).json()["connection_status"] == (
+        "unknown"
+    )
+    runtime.start()
+    assert client.get(f"/devices/{did}", headers=_as("alice")).json()["connection_status"] == (
+        "online"
+    )
+
+    sent = client.post(
+        f"/projects/{pid}/devices/{did}/commands", json={"name": "ping"}, headers=_as("alice")
+    ).json()
+    assert sent["status"] == "queued"
+    assert transport.poll_commands() == 1
+    assert transport.poll_commands() == 0  # answered: nothing pending any more
+    command = client.get(f"/commands/{sent['id']}", headers=_as("alice")).json()
+    assert command["status"] == "succeeded"
+    assert command["output"] == {"pong": True}
+    messages = [
+        e["message"] for e in client.get(f"/devices/{did}/logs", headers=_as("alice")).json()
+    ]
+    assert "received command ping from the dashboard" in messages
+    assert "command ping: succeeded" in messages
+    updates = [
+        e.data["status"]
+        for e in _hub(client).published
+        if e.type.value == "device.command.updated" and e.data["command_id"] == sent["id"]
+    ]
+    assert updates == ["sent", "succeeded"]
+
+    runtime.stop()
+    app_log.removeHandler(forwarder)
+    assert client.get(f"/devices/{did}", headers=_as("alice")).json()["connection_status"] == (
+        "offline"
+    )
+    statuses = [
+        e.data["connection_status"]
+        for e in _hub(client).published
+        if e.type.value == "device.status_changed"
+    ]
+    assert statuses == ["online", "offline"]
+
+
+def test_unanswered_commands_time_out(client: TestClient) -> None:
+    pid, did = _device(client)
+    container = client.app.state.container  # type: ignore[attr-defined]
+    sent = client.post(
+        f"/projects/{pid}/devices/{did}/commands", json={"name": "ping"}, headers=_as("alice")
+    ).json()
+    stored = container.commands._commands.get(sent["id"])
+    container.commands._commands.save(
+        replace(stored, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    )
+    assert client.get(f"/commands/{sent['id']}", headers=_as("alice")).json()["status"] == (
+        "timed_out"
+    )
+    claimed = client.post(f"/devices/{did}/commands/claim", headers=_as("alice")).json()
+    assert claimed == {"messages": []}
+
+
+def test_a_silent_device_reads_as_offline(client: TestClient) -> None:
+    _, did = _device(client)
+    container = client.app.state.container  # type: ignore[attr-defined]
+    devices = container.devices._devices
+    device = devices.get(did)
+    devices.save(
+        replace(
+            device,
+            connection_status=ConnectionStatus.ONLINE,
+            last_seen_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+    )
+    assert client.get(f"/devices/{did}", headers=_as("alice")).json()["connection_status"] == (
+        "offline"
+    )
+    devices.save(
+        replace(device, connection_status=ConnectionStatus.ONLINE, last_seen_at=datetime.now(UTC))
+    )
+    assert (
+        client.get(f"/devices/{did}/status", headers=_as("alice")).json()["connection_status"]
+        == "online"
+    )

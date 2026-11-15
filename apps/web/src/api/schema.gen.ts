@@ -60,6 +60,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{device_id}/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Target Board
+         * @description Add a board under test wired to this device's FREE-WILi (at most 4: 409 after).
+         */
+        post: operations["add_target_board_devices__device_id__boards_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/boards/{board_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Target Board */
+        put: operations["update_target_board_devices__device_id__boards__board_id__put"];
+        post?: never;
+        /**
+         * Delete Target Board
+         * @description Remove a board and all of its sensors.
+         */
+        delete: operations["delete_target_board_devices__device_id__boards__board_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{device_id}/channel": {
         parameters: {
             query?: never;
@@ -74,6 +115,28 @@ export interface paths {
         get: operations["get_device_channel_devices__device_id__channel_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/commands/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Device Commands
+         * @description Pending commands for a board streamed by the ``builderwars`` CLI (ADR 0009 has no MQTT
+         *     for it). Polled by ``run --cloud``; each message is ``{topic, payload}`` exactly as the
+         *     dispatcher would publish it. Answer with ``command_result`` via ``/messages``.
+         */
+        post: operations["claim_device_commands_devices__device_id__commands_claim_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -143,6 +206,93 @@ export interface paths {
          *     ``results`` (same order as ``messages``).
          */
         post: operations["upload_device_messages_devices__device_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/sensors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sensors
+         * @description Every board's sensors, oldest first. ``builderwars run`` reads the enabled ones.
+         */
+        get: operations["list_sensors_devices__device_id__sensors_get"];
+        put?: never;
+        /**
+         * Add Sensor
+         * @description Define a sensor on one of the device's boards. ``key`` must be unique on the device
+         *     across all its boards (409).
+         */
+        post: operations["add_sensor_devices__device_id__sensors_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/sensors/{sensor_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Sensor
+         * @description Replace a sensor's definition (it may move to another of the device's boards).
+         */
+        put: operations["update_sensor_devices__device_id__sensors__sensor_id__put"];
+        post?: never;
+        /** Delete Sensor */
+        delete: operations["delete_sensor_devices__device_id__sensors__sensor_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Device Setup
+         * @description Laptop, FREE-WILi, target boards and sensors, for the device page (any member).
+         */
+        get: operations["get_device_setup_devices__device_id__setup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{device_id}/setup/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Report Device Connection
+         * @description Sent by ``builderwars run`` when it starts: which laptop it runs on and which
+         *     FREE-WILi is plugged in (``device:upload``, so any member running the CLI).
+         */
+        put: operations["report_device_connection_devices__device_id__setup_connection_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -372,6 +522,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sensor-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sensor Presets
+         * @description Common sensor parts (TMP102, INA219, ADS1115, MPU-6050, ...) with datasheet settings,
+         *     for the "add sensor" form to start from.
+         */
+        get: operations["list_sensor_presets_sensor_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -410,6 +581,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * BridgeReport
+         * @description The FREE-WILi between the laptop and the target board.
+         */
+        BridgeReport: {
+            /** Display Port */
+            display_port?: string | null;
+            /** Library Version */
+            library_version?: string | null;
+            /** Main Port */
+            main_port?: string | null;
+            /**
+             * Model
+             * @default FREE-WILi
+             */
+            model: string;
+            /** Serial */
+            serial?: string | null;
+        };
         /**
          * ClientConfigOut
          * @description Public sign-in settings for command-line clients (no secrets: ids only).
@@ -494,6 +684,14 @@ export interface components {
             device_id: string;
             /** Event Types */
             event_types: components["schemas"]["RealtimeEventType"][];
+        };
+        /**
+         * DeviceCommandsClaimOut
+         * @description Commands waiting for a CLI-connected board, as ``{topic, payload}`` like uploads.
+         */
+        DeviceCommandsClaimOut: {
+            /** Messages */
+            messages: components["schemas"]["UploadedDeviceMessage"][];
         };
         /** DeviceCreate */
         DeviceCreate: {
@@ -599,6 +797,25 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /**
+         * DeviceSetupOut
+         * @description The whole chain for the device page. ``host``/``bridge`` are null until the CLI has
+         *     run against this device; ``bridge`` is also null for a ``--simulate`` run.
+         */
+        DeviceSetupOut: {
+            /** Boards */
+            boards: components["schemas"]["TargetBoardOut"][];
+            bridge: components["schemas"]["BridgeReport"] | null;
+            /** Device Id */
+            device_id: string;
+            host: components["schemas"]["HostReport"] | null;
+            /** Max Boards */
+            max_boards: number;
+            /** Reported At */
+            reported_at: string | null;
+            /** Sensors */
+            sensors: components["schemas"]["SensorOut"][];
+        };
         /** DeviceStatusOut */
         DeviceStatusOut: {
             connection_status: components["schemas"]["ConnectionStatus"];
@@ -608,6 +825,22 @@ export interface components {
             firmware_version: string | null;
             /** Last Seen At */
             last_seen_at: string | null;
+        };
+        /**
+         * GPIOBus
+         * @description The level (0 or 1) of one FREE-WILi GPIO pin wired to the target board.
+         */
+        GPIOBus: {
+            /**
+             * Pin
+             * @description FREE-WILi GPIO number, e.g. 26
+             */
+            pin: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            protocol: "gpio";
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -620,6 +853,74 @@ export interface components {
             environment: string;
             /** Status */
             status: string;
+        };
+        /**
+         * HostReport
+         * @description The laptop running ``builderwars run``.
+         */
+        HostReport: {
+            /** Cli Version */
+            cli_version: string;
+            /** Hostname */
+            hostname: string;
+            /**
+             * Os
+             * @description e.g. 'Linux 6.8 (x86_64)'
+             */
+            os: string;
+            /** Python Version */
+            python_version: string;
+            /**
+             * Sensor Source
+             * @description 'freewili' (real board), 'simulated' (--simulate) or 'freewili-gpio' (no sensors defined: raw FREE-WILi pins)
+             * @default freewili
+             */
+            sensor_source: string;
+        };
+        /**
+         * I2CBus
+         * @description Read ``length`` bytes from register ``reg`` of the chip at 7-bit ``address``.
+         */
+        I2CBus: {
+            /**
+             * Address
+             * @description 7-bit I2C address, e.g. 0x48
+             */
+            address: number;
+            /**
+             * Length
+             * @description bytes to read
+             * @default 1
+             */
+            length: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            protocol: "i2c";
+            /**
+             * Reg
+             * @description register to read (or write), e.g. 0x00
+             */
+            reg: number;
+            /**
+             * Setup Writes
+             * @description written before every read, in order (e.g. start a conversion)
+             */
+            setup_writes?: components["schemas"]["I2CWrite"][];
+        };
+        /**
+         * I2CWrite
+         * @description One register write sent before reading, e.g. to wake a sensor or start a conversion.
+         */
+        I2CWrite: {
+            /** Data */
+            data: number[];
+            /**
+             * Reg
+             * @description register to read (or write), e.g. 0x00
+             */
+            reg: number;
         };
         /**
          * IngestOutcome
@@ -728,6 +1029,201 @@ export interface components {
          * @enum {string}
          */
         RealtimeEventType: "user.joined" | "user.left" | "device.connected" | "device.disconnected" | "device.status_changed" | "project.activity" | "ai.run.started" | "ai.run.delta" | "ai.run.completed" | "firmware.build.started" | "firmware.build.completed" | "device.telemetry" | "device.log" | "device.command.updated";
+        /**
+         * SPIBus
+         * @description Clock ``write`` out on SPI1 (chip select GPIO13) and keep ``length`` bytes of the
+         *     answer starting at ``read_offset`` (byte 0 usually echoes the command).
+         */
+        SPIBus: {
+            /** Clock Hz */
+            clock_hz?: number | null;
+            /**
+             * Length
+             * @default 1
+             */
+            length: number;
+            /**
+             * Mode
+             * @default 0
+             * @enum {integer}
+             */
+            mode: 0 | 1 | 2 | 3;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            protocol: "spi";
+            /**
+             * Read Offset
+             * @default 1
+             */
+            read_offset: number;
+            /**
+             * Write
+             * @description bytes to send
+             */
+            write: number[];
+        };
+        /**
+         * SensorDecode
+         * @description Raw bytes -> number: unpack ``data_type``, then ``(raw & bit_mask) >> bit_shift``,
+         *     then ``value * scale + offset``. GPIO and UART skip the unpack step.
+         */
+        SensorDecode: {
+            /** Bit Mask */
+            bit_mask?: number | null;
+            /**
+             * Bit Shift
+             * @default 0
+             */
+            bit_shift: number;
+            /**
+             * Data Type
+             * @default u8
+             * @enum {string}
+             */
+            data_type: "u8" | "i8" | "u16_be" | "u16_le" | "i16_be" | "i16_le" | "u32_be" | "u32_le" | "i32_be" | "i32_le" | "f32_be" | "f32_le";
+            /**
+             * Decimals
+             * @description round the result
+             */
+            decimals?: number | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Scale
+             * @default 1
+             */
+            scale: number;
+        };
+        /**
+         * SensorIn
+         * @description A sensor definition from the web app, on one of the device's target boards. Unlike
+         *     the shared ``SensorSpec`` (which the CLI reads leniently), unknown fields are an error.
+         */
+        SensorIn: {
+            /** Board Id */
+            board_id: string;
+            /** Bus */
+            bus: components["schemas"]["I2CBus"] | components["schemas"]["SPIBus"] | components["schemas"]["UARTBus"] | components["schemas"]["GPIOBus"];
+            decode?: components["schemas"]["SensorDecode"];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Key
+             * @description reading name on the dashboard and in telemetry, e.g. board_temp_c
+             */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Poll Interval S
+             * @default 1
+             */
+            poll_interval_s: number;
+            /** Unit */
+            unit?: string | null;
+        };
+        /** SensorOut */
+        SensorOut: {
+            /** Board Id */
+            board_id: string;
+            /** Bus */
+            bus: components["schemas"]["I2CBus"] | components["schemas"]["SPIBus"] | components["schemas"]["UARTBus"] | components["schemas"]["GPIOBus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            decode?: components["schemas"]["SensorDecode"];
+            /** Device Id */
+            device_id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Key
+             * @description reading name on the dashboard and in telemetry, e.g. board_temp_c
+             */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Poll Interval S
+             * @default 1
+             */
+            poll_interval_s: number;
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "i2c" | "spi" | "uart" | "gpio";
+            /** Unit */
+            unit?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** SensorPreset */
+        SensorPreset: {
+            /** Datasheet */
+            datasheet?: string | null;
+            /** Id */
+            id: string;
+            /** Manufacturer */
+            manufacturer: string;
+            /** Measures */
+            measures: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Part */
+            part: string;
+            sensor: components["schemas"]["SensorSpec"];
+        };
+        /**
+         * SensorSpec
+         * @description Everything the host needs to read one sensor. Unknown fields (the API adds ``id`` and
+         *     timestamps) are ignored so an older CLI keeps working against a newer API.
+         */
+        SensorSpec: {
+            /** Bus */
+            bus: components["schemas"]["I2CBus"] | components["schemas"]["SPIBus"] | components["schemas"]["UARTBus"] | components["schemas"]["GPIOBus"];
+            decode?: components["schemas"]["SensorDecode"];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Key
+             * @description reading name on the dashboard and in telemetry, e.g. board_temp_c
+             */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Poll Interval S
+             * @default 1
+             */
+            poll_interval_s: number;
+            /** Unit */
+            unit?: string | null;
+        };
         /** SessionChannelOut */
         SessionChannelOut: {
             /** Channel */
@@ -764,6 +1260,46 @@ export interface components {
          * @enum {string}
          */
         SessionStatus: "active" | "ended";
+        /**
+         * SetupReport
+         * @description ``PUT /devices/{id}/setup/connection``: sent by the CLI when ``run`` starts.
+         *     ``bridge`` is ``None`` when no FREE-WILi is attached (``--simulate``).
+         */
+        SetupReport: {
+            bridge?: components["schemas"]["BridgeReport"] | null;
+            host: components["schemas"]["HostReport"];
+        };
+        /** TargetBoardIn */
+        TargetBoardIn: {
+            /** Name */
+            name: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
+        /** TargetBoardOut */
+        TargetBoardOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Device Id */
+            device_id: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Notes */
+            notes: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** TelemetrySampleOut */
         TelemetrySampleOut: {
             /** Readings */
@@ -775,6 +1311,38 @@ export interface components {
              * Format: date-time
              */
             ts: string;
+        };
+        /**
+         * UARTBus
+         * @description Send ``command`` on UART1 and pull a number out of the reply with ``response_pattern``
+         *     (its first group, or the whole match). An empty command just listens.
+         */
+        UARTBus: {
+            /** Baud */
+            baud?: number | null;
+            /**
+             * Command
+             * @default
+             */
+            command: string;
+            /**
+             * Line Ending
+             * @default
+             * @enum {string}
+             */
+            line_ending: "" | "\n" | "\r\n" | "\r";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            protocol: "uart";
+            /** Response Pattern */
+            response_pattern?: string | null;
+            /**
+             * Timeout S
+             * @default 0.5
+             */
+            timeout_s: number;
         };
         /**
          * UploadedDeviceMessage
@@ -898,6 +1466,116 @@ export interface operations {
             };
         };
     };
+    add_target_board_devices__device_id__boards_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TargetBoardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetBoardOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_target_board_devices__device_id__boards__board_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+                board_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TargetBoardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetBoardOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_target_board_devices__device_id__boards__board_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+                board_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_device_channel_devices__device_id__channel_get: {
         parameters: {
             query?: never;
@@ -919,6 +1597,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceChannelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_device_commands_devices__device_id__commands_claim_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCommandsClaimOut"];
                 };
             };
             /** @description Validation Error */
@@ -1035,6 +1747,222 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceMessagesUploadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sensors_devices__device_id__sensors_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_sensor_devices__device_id__sensors_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SensorIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_sensor_devices__device_id__sensors__sensor_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+                sensor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SensorIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_sensor_devices__device_id__sensors__sensor_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+                sensor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_device_setup_devices__device_id__setup_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSetupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_device_connection_devices__device_id__setup_connection_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupReport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSetupOut"];
                 };
             };
             /** @description Validation Error */
@@ -1587,6 +2515,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sensor_presets_sensor_presets_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-dev-user"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorPreset"][];
                 };
             };
             /** @description Validation Error */
