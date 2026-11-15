@@ -35,4 +35,8 @@ class MessageFactory:
             hardware_model=self._config.hardware_model,
             timestamp=datetime.now(UTC),
         )
-        return topic_for_message(self._config.device_id, message_type), encode_message(envelope), envelope
+        return (
+            topic_for_message(self._config.device_id, message_type),
+            encode_message(envelope),
+            envelope,
+        )
