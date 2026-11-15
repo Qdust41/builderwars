@@ -27,8 +27,10 @@ payload type `LogPayload`) is also appended locally to `<state-dir>/logs/<device
 | `message` | Log text | ≤ 4096 chars, may contain quotes/newlines/unicode |
 
 `builderwars-logs to-sql` turns a CSV into a self-contained `.sql` dump
-(`BEGIN; CREATE TABLE IF NOT EXISTS device_logs (...all TEXT...); INSERTs; COMMIT;`)
-that executes in PostgreSQL or SQLite. The dump is a **transport format**: all columns are
+(`BEGIN; CREATE TABLE IF NOT EXISTS host_device_logs (...all TEXT...); INSERT ... ON CONFLICT
+(message_id) DO NOTHING; COMMIT;`) that executes in PostgreSQL or SQLite. Its table is
+deliberately not `device_logs`, so loading a dump can never collide with the canonical table
+below, and re-loading the same dump skips rows already present. The dump is a **transport format**: all columns are
 `TEXT` and `timestamp` is an ISO-8601 string; the ingestion system is responsible for
 coercing to the canonical types below.
 
@@ -117,7 +119,7 @@ For logs captured while the cloud link was down, the user uploads the local CSV 
 1. Fetch from S3. Validate the container:
    - CSV: header must be exactly `CSV_COLUMNS` in order; per-row checks below.
    - SQL: must be a single transaction; every statement must be
-     `CREATE TABLE IF NOT EXISTS device_logs`, `INSERT INTO device_logs (...)`,
+     `CREATE TABLE IF NOT EXISTS host_device_logs`, `INSERT INTO host_device_logs (...)`,
      `BEGIN`/`COMMIT`, or a comment. Any other statement type → whole file quarantined
      (SQL is executable, so it is treated as untrusted input — see §5).
 2. Per-row validation (CSV rows, or rows extracted from SQL literals):

@@ -30,7 +30,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from board_runtime.config import ConfigError, DeviceConfig, SensorKind, default_state_dir
+from board_runtime.config import (
+    ConfigError,
+    DeviceConfig,
+    SensorKind,
+    TransportKind,
+    default_state_dir,
+    log_csv_path_from_env,
+)
 from board_runtime.hardware.freewili import (
     BoardInfo,
     FreeWiliNotInstalledError,
@@ -60,8 +67,14 @@ _NULLABLE = frozenset({"sequence_number", "firmware_version", "hardware_model", 
 #: INSERT column list (a mismatch would silently swap values between columns).
 SQL_COLUMNS: tuple[str, ...] = CSV_COLUMNS
 
-_TABLE_DDL = """\
-CREATE TABLE IF NOT EXISTS device_logs (
+#: Table the dump creates. Deliberately NOT ``device_logs``: the cloud database already has a
+#: ``device_logs`` table with a different shape (PostgreSQL migration 0001), so a dump loaded
+#: there would fail. Rows here are a staging copy; the upload path in
+#: docs/log-ingestion-spec.md maps them into the canonical table.
+DUMP_TABLE = "host_device_logs"
+
+_TABLE_DDL = f"""\
+CREATE TABLE IF NOT EXISTS {DUMP_TABLE} (
     timestamp TEXT NOT NULL,
     message_id TEXT PRIMARY KEY,
     schema_version TEXT NOT NULL,
@@ -74,7 +87,10 @@ CREATE TABLE IF NOT EXISTS device_logs (
     message TEXT NOT NULL
 );"""
 
-_INSERT_HEADER = f"INSERT INTO device_logs ({', '.join(SQL_COLUMNS)}) VALUES "
+_INSERT_HEADER = f"INSERT INTO {DUMP_TABLE} ({', '.join(SQL_COLUMNS)}) VALUES "  # noqa: S608
+#: Re-loading the same dump (or two dumps that overlap) skips rows already present.
+#: ``ON CONFLICT ... DO NOTHING`` works in PostgreSQL 9.5+ and SQLite 3.24+.
+_INSERT_TRAILER = " ON CONFLICT (message_id) DO NOTHING;"
 
 
 # -- helpers -----------------------------------------------------------------------------
@@ -119,12 +135,13 @@ def render_sql(source: Path, rows: list[dict[str, str]]) -> str:
         f"-- rows: {len(rows)}",
         f"-- generated: {datetime.now().astimezone().isoformat(timespec='seconds')}",
         "-- Load with:  psql -f <this file>   (or: sqlite3 <db> <this file>)",
+        f"-- Creates/fills {DUMP_TABLE}; it never touches the cloud's device_logs table.",
         "BEGIN;",
         _TABLE_DDL,
     ]
     for row in rows:
         values = ", ".join(_sql_value(column, row[column]) for column in SQL_COLUMNS)
-        lines.append(f"{_INSERT_HEADER}({values});")
+        lines.append(f"{_INSERT_HEADER}({values}){_INSERT_TRAILER}")
     lines.append("COMMIT;")
     return "\n".join(lines) + "\n"
 
@@ -443,7 +460,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     env.setdefault("BUILDERWARS_STATE_DIR", str(args.state_dir))
     if port:
         env["DEVICE_PORT"] = port
-    env["DEVICE_ID"] = args.device_id or env.get("DEVICE_ID") or "dev-local"
+    device_id = args.device_id or env.get("DEVICE_ID")
+    if not device_id and (env.get("DEVICE_TRANSPORT") or "").strip().lower() == TransportKind.MQTT:
+        # AWS IoT only accepts a certificate as its own thing, so a made-up id can't connect.
+        _error(
+            "DEVICE_TRANSPORT=mqtt needs the registered device id",
+            "pass --device-id dev_... or set DEVICE_ID (the id the web app shows for the device;\n"
+            "it is also the AWS IoT thing name)",
+        )
+        return EXIT_USAGE
+    env["DEVICE_ID"] = device_id or "dev-local"
     if args.interval is not None:
         env["DEVICE_SAMPLE_INTERVAL_S"] = str(args.interval)
     try:
@@ -471,7 +497,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("using simulated sensors (pass a port to use a real board)", file=sys.stderr)
     print(
         f"device id {config.device_id}; messages go to "
-        f"{'AWS IoT' if config.transport.value == 'mqtt' else 'stdout'}; Ctrl+C to stop",
+        f"{'AWS IoT' if config.transport is TransportKind.MQTT else 'stdout'}; Ctrl+C to stop",
         file=sys.stderr,
     )
     run_loop(config, samples=args.samples, sensors=sensors)
@@ -481,9 +507,19 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_sim(args: argparse.Namespace) -> int:
     from board_runtime.simulator import simulate
 
-    csv_path = _logs_dir(args.state_dir) / f"{args.device_id}.csv"
-    simulate(device_id=args.device_id, count=args.count, seed=args.seed, csv_path=csv_path)
-    print(f"log messages also written to {csv_path}", file=sys.stderr)
+    env = dict(os.environ)
+    env["BUILDERWARS_STATE_DIR"] = str(args.state_dir)
+    env["DEVICE_ID"] = args.device_id
+    csv_path = log_csv_path_from_env(env)  # None when BUILDERWARS_LOG_CSV=off
+    simulate(
+        device_id=args.device_id,
+        count=args.count,
+        seed=args.seed,
+        csv_path=csv_path,
+        write_csv=csv_path is not None,
+    )
+    if csv_path is not None:
+        print(f"log messages also written to {csv_path}", file=sys.stderr)
     return EXIT_OK
 
 

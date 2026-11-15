@@ -32,7 +32,7 @@ def default_state_dir() -> Path:
     return Path.home() / ".builderwars"
 
 
-def _log_csv_path(e: dict[str, str]) -> Path | None:
+def log_csv_path_from_env(e: dict[str, str]) -> Path | None:
     """Resolve ``BUILDERWARS_LOG_CSV``: unset -> default under the state dir; off -> None."""
     raw = e.get("BUILDERWARS_LOG_CSV")
     if raw is None:
@@ -111,7 +111,7 @@ class DeviceConfig:
             state_dir=Path(e["BUILDERWARS_STATE_DIR"]).expanduser()
             if e.get("BUILDERWARS_STATE_DIR")
             else default_state_dir(),
-            log_csv_path=_log_csv_path(e),
+            log_csv_path=log_csv_path_from_env(e),
             mqtt_endpoint=e.get("IOT_ENDPOINT") or None,
             mqtt_port=_number(e, "IOT_PORT", "8883", int),
             cert_path=Path(e["IOT_CERT_PATH"]).expanduser() if e.get("IOT_CERT_PATH") else None,

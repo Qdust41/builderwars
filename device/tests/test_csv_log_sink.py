@@ -6,10 +6,9 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
+from board_runtime.logging import CSV_COLUMNS, CsvLogSink
 from device_protocol import DeviceEnvelope, MessageType
 from device_protocol.compat import UTC
-
-from board_runtime.logging import CSV_COLUMNS, CsvLogSink
 
 TS = datetime(2026, 11, 14, 12, 0, 0, tzinfo=UTC)
 
@@ -57,7 +56,7 @@ def test_row_matches_envelope_fields(tmp_path: Path) -> None:
     path = tmp_path / "dev.csv"
     sink = CsvLogSink(path)
     env = _log_envelope(
-        message="it's a \"test\"\nwith a newline",
+        message='it\'s a "test"\nwith a newline',
         level="warning",
         sequence=42,
         firmware="1.2.3",
@@ -66,7 +65,7 @@ def test_row_matches_envelope_fields(tmp_path: Path) -> None:
     sink.close()
 
     rows = _read_rows(path)
-    row = dict(zip(CSV_COLUMNS, rows[1]))
+    row = dict(zip(CSV_COLUMNS, rows[1], strict=True))
     assert row["timestamp"] == TS.isoformat()
     assert row["message_id"] == str(env.message_id)
     assert row["device_id"] == "dev-test-001"
@@ -75,7 +74,7 @@ def test_row_matches_envelope_fields(tmp_path: Path) -> None:
     assert row["hardware_model"] == "freewili-1-og"
     assert row["level"] == "warning"
     assert row["logger"] == "app.logger"
-    assert row["message"] == "it's a \"test\"\nwith a newline"
+    assert row["message"] == 'it\'s a "test"\nwith a newline'
 
 
 def test_optional_fields_become_blank_strings(tmp_path: Path) -> None:
@@ -84,7 +83,7 @@ def test_optional_fields_become_blank_strings(tmp_path: Path) -> None:
     sink.write_envelope(_log_envelope(sequence=None, logger=None, firmware=None))
     sink.close()
 
-    row = dict(zip(CSV_COLUMNS, _read_rows(path)[1]))
+    row = dict(zip(CSV_COLUMNS, _read_rows(path)[1], strict=True))
     assert row["sequence_number"] == ""
     assert row["logger"] == ""
     assert row["firmware_version"] == ""
