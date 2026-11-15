@@ -32,10 +32,9 @@ from aws_adapters import (
     AppSyncEventsPublisher,
     IotDataCommandPublisher,
     S3RawMessageStore,
-    SecretsManagerAutoFixSecretStore,
     SqsAutoFixQueue,
     database_url_from_secret,
-    shared_autofix_secrets,
+    llm_config_loader,
 )
 from domain.jobs import JobType
 from workers.handlers import BackgroundJobHandler, CommandDispatchHandler, DeviceMessageHandler
@@ -165,16 +164,15 @@ def autofix_trigger(
 def build_autofix_worker(
     settings: WorkerSettings, repos: WorkerRepositories, client_factory: ClientFactory
 ) -> AutoFixWorker:
-    prefix = _require(settings.autofix_secret_prefix, "AUTOFIX_SECRET_PREFIX")
-    secretsmanager = client_factory("secretsmanager")
+    secret = settings.autofix_llm_secret_arn
     return AutoFixWorker(
         runs=repos.autofix_runs,
         settings=repos.autofix_settings,
-        secrets=SecretsManagerAutoFixSecretStore(secretsmanager, prefix),
-        shared=(
-            shared_autofix_secrets(secretsmanager, settings.autofix_shared_secret_arn)
-            if settings.autofix_shared_secret_arn
-            else None
+        llm=llm_config_loader(
+            base_url=settings.autofix_llm_base_url,
+            model=settings.autofix_llm_model,
+            client=client_factory("secretsmanager") if secret else None,
+            secret_id=secret,
         ),
         telemetry=repos.telemetry,
         # Deployed workers only call public endpoints (no localhost / VPC / link-local).

@@ -14,7 +14,6 @@ from datetime import datetime, timedelta
 from typing import cast
 
 from application.ports import (
-    AutoFixSecrets,
     DeviceLogEntry,
     DeviceLogRecord,
     LogPosition,
@@ -494,22 +493,6 @@ class InMemoryAutoFixRunRepository:
                 return False
             self._signatures[(project_id, signature)] = now
             return True
-
-
-class InMemoryAutoFixSecretStore:
-    """LOCAL/TEST ONLY: keys held in process memory."""
-
-    def __init__(self) -> None:
-        self._items: dict[str, AutoFixSecrets] = {}
-
-    def get(self, project_id: str) -> AutoFixSecrets:
-        return self._items.get(project_id, AutoFixSecrets())
-
-    def put(self, project_id: str, secrets: AutoFixSecrets) -> None:
-        self._items[project_id] = secrets
-
-    def delete(self, project_id: str) -> None:
-        self._items.pop(project_id, None)
 
 
 @dataclass

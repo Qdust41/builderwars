@@ -59,13 +59,7 @@ def _log(device_id: str, level: str, message: str) -> dict[str, Any]:
     }
 
 
-SETTINGS = {
-    "llm_base_url": "https://api.openai.com/v1",
-    "llm_model": "gpt-test",
-    "github_repo": "acme/rig",
-    "llm_api_key": "sk-secret",
-    "github_token": "ghp_secret",
-}
+SETTINGS = {"github_repo": "acme/rig", "github_token": "ghp_secret"}
 
 
 def test_settings_are_admin_only_and_never_return_keys(client: TestClient) -> None:
@@ -75,17 +69,19 @@ def test_settings_are_admin_only_and_never_return_keys(client: TestClient) -> No
     response = client.put(f"/projects/{pid}/autofix", json=SETTINGS, headers=_as("alice"))
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["has_llm_api_key"] is True
-    assert body["has_github_token"] is True
-    assert body["uses_shared_github_token"] is False
+    assert (body["has_github_token"], body["ready"]) == (True, True)
+    assert "github_token" not in body
+    assert "secret" not in response.text
 
-    # Without a project token, runs use the app-wide one.
-    shared = client.put(
+    # Saving again without a token keeps it; "" removes it and the project stops being ready.
+    kept = client.put(
+        f"/projects/{pid}/autofix", json={"github_repo": "acme/rig2"}, headers=_as("alice")
+    ).json()
+    assert (kept["github_repo"], kept["has_github_token"]) == ("acme/rig2", True)
+    cleared = client.put(
         f"/projects/{pid}/autofix", json=SETTINGS | {"github_token": ""}, headers=_as("alice")
     ).json()
-    assert shared["has_github_token"] is False
-    assert shared["uses_shared_github_token"] is True
-    assert "secret" not in response.text
+    assert (cleared["has_github_token"], cleared["ready"]) == (False, False)
 
     bad = client.put(
         f"/projects/{pid}/autofix", json=SETTINGS | {"github_repo": "nope"}, headers=_as("alice")

@@ -11,7 +11,7 @@ from typing import Any
 
 import boto3
 import pytest
-from botocore.stub import ANY, Stubber
+from botocore.stub import Stubber
 
 from ai_platform.autofix import (
     AnswerError,
@@ -25,7 +25,7 @@ from ai_platform.autofix import (
 from ai_platform.http import HttpError, HttpResponse, ensure_public_endpoint
 from ai_platform.providers.chat import ChatCompletionsClient
 from application.adapters import memory
-from application.ports import AutoFixSecrets
+from application.ports import LlmConfig
 from application.services import (
     Authorizer,
     AutoFixLimitError,
@@ -36,11 +36,7 @@ from application.services import (
     AutoFixValidationError,
     DeviceMessageIngestService,
 )
-from aws_adapters import (
-    SecretsManagerAutoFixSecretStore,
-    SqsAutoFixQueue,
-    shared_autofix_secrets,
-)
+from aws_adapters import SqsAutoFixQueue, llm_config_loader
 from device_protocol import DeviceEnvelope, MessageType, encode_message, topic_for_message
 from domain.autofix import (
     AutoFixLevel,
@@ -71,9 +67,6 @@ class World:
     runs: memory.InMemoryAutoFixRunRepository = field(
         default_factory=memory.InMemoryAutoFixRunRepository
     )
-    secrets: memory.InMemoryAutoFixSecretStore = field(
-        default_factory=memory.InMemoryAutoFixSecretStore
-    )
     queue: memory.InMemoryAutoFixQueue = field(default_factory=memory.InMemoryAutoFixQueue)
     telemetry: memory.InMemoryTelemetryRepository = field(
         default_factory=memory.InMemoryTelemetryRepository
@@ -99,7 +92,6 @@ class World:
         return AutoFixService(
             settings=self.settings,
             runs=self.runs,
-            secrets=self.secrets,
             queue=self.queue,
             devices=self.devices,
             telemetry=self.telemetry,
@@ -110,16 +102,11 @@ class World:
     def configure(self, **overrides: Any) -> AutoFixSettings:
         settings = AutoFixSettings(
             project_id="prj_1",
-            llm_base_url="https://llm.example.com/v1",
-            llm_model="test-model",
             github_repo="acme/rig",
             updated_by="alice",
-            has_github_token=True,
-            has_llm_api_key=True,
-            **overrides,
+            **({"github_token": "ghp_x"} | overrides),
         )
         self.settings.save(settings)
-        self.secrets.put("prj_1", AutoFixSecrets(llm_api_key="sk-test", github_token="ghp_x"))
         return settings
 
 
@@ -251,42 +238,36 @@ def test_ingest_hands_new_errors_to_the_trigger(world: World) -> None:
 
 
 def _input(**overrides: Any) -> AutoFixSettingsInput:
-    base: dict[str, Any] = {
-        "llm_base_url": "https://api.openai.com/v1/",
-        "llm_model": "gpt-test",
-        "github_repo": "acme/rig",
-    }
+    base: dict[str, Any] = {"github_repo": "acme/rig"}
     return AutoFixSettingsInput(**(base | overrides))
 
 
-def test_owner_saves_settings_and_keys_stay_in_the_secret_store(world: World) -> None:
+def test_owner_saves_settings_and_the_token_is_kept_until_replaced(world: World) -> None:
     service = world.service()
     saved = service.save_settings(
-        user_id="alice",
-        project_id="prj_1",
-        data=_input(llm_api_key="sk-1", github_token="ghp_1"),
+        user_id="alice", project_id="prj_1", data=_input(github_token="ghp_1")
     )
-    assert saved.llm_base_url == "https://api.openai.com/v1"
-    assert (saved.has_llm_api_key, saved.has_github_token) == (True, True)
-    assert world.secrets.get("prj_1") == AutoFixSecrets("sk-1", "ghp_1")
+    assert (saved.github_token, saved.has_github_token, saved.ready) == ("ghp_1", True, True)
+    assert "ghp_1" not in repr(saved)
+    assert world.settings.get("prj_1") == saved
 
-    # Omitted keys are kept; "" clears one.
+    # Omitted: kept. "": cleared (and the project is no longer ready).
     again = service.save_settings(
-        user_id="alice", project_id="prj_1", data=_input(llm_model="other", llm_api_key="")
+        user_id="alice", project_id="prj_1", data=_input(base_branch="dev")
     )
-    assert world.secrets.get("prj_1") == AutoFixSecrets(None, "ghp_1")
-    assert (again.has_llm_api_key, again.has_github_token) == (False, True)
+    assert (again.github_token, again.base_branch) == ("ghp_1", "dev")
+    cleared = service.save_settings(
+        user_id="alice", project_id="prj_1", data=_input(github_token="")
+    )
+    assert (cleared.has_github_token, cleared.ready) == (False, False)
 
     service.delete_settings(user_id="alice", project_id="prj_1")
     assert service.get_settings(user_id="bob", project_id="prj_1") is None
-    assert world.secrets.get("prj_1") == AutoFixSecrets()
 
 
 @pytest.mark.parametrize(
     ("overrides", "match"),
     [
-        ({"llm_base_url": "ftp://x"}, "http"),
-        ({"llm_base_url": "https://user:pw@x.com/v1"}, "API key"),
         ({"github_repo": "not a repo"}, "owner/name"),
         ({"base_branch": "../main"}, "branch"),
         ({"max_runs_per_day": 0}, "max_runs_per_day"),
@@ -304,6 +285,9 @@ def test_members_cannot_change_settings(world: World) -> None:
 
 def test_manual_run_uses_latest_error_and_skips_dedupe_not_cap(world: World) -> None:
     service = world.service()
+    with pytest.raises(AutoFixNotReadyError):
+        service.request_fix(user_id="bob", project_id="prj_1", device_id="dev_1", message="x")
+    world.configure(github_token=None)  # linked, but no token yet
     with pytest.raises(AutoFixNotReadyError):
         service.request_fix(user_id="bob", project_id="prj_1", device_id="dev_1", message="x")
     world.configure(max_runs_per_day=2)
@@ -395,13 +379,16 @@ def _queued(world: World, message: str = "ADC overflow: value 4096 > 4095") -> A
     return run
 
 
+LLM = LlmConfig(base_url="https://llm.example.com/v1", model="test-model", api_key="sk-test")
+
+
 def _worker(world: World, chat: FakeChat, repo: FakeRepo) -> AutoFixWorker:
     return AutoFixWorker(
         runs=world.runs,
         settings=world.settings,
-        secrets=world.secrets,
         telemetry=world.telemetry,
-        clients=lambda settings, secrets: (chat, repo),
+        clients=lambda settings, llm: (chat, repo),
+        llm=lambda: LLM,
     )
 
 
@@ -508,44 +495,49 @@ def test_worker_retries_bad_json_once_then_fails(world: World) -> None:
     assert "no JSON" in (done.summary or "")
 
 
-def test_worker_uses_the_shared_github_token_unless_the_project_has_one(world: World) -> None:
+def test_worker_uses_the_app_model_and_the_project_token(world: World) -> None:
     world.configure()
-    world.secrets.put("prj_1", AutoFixSecrets(llm_api_key="sk-project"))  # no own token
-    seen: list[AutoFixSecrets] = []
+    seen: list[tuple[str | None, LlmConfig]] = []
 
-    def worker(shared: AutoFixSecrets | None) -> AutoFixWorker:
-        def clients(settings: AutoFixSettings, secrets: AutoFixSecrets) -> Any:
-            seen.append(secrets)
-            raise HttpError("stop here")
+    def clients(settings: AutoFixSettings, llm: LlmConfig) -> Any:
+        seen.append((settings.github_token, llm))
+        raise HttpError("stop here")
 
+    def worker(llm: LlmConfig | None) -> AutoFixWorker:
         return AutoFixWorker(
             runs=world.runs,
             settings=world.settings,
-            secrets=world.secrets,
             telemetry=world.telemetry,
             clients=clients,
-            shared=(lambda: shared) if shared else None,
+            llm=lambda: llm,
         )
 
-    worker(AutoFixSecrets(github_token="ghp_shared")).handle(_queued(world).id)
-    assert seen[-1] == AutoFixSecrets(llm_api_key="sk-project", github_token="ghp_shared")
+    done = worker(LLM).handle(_queued(world).id)
+    assert seen == [("ghp_x", LLM)]
+    assert done is not None
+    assert (done.status, done.summary) == (AutoFixRunStatus.FAILED, "stop here")
 
-    world.secrets.put("prj_1", AutoFixSecrets(llm_api_key="sk-project", github_token="ghp_own"))
-    worker(AutoFixSecrets(github_token="ghp_shared")).handle(_queued(world).id)
-    assert seen[-1].github_token == "ghp_own"
-
-    # Neither: the run fails with how to fix it.
-    world.secrets.put("prj_1", AutoFixSecrets())
-    done = AutoFixWorker(
-        runs=world.runs,
-        settings=world.settings,
-        secrets=world.secrets,
-        telemetry=world.telemetry,
-        clients=default_clients(),
-    ).handle(_queued(world).id)
+    # No model deployed yet: the run fails with how to set one.
+    done = worker(None).handle(_queued(world).id)
     assert done is not None
     assert done.status is AutoFixRunStatus.FAILED
-    assert "AUTOFIX_GITHUB_TOKEN" in (done.summary or "")
+    assert "AUTOFIX_LLM_BASE_URL" in (done.summary or "")
+
+    # The project has no token: the run fails before calling anything.
+    world.configure(github_token=None)
+    done = worker(LLM).handle(_queued(world).id)
+    assert done is not None
+    assert "no GitHub token" in (done.summary or "")
+    assert len(seen) == 1
+
+
+def test_default_clients_refuse_private_model_endpoints(world: World) -> None:
+    settings = world.configure()
+    private = LlmConfig(base_url="http://10.0.0.5/v1", model="m")
+    with pytest.raises(HttpError, match="non-public"):
+        default_clients()(settings, private)
+    chat, repo = default_clients(allow_private_endpoints=True)(settings, private)
+    assert (chat.model, repo.repo) == ("m", "acme/rig")
 
 
 def test_worker_fails_cleanly(world: World) -> None:
@@ -553,7 +545,7 @@ def test_worker_fails_cleanly(world: World) -> None:
     done = _worker(world, FakeChat(), FakeRepo({})).handle(run.id)
     assert done is not None
     assert done.status is AutoFixRunStatus.FAILED
-    assert done.summary == "auto-fix was turned off for this project"
+    assert done.summary == "auto-fix is turned off or has no GitHub token for this project"
 
     world.configure()
 
@@ -697,35 +689,6 @@ def _sm() -> Any:
     )
 
 
-def test_secrets_manager_store_creates_reads_and_deletes() -> None:
-    sm = _sm()
-    store = SecretsManagerAutoFixSecretStore(sm, "builderwars/prod/autofix/")
-    name = "builderwars/prod/autofix/prj_1"
-    value = json.dumps({"llm_api_key": "sk", "github_token": "ghp"})
-    with Stubber(sm) as stub:
-        stub.add_client_error("get_secret_value", "ResourceNotFoundException")
-        stub.add_client_error("put_secret_value", "ResourceNotFoundException")
-        stub.add_response(
-            "create_secret",
-            {"Name": name},
-            {
-                "Name": name,
-                "SecretString": value,
-                "Description": ANY,
-                "Tags": [{"Key": "project_id", "Value": "prj_1"}],
-            },
-        )
-        stub.add_response("get_secret_value", {"SecretString": value}, {"SecretId": name})
-        stub.add_response(
-            "delete_secret", {}, {"SecretId": name, "ForceDeleteWithoutRecovery": True}
-        )
-        assert store.get("prj_1") == AutoFixSecrets()
-        store.put("prj_1", AutoFixSecrets("sk", "ghp"))
-        assert store.get("prj_1") == AutoFixSecrets("sk", "ghp")
-        store.delete("prj_1")
-        stub.assert_no_pending_responses()
-
-
 def test_sqs_autofix_queue_sends_only_the_run_id() -> None:
     sqs = boto3.client(
         "sqs", region_name="us-east-1", aws_access_key_id="t", aws_secret_access_key="t"
@@ -740,20 +703,20 @@ def test_sqs_autofix_queue_sends_only_the_run_id() -> None:
         stub.assert_no_pending_responses()
 
 
-def test_shared_secret_is_read_on_every_run() -> None:
+def test_llm_key_is_read_on_every_run() -> None:
     sm = _sm()
-    load = shared_autofix_secrets(sm, "arn:shared")
+    load = llm_config_loader(
+        base_url="https://api.example.com/v1", model="m", client=sm, secret_id="arn:llm"
+    )
     with Stubber(sm) as stub:
-        stub.add_response(
-            "get_secret_value",
-            {"SecretString": json.dumps({"github_token": ""})},
-            {"SecretId": "arn:shared"},
-        )
-        stub.add_response(
-            "get_secret_value",
-            {"SecretString": json.dumps({"github_token": "ghp_shared"})},
-            {"SecretId": "arn:shared"},
-        )
-        assert load() == AutoFixSecrets()  # deployed without AUTOFIX_GITHUB_TOKEN yet
-        assert load() == AutoFixSecrets(github_token="ghp_shared")
+        for key in ("", "sk-rotated"):
+            stub.add_response(
+                "get_secret_value",
+                {"SecretString": json.dumps({"llm_api_key": key})},
+                {"SecretId": "arn:llm"},
+            )
+        assert load() == LlmConfig("https://api.example.com/v1", "m", None)
+        assert load() == LlmConfig("https://api.example.com/v1", "m", "sk-rotated")
         stub.assert_no_pending_responses()
+    # Deployed without the Actions variables: no model, nothing read.
+    assert llm_config_loader(base_url="", model="m", client=sm, secret_id="arn:llm")() is None

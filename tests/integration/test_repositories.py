@@ -294,20 +294,20 @@ def test_autofix_settings_round_trip_and_delete(repos: Any) -> None:
     project = _project(repos)
     settings = AutoFixSettings(
         project_id=project.id,
-        llm_base_url="https://api.openai.com/v1",
-        llm_model="gpt-test",
         github_repo="acme/rig",
         updated_by="alice",
         min_level=AutoFixLevel.CRITICAL,
         base_branch="develop",
         instructions="board code in host/",
-        has_github_token=True,
+        github_token="ghp_x",
         updated_at=T0,
     )
     assert repos.autofix_settings.get(project.id) is None
     repos.autofix_settings.save(settings)
     assert repos.autofix_settings.get(project.id) == settings
-    changed = replace(settings, enabled=False, max_runs_per_day=9, base_branch=None)
+    changed = replace(
+        settings, enabled=False, max_runs_per_day=9, base_branch=None, github_token=None
+    )
     repos.autofix_settings.save(changed)
     assert repos.autofix_settings.get(project.id) == changed
     repos.autofix_settings.delete(project.id)

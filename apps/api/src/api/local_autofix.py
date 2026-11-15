@@ -1,7 +1,8 @@
 """LOCAL ONLY: run auto-fix in a background thread of the API process instead of a Lambda.
 
 Lets someone try auto-fix end to end with ``uvicorn`` and a local model (Ollama, LM Studio):
-private/localhost endpoints are allowed here and nowhere else.
+private/localhost endpoints are allowed here and nowhere else. The model comes from
+AUTOFIX_LLM_BASE_URL / AUTOFIX_LLM_MODEL / AUTOFIX_LLM_API_KEY in the API's environment.
 """
 
 from __future__ import annotations
@@ -13,9 +14,8 @@ from dataclasses import dataclass
 from ai_platform.autofix import AutoFixWorker, default_clients
 from application.ports import (
     AutoFixRunRepository,
-    AutoFixSecrets,
-    AutoFixSecretStore,
     AutoFixSettingsRepository,
+    LlmConfig,
     TelemetryRepository,
 )
 
@@ -32,19 +32,16 @@ class ThreadedAutoFixQueue:
         *,
         runs: AutoFixRunRepository,
         settings: AutoFixSettingsRepository,
-        secrets: AutoFixSecretStore,
         telemetry: TelemetryRepository,
-        shared_github_token: str | None = None,
+        llm: LlmConfig | None,
     ) -> ThreadedAutoFixQueue:
-        shared = AutoFixSecrets(github_token=shared_github_token)
         return cls(
             AutoFixWorker(
                 runs=runs,
                 settings=settings,
-                secrets=secrets,
                 telemetry=telemetry,
                 clients=default_clients(allow_private_endpoints=True),
-                shared=lambda: shared,
+                llm=lambda: llm,
             )
         )
 

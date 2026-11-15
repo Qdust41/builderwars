@@ -41,7 +41,8 @@ migrations on every deploy (ADR 0006, ADR 0007).
 | `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | ids | needed for `AUTH_MODE=cognito`; the CDK stack sets them in AWS |
 | `DATABASE_URL` | Postgres URL | locally; in AWS the Lambda reads the RDS secret and connects over TLS |
 | `CORS_ALLOW_ORIGINS` | JSON list | only for local cross-origin use; prod is same-origin |
-| `AUTOFIX_QUEUE_URL`, `AUTOFIX_SECRET_PREFIX` | URL, name prefix | auto-fix in AWS (set by the stack); without them auto-fix is off there |
+| `AUTOFIX_QUEUE_URL` | URL | auto-fix in AWS (set by the stack); without it manual runs are refused there |
+| `AUTOFIX_LLM_BASE_URL`, `AUTOFIX_LLM_MODEL`, `AUTOFIX_LLM_API_KEY` | URL, name, key | LOCAL ONLY: the model local auto-fix runs call (in AWS the worker gets them from the deploy) |
 
 With `AUTH_MODE=cognito` the API verifies Cognito access tokens (ADR 0005).
 

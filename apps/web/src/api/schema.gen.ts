@@ -738,10 +738,10 @@ export interface components {
         AutoFixRunStatus: "queued" | "running" | "pr_opened" | "no_fix" | "failed";
         /**
          * AutoFixSettingsIn
-         * @description Link an OpenAI-compatible endpoint and a GitHub repository to the project.
+         * @description Link a GitHub repository to the project. The model is app-wide (deploy-time settings).
          *
-         *     ``llm_api_key`` / ``github_token``: leave out to keep what is stored, ``""`` to clear,
-         *     or a value to replace. They are write-only: responses only say whether each is set.
+         *     ``github_token``: leave out to keep the stored token, ``""`` to clear it, or a value to
+         *     replace it. It is write-only: responses only say whether one is set.
          */
         AutoFixSettingsIn: {
             /**
@@ -772,7 +772,7 @@ export interface components {
             github_repo: string;
             /**
              * Github Token
-             * @description Only to override the app-wide token for this project
+             * @description Fine-grained token for this repo: Contents + Pull requests, read and write
              */
             github_token?: string | null;
             /**
@@ -780,15 +780,6 @@ export interface components {
              * @description Notes for the model, e.g. where the board code lives
              */
             instructions?: string | null;
-            /** Llm Api Key */
-            llm_api_key?: string | null;
-            /**
-             * Llm Base Url
-             * @description Everything before /chat/completions, e.g. https://api.openai.com/v1
-             */
-            llm_base_url: string;
-            /** Llm Model */
-            llm_model: string;
             /**
              * Max Runs Per Day
              * @default 5
@@ -809,24 +800,20 @@ export interface components {
             enabled: boolean;
             /** Github Repo */
             github_repo: string;
-            /**
-             * Has Github Token
-             * @description This project has its own GitHub token
-             */
+            /** Has Github Token */
             has_github_token: boolean;
-            /** Has Llm Api Key */
-            has_llm_api_key: boolean;
             /** Instructions */
             instructions: string | null;
-            /** Llm Base Url */
-            llm_base_url: string;
-            /** Llm Model */
-            llm_model: string;
             /** Max Runs Per Day */
             max_runs_per_day: number;
             min_level: components["schemas"]["AutoFixLevel"];
             /** Project Id */
             project_id: string;
+            /**
+             * Ready
+             * @description Enabled and has a GitHub token
+             */
+            ready: boolean;
             /**
              * Updated At
              * Format: date-time
@@ -834,11 +821,6 @@ export interface components {
             updated_at: string;
             /** Updated By */
             updated_by: string;
-            /**
-             * Uses Shared Github Token
-             * @description Runs use the app-wide token (AUTOFIX_GITHUB_TOKEN, set at deploy time)
-             */
-            uses_shared_github_token: boolean;
         };
         /**
          * AutoFixTriggerKind

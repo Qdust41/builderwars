@@ -236,7 +236,7 @@
       },
       "AutoFixSettingsIn": {
         "additionalProperties": false,
-        "description": "Link an OpenAI-compatible endpoint and a GitHub repository to the project.\n\n``llm_api_key`` / ``github_token``: leave out to keep what is stored, ``\"\"`` to clear,\nor a value to replace. They are write-only: responses only say whether each is set.",
+        "description": "Link a GitHub repository to the project. The model is app-wide (deploy-time settings).\n\n``github_token``: leave out to keep the stored token, ``\"\"`` to clear it, or a value to\nreplace it. It is write-only: responses only say whether one is set.",
         "properties": {
           "auto_trigger": {
             "default": true,
@@ -286,7 +286,7 @@
                 "type": "null"
               }
             ],
-            "description": "Only to override the app-wide token for this project",
+            "description": "Fine-grained token for this repo: Contents + Pull requests, read and write",
             "title": "Github Token"
           },
           "instructions": {
@@ -302,31 +302,6 @@
             "description": "Notes for the model, e.g. where the board code lives",
             "title": "Instructions"
           },
-          "llm_api_key": {
-            "anyOf": [
-              {
-                "maxLength": 4000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Llm Api Key"
-          },
-          "llm_base_url": {
-            "description": "Everything before /chat/completions, e.g. https://api.openai.com/v1",
-            "maxLength": 500,
-            "minLength": 8,
-            "title": "Llm Base Url",
-            "type": "string"
-          },
-          "llm_model": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Llm Model",
-            "type": "string"
-          },
           "max_runs_per_day": {
             "default": 5,
             "maximum": 50.0,
@@ -340,8 +315,6 @@
           }
         },
         "required": [
-          "llm_base_url",
-          "llm_model",
           "github_repo"
         ],
         "title": "AutoFixSettingsIn",
@@ -377,12 +350,7 @@
             "type": "string"
           },
           "has_github_token": {
-            "description": "This project has its own GitHub token",
             "title": "Has Github Token",
-            "type": "boolean"
-          },
-          "has_llm_api_key": {
-            "title": "Has Llm Api Key",
             "type": "boolean"
           },
           "instructions": {
@@ -396,14 +364,6 @@
             ],
             "title": "Instructions"
           },
-          "llm_base_url": {
-            "title": "Llm Base Url",
-            "type": "string"
-          },
-          "llm_model": {
-            "title": "Llm Model",
-            "type": "string"
-          },
           "max_runs_per_day": {
             "title": "Max Runs Per Day",
             "type": "integer"
@@ -415,6 +375,11 @@
             "title": "Project Id",
             "type": "string"
           },
+          "ready": {
+            "description": "Enabled and has a GitHub token",
+            "title": "Ready",
+            "type": "boolean"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -423,28 +388,20 @@
           "updated_by": {
             "title": "Updated By",
             "type": "string"
-          },
-          "uses_shared_github_token": {
-            "description": "Runs use the app-wide token (AUTOFIX_GITHUB_TOKEN, set at deploy time)",
-            "title": "Uses Shared Github Token",
-            "type": "boolean"
           }
         },
         "required": [
           "project_id",
           "enabled",
-          "llm_base_url",
-          "llm_model",
           "github_repo",
+          "has_github_token",
+          "ready",
           "base_branch",
           "auto_trigger",
           "min_level",
           "max_runs_per_day",
           "dedupe_hours",
           "instructions",
-          "has_llm_api_key",
-          "has_github_token",
-          "uses_shared_github_token",
           "updated_by",
           "updated_at"
         ],

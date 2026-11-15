@@ -1,9 +1,9 @@
 """Auto-fix: when a board reports an error, ask an LLM for a fix and open a pull request.
 
-Per project, an owner/admin links an OpenAI-compatible endpoint (base URL + model + API key) and
-a GitHub repository (``owner/name``). One GitHub token serves every project (set at deploy
-time); a project may override it with its own. The keys never live here: ``AutoFixSettings``
-only records whether each one is set; the values sit in Secrets Manager (ADR 0012).
+The model is app-wide: one OpenAI-compatible endpoint (base URL, model, API key) set at deploy
+time from GitHub Actions variables and a secret. The git side is per project: an owner/admin
+links a GitHub repository (``owner/name``, token, optional base branch), stored in the
+``autofix_settings`` table for the MVP (ADR 0012). The API never returns the token.
 
 A run is one attempt to fix one error. It ends in exactly one of:
 
@@ -49,8 +49,6 @@ class AutoFixLevel(StrEnum):
 @dataclass(frozen=True, slots=True)
 class AutoFixSettings:
     project_id: str
-    llm_base_url: str
-    llm_model: str
     github_repo: str  # owner/name
     updated_by: str
     enabled: bool = True
@@ -62,11 +60,18 @@ class AutoFixSettings:
     dedupe_hours: int = DEFAULT_DEDUPE_HOURS
     # Free text handed to the model, e.g. "board code is in scripts/wili_code".
     instructions: str | None = None
-    has_llm_api_key: bool = False
-    # A token just for this project. Without one, runs use the app-wide token
-    # (AUTOFIX_GITHUB_TOKEN, set once at deploy time).
-    has_github_token: bool = False
+    # Write-only through the API; repr=False keeps it out of logs and tracebacks.
+    github_token: str | None = field(default=None, repr=False)
     updated_at: datetime = field(default_factory=utcnow)
+
+    @property
+    def has_github_token(self) -> bool:
+        return bool(self.github_token)
+
+    @property
+    def ready(self) -> bool:
+        """Turned on and able to open pull requests."""
+        return self.enabled and self.has_github_token
 
 
 class AutoFixRunStatus(StrEnum):

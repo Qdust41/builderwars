@@ -1,7 +1,8 @@
 """Auto-fix settings, the error-log trigger, and manual fix requests (ADR 0012).
 
-* ``AutoFixService``: owners/admins link an OpenAI-compatible endpoint and a GitHub repository
-  to a project; members ask for a fix of a specific error and see past runs.
+* ``AutoFixService``: owners/admins link a GitHub repository (and its token) to a project;
+  the model is app-wide (set at deploy time); members ask for a fix of a specific error and
+  see past runs.
 * ``AutoFixTrigger``: called by device ingest for every new error/critical log line or error
   event. It starts a run only when the project turned auto-fix on, the same error has not
   started one within the dedupe window, and the project is under its daily cap. It never
@@ -14,15 +15,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from urllib.parse import urlsplit
 
 from application.ports import (
     AutoFixQueue,
     AutoFixRunRepository,
-    AutoFixSecrets,
-    AutoFixSecretStore,
     AutoFixSettingsRepository,
     DeviceRepository,
     TelemetryRepository,
@@ -66,11 +64,9 @@ class AutoFixLimitError(ConflictError):
 
 @dataclass(frozen=True, slots=True)
 class AutoFixSettingsInput:
-    """What an owner/admin sends. For each secret: ``None`` keeps the stored value, ``""``
+    """What an owner/admin sends. ``github_token``: ``None`` keeps the stored token, ``""``
     clears it, anything else replaces it."""
 
-    llm_base_url: str
-    llm_model: str
     github_repo: str
     enabled: bool = True
     auto_trigger: bool = True
@@ -79,18 +75,10 @@ class AutoFixSettingsInput:
     max_runs_per_day: int = DEFAULT_MAX_RUNS_PER_DAY
     dedupe_hours: int = DEFAULT_DEDUPE_HOURS
     instructions: str | None = None
-    llm_api_key: str | None = None
-    github_token: str | None = None
+    github_token: str | None = field(default=None, repr=False)
 
 
 def _validate(data: AutoFixSettingsInput) -> None:
-    url = urlsplit(data.llm_base_url)
-    if url.scheme not in {"http", "https"} or not url.hostname:
-        raise AutoFixValidationError("llm_base_url must be an http(s) URL")
-    if url.username or url.password:
-        raise AutoFixValidationError("put the API key in llm_api_key, not in the URL")
-    if not data.llm_model.strip():
-        raise AutoFixValidationError("llm_model is required")
     if not GITHUB_REPO_PATTERN.match(data.github_repo):
         raise AutoFixValidationError("github_repo must look like owner/name")
     if data.base_branch is not None and not BRANCH_PATTERN.match(data.base_branch):
@@ -113,7 +101,6 @@ class AutoFixService:
         *,
         settings: AutoFixSettingsRepository,
         runs: AutoFixRunRepository,
-        secrets: AutoFixSecretStore,
         queue: AutoFixQueue,
         devices: DeviceRepository,
         telemetry: TelemetryRepository,
@@ -122,7 +109,6 @@ class AutoFixService:
     ) -> None:
         self._settings = settings
         self._runs = runs
-        self._secrets = secrets
         self._queue = queue
         self._devices = devices
         self._telemetry = telemetry
@@ -141,17 +127,9 @@ class AutoFixService:
         self._authorizer.require(user_id, project_id, Permission.MANAGE_PROJECT)
         _validate(data)
         existing = self._settings.get(project_id)
-        secrets = self._secrets.get(project_id) if existing else AutoFixSecrets()
-        if data.llm_api_key is not None or data.github_token is not None:
-            secrets = AutoFixSecrets(
-                llm_api_key=_merge(secrets.llm_api_key, data.llm_api_key),
-                github_token=_merge(secrets.github_token, data.github_token),
-            )
-            self._secrets.put(project_id, secrets)
+        token = _merge(existing.github_token if existing else None, data.github_token)
         settings = AutoFixSettings(
             project_id=project_id,
-            llm_base_url=data.llm_base_url.rstrip("/"),
-            llm_model=data.llm_model.strip(),
             github_repo=data.github_repo,
             updated_by=user_id,
             enabled=data.enabled,
@@ -161,17 +139,15 @@ class AutoFixService:
             max_runs_per_day=data.max_runs_per_day,
             dedupe_hours=data.dedupe_hours,
             instructions=(data.instructions or "").strip() or None,
-            has_llm_api_key=secrets.llm_api_key is not None,
-            has_github_token=secrets.github_token is not None,
+            github_token=token,
             updated_at=self._clock(),
         )
         self._settings.save(settings)
         return settings
 
     def delete_settings(self, *, user_id: str, project_id: str) -> None:
-        """Unlink the endpoint and repository and delete the stored keys. Past runs stay."""
+        """Unlink the repository and forget its token. Past runs stay."""
         self._authorizer.require(user_id, project_id, Permission.MANAGE_PROJECT)
-        self._secrets.delete(project_id)
         self._settings.delete(project_id)
 
     # --- runs ---------------------------------------------------------------------------------
@@ -195,8 +171,11 @@ class AutoFixService:
             if device is None or device.project_id != project_id:
                 raise NotFoundError("device", device_id)
         settings = self._settings.get(project_id)
-        if settings is None or not settings.enabled:
-            raise AutoFixNotReadyError("auto-fix is not set up or not enabled for this project")
+        if settings is None or not settings.ready:
+            raise AutoFixNotReadyError(
+                "auto-fix is not set up for this project (needs a repository, a GitHub token "
+                "and enabled=true)"
+            )
         if not message:
             if device_id is None:
                 raise AutoFixValidationError("give a message or a device_id to take it from")
@@ -288,7 +267,7 @@ class AutoFixTrigger:
         settings = self._settings.get(device.project_id)
         if (
             settings is None
-            or not settings.enabled
+            or not settings.ready
             or not settings.auto_trigger
             or not settings.min_level.matches(level)
         ):

@@ -5,7 +5,7 @@ import type { AutoFixRun, AutoFixRunStatus, AutoFixSettings } from "../api/types
 import { useAsync } from "../useAsync";
 import { EmptyState, ErrorBanner, errorText, Skeleton, timeAgo } from "./ui";
 
-/** Settings are a 404 until someone links an endpoint and a repository. */
+/** Settings are a 404 until someone links a repository. */
 async function loadSettings(projectId: string): Promise<AutoFixSettings | null> {
   try {
     return await api.getAutoFix(projectId);
@@ -59,8 +59,8 @@ export function AutoFixCard({ projectId }: { projectId: string }) {
     body = (
       <EmptyState icon={<Wand2 className="size-5" />} title="Not set up">
         <p>
-          Link any OpenAI-compatible model and a GitHub repo. When a board reports an error, the
-          model proposes a fix as a pull request for you to review.
+          Link a GitHub repo. When a board reports an error, the app's model proposes a fix as a
+          pull request for you to review.
         </p>
         <button className="btn-primary mt-4" onClick={() => setEditing(true)}>
           Set up auto-fix
@@ -72,7 +72,7 @@ export function AutoFixCard({ projectId }: { projectId: string }) {
       <>
         <div className="space-y-1 border-b border-line px-5 py-3 text-xs text-muted">
           <p>
-            <span className="font-medium text-fg-2">{current.llm_model}</span> →{" "}
+            Pull requests go to{" "}
             <a
               className="font-medium text-accent hover:underline"
               href={`https://github.com/${current.github_repo}`}
@@ -85,7 +85,9 @@ export function AutoFixCard({ projectId }: { projectId: string }) {
           <p>
             {!current.enabled
               ? "Turned off"
-              : current.auto_trigger
+              : !current.has_github_token
+                ? "Needs a GitHub token"
+                : current.auto_trigger
                   ? `Runs on ${current.min_level} logs · up to ${current.max_runs_per_day}/day`
                   : "Manual runs only"}
           </p>
@@ -176,9 +178,6 @@ function AutoFixForm({
   onCancel: () => void;
   onDone: () => void;
 }) {
-  const [baseUrl, setBaseUrl] = useState(current?.llm_base_url ?? "https://api.openai.com/v1");
-  const [model, setModel] = useState(current?.llm_model ?? "");
-  const [apiKey, setApiKey] = useState("");
   const [repo, setRepo] = useState(current?.github_repo ?? "");
   const [token, setToken] = useState("");
   const [branch, setBranch] = useState(current?.base_branch ?? "");
@@ -194,8 +193,6 @@ function AutoFixForm({
     setError(undefined);
     try {
       await api.saveAutoFix(projectId, {
-        llm_base_url: baseUrl.trim(),
-        llm_model: model.trim(),
         github_repo: repo.trim(),
         base_branch: branch.trim() || null,
         enabled,
@@ -204,8 +201,7 @@ function AutoFixForm({
         max_runs_per_day: current?.max_runs_per_day ?? 5,
         dedupe_hours: current?.dedupe_hours ?? 24,
         instructions: instructions.trim() || null,
-        // Blank keeps the stored key (the API never sends keys back).
-        llm_api_key: apiKey || null,
+        // Blank keeps the stored token (the API never sends it back).
         github_token: token || null,
       });
       onDone();
@@ -232,31 +228,15 @@ function AutoFixForm({
     <form onSubmit={submit} className="space-y-3 p-5">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted">Owners and admins only.</p>
-        <button type="button" className="btn-ghost -mr-2 p-1.5" onClick={onCancel} aria-label="Cancel">
+        <button
+          type="button"
+          className="btn-ghost -mr-2 p-1.5"
+          onClick={onCancel}
+          aria-label="Cancel"
+        >
           <X className="size-4" />
         </button>
       </div>
-      <Field label="Model endpoint" hint="Any OpenAI-compatible base URL (the part before /chat/completions).">
-        <input className="input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required />
-      </Field>
-      <Field label="Model">
-        <input
-          className="input"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="e.g. gpt-4.1"
-          required
-        />
-      </Field>
-      <Field label="API key" hint={keep(current?.has_llm_api_key) ?? "Optional for local models."}>
-        <input
-          className="input"
-          type="password"
-          autoComplete="off"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-        />
-      </Field>
       <Field label="GitHub repository" hint="owner/name">
         <input
           className="input"
@@ -267,10 +247,10 @@ function AutoFixForm({
         />
       </Field>
       <Field
-        label="GitHub token (optional)"
+        label="GitHub token"
         hint={
           keep(current?.has_github_token) ??
-          "Leave blank to use the app-wide token. Only set one if this repo needs a different token."
+          "Fine-grained token for this repo with Contents and Pull requests: read and write."
         }
       >
         <input
@@ -279,6 +259,7 @@ function AutoFixForm({
           autoComplete="off"
           value={token}
           onChange={(e) => setToken(e.target.value)}
+          required={!current?.has_github_token}
         />
       </Field>
       <Field label="Base branch" hint="Blank uses the repository's default branch.">

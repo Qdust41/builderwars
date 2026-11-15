@@ -1,11 +1,11 @@
--- 0004: auto-fix (ADR 0012). An OpenAI-compatible endpoint and a GitHub repository linked per
--- project; error logs start runs that propose a fix as a pull request. API keys and tokens are
--- NOT stored here (Secrets Manager); these rows only say whether each one is set.
+-- 0004: auto-fix (ADR 0012). A GitHub repository linked per project; error logs start runs
+-- that propose a fix as a pull request. The model is app-wide (deploy-time settings).
+-- MVP: the project's GitHub token is stored here (owner decision 2026-11-15); the API never
+-- returns it. Move it to a secrets store / GitHub App before real users.
 CREATE TABLE autofix_settings (
     project_id        text PRIMARY KEY REFERENCES projects (id) ON DELETE CASCADE,
-    llm_base_url      text        NOT NULL,
-    llm_model         text        NOT NULL,
     github_repo       text        NOT NULL,
+    github_token      text,
     base_branch       text,
     enabled           boolean     NOT NULL,
     auto_trigger      boolean     NOT NULL,
@@ -13,8 +13,6 @@ CREATE TABLE autofix_settings (
     max_runs_per_day  integer     NOT NULL CHECK (max_runs_per_day BETWEEN 1 AND 50),
     dedupe_hours      integer     NOT NULL CHECK (dedupe_hours BETWEEN 1 AND 720),
     instructions      text,
-    has_llm_api_key   boolean     NOT NULL,
-    has_github_token  boolean     NOT NULL,
     updated_by        text        NOT NULL,
     updated_at        timestamptz NOT NULL
 );

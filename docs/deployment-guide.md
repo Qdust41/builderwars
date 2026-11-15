@@ -422,9 +422,10 @@ AWS access is keyless (GitHub OIDC). One-time setup, already done for account 51
       (Settings → Secrets and variables → Actions → Variables).
 - [ ] GitHub: protect `main` (require a pull request and the CI checks), since every merge goes
       to prod.
-- [ ] Optional, for auto-fix: repository secret `AUTOFIX_GITHUB_TOKEN` (one fine-grained token
-      for every project; see `docs/autofix.md`). The deploy passes it to the Workers stack as a
-      NoEcho parameter; no change to the deploy role is needed.
+- [ ] Optional, for auto-fix: repository variables `AUTOFIX_LLM_BASE_URL` and
+      `AUTOFIX_LLM_MODEL`, and repository secret `AUTOFIX_LLM_API_KEY` (the app-wide model; see
+      `docs/autofix.md`). The deploy passes them to the Workers stack as parameters (the key as
+      NoEcho); no change to the deploy role is needed. GitHub repos are linked per project.
 
 The subject is pinned to the repository's ids, so a deleted-and-recreated repository with the same
 name can't deploy. Moving the repository to another owner changes it: update the role's trust

@@ -154,7 +154,6 @@ def test_job_lambda_fails_jobs_without_an_executor(clients: Clients) -> None:
 def test_autofix_lambda_closes_runs_for_projects_without_settings(
     clients: Clients, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("AUTOFIX_SECRET_PREFIX", "builderwars/test/autofix/")
     runs = main.lambda_runtime("autofix")[1].autofix_runs
     run = AutoFixRun(
         project_id="p",
@@ -169,7 +168,7 @@ def test_autofix_lambda_closes_runs_for_projects_without_settings(
     stored = runs.get(run.id)
     assert stored is not None
     assert stored.status is AutoFixRunStatus.FAILED
-    assert stored.summary == "auto-fix was turned off for this project"
+    assert stored.summary == "auto-fix is turned off or has no GitHub token for this project"
 
 
 def test_ingest_lambda_starts_autofix_runs_when_the_queue_is_set(
@@ -187,8 +186,6 @@ def test_workers_refuse_to_start_without_their_aws_settings(
     monkeypatch.delenv("IOT_DATA_ENDPOINT")
     with pytest.raises(UnsafeConfigurationError, match="IOT_DATA_ENDPOINT"):
         main.command_dispatch_lambda_handler(_sqs_event({"command_id": "c"}), None)
-    with pytest.raises(UnsafeConfigurationError, match="AUTOFIX_SECRET_PREFIX"):
-        main.autofix_lambda_handler(_sqs_event({"run_id": "r"}), None)
 
 
 def test_workers_refuse_memory_repositories_in_prod(

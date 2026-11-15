@@ -372,38 +372,32 @@ def _actions(statement: dict) -> list[str]:
     return actions if isinstance(actions, list) else [actions]
 
 
-def test_autofix_secrets_are_scoped_to_the_env_prefix(stacks: dict[str, Template]) -> None:
-    # ADR 0012: the API writes each project's LLM key + GitHub token, the auto-fix worker reads
-    # them, and neither can touch any other secret through these statements.
-    for name in ("api", "workers"):
-        autofix = [
-            s
-            for s in _statements(stacks[name])
-            if any(a.startswith("secretsmanager:") for a in _actions(s))
-            and "autofix" in json.dumps(s["Resource"])
-        ]
-        assert autofix, name
-        for statement in autofix:
-            resource = json.dumps(statement["Resource"])
-            assert "/autofix/*" in resource, resource
-    shared = stacks["workers"].find_resources("AWS::SecretsManager::Secret")
-    [(_, secret)] = shared.items()
-    assert secret["Properties"]["Name"].endswith("/autofix-shared")
-    assert "/autofix/" not in secret["Properties"]["Name"]  # out of the API's write prefix
-    param = stacks["workers"].to_json()["Parameters"]["AutoFixGithubToken"]
-    assert param["NoEcho"] is True
-    assert param["Default"] == ""
-    worker_actions = {
-        a
-        for s in _statements(stacks["workers"])
-        if "autofix" in json.dumps(s["Resource"])
-        for a in _actions(s)
-        if a.startswith("secretsmanager:")
-    }
-    assert worker_actions == {"secretsmanager:GetSecretValue"}
+def test_autofix_model_comes_from_deploy_parameters(stacks: dict[str, Template]) -> None:
+    # ADR 0012: the model is app-wide (Actions variables + the AUTOFIX_LLM_API_KEY secret as a
+    # NoEcho parameter). Only the auto-fix worker reads the key; the API holds no secrets for it.
+    params = stacks["workers"].to_json()["Parameters"]
+    assert params["AutoFixLlmApiKey"]["NoEcho"] is True
+    for name in ("AutoFixLlmBaseUrl", "AutoFixLlmModel", "AutoFixLlmApiKey"):
+        assert params[name]["Default"] == ""
+    [(_, secret)] = stacks["workers"].find_resources("AWS::SecretsManager::Secret").items()
+    assert secret["Properties"]["Name"].endswith("/autofix-llm")
 
     autofix_fn = _functions(stacks["workers"])["workers.main.autofix_lambda_handler"]
     assert autofix_fn["Timeout"] == 600
-    assert autofix_fn["Environment"]["Variables"]["AUTOFIX_SECRET_PREFIX"].endswith("/autofix/")
+    env = autofix_fn["Environment"]["Variables"]
+    assert {"AUTOFIX_LLM_BASE_URL", "AUTOFIX_LLM_MODEL", "AUTOFIX_LLM_SECRET_ARN"} <= set(env)
+    worker_secret_actions = {
+        a
+        for s in _statements(stacks["workers"])
+        for a in _actions(s)
+        if a.startswith("secretsmanager:")
+    }
+    assert "secretsmanager:PutSecretValue" not in worker_secret_actions
+
     api_env = next(iter(_functions(stacks["api"]).values()))["Environment"]["Variables"]
-    assert {"AUTOFIX_QUEUE_URL", "AUTOFIX_SECRET_PREFIX"} <= set(api_env)
+    assert "AUTOFIX_QUEUE_URL" in api_env
+    assert not any(
+        "autofix" in json.dumps(s["Resource"])
+        for s in _statements(stacks["api"])
+        if any(a.startswith("secretsmanager:") for a in _actions(s))
+    )

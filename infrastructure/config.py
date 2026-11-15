@@ -36,15 +36,9 @@ class EnvConfig:
         return f"builderwars-{self.name}-{suffix}"
 
     @property
-    def autofix_secret_prefix(self) -> str:
-        """Secrets Manager names of each project's auto-fix keys: ``<prefix><project_id>``."""
-        return f"builderwars/{self.name}/autofix/"
-
-    @property
-    def autofix_shared_secret_name(self) -> str:
-        """The one GitHub token for every project. Outside ``autofix_secret_prefix``, so the
-        API (which may write project secrets) cannot read or change it."""
-        return f"builderwars/{self.name}/autofix-shared"
+    def autofix_llm_secret_name(self) -> str:
+        """The app-wide auto-fix model's API key (from the AUTOFIX_LLM_API_KEY Actions secret)."""
+        return f"builderwars/{self.name}/autofix-llm"
 
 
 # Decisions #11/#12: us-east-1 (via CDK_DEFAULT_REGION), free tier. RDS (db.t4g.micro) in prod

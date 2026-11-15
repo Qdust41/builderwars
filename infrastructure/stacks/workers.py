@@ -27,7 +27,6 @@ from aws_cdk import aws_sqs as sqs
 from config import EnvConfig
 from constructs import Construct
 
-from stacks.api import autofix_secret_arns
 from stacks.messaging import AUTOFIX_TIMEOUT, CONSUMER_TIMEOUT
 from stacks.packaging import python_app_code
 
@@ -109,39 +108,48 @@ class WorkersStack(Stack):
             )
         )
 
-        # Auto-fix: logs + repository -> LLM -> pull request. Reads each project's keys (only
-        # under this environment's prefix); calls the project's LLM endpoint and GitHub.
+        # Auto-fix (ADR 0012): logs + repository -> LLM -> pull request. The model is app-wide,
+        # from GitHub Actions at deploy time: variables AUTOFIX_LLM_BASE_URL / AUTOFIX_LLM_MODEL
+        # and the AUTOFIX_LLM_API_KEY secret, passed as these parameters (the key as NoEcho, so it
+        # is never in the template or the console). A deploy that leaves them out keeps the
+        # previous values. Each project's GitHub repo and token live in its autofix_settings row.
         autofix_fn = self._function(
             "AutoFix", "workers.main.autofix_lambda_handler", timeout=AUTOFIX_TIMEOUT
         )
-        autofix_fn.add_environment("AUTOFIX_SECRET_PREFIX", config.autofix_secret_prefix)
-        # One GitHub token for every project. The deploy workflow passes the
-        # AUTOFIX_GITHUB_TOKEN repository secret as this NoEcho parameter (never in the template
-        # or the console); a deploy without it keeps the previous value.
-        github_token = CfnParameter(
+        llm_base_url = CfnParameter(
             self,
-            "AutoFixGithubToken",
+            "AutoFixLlmBaseUrl",
+            type="String",
+            default="",
+            description="OpenAI-compatible base URL auto-fix calls (empty: auto-fix off)",
+        )
+        llm_model = CfnParameter(
+            self,
+            "AutoFixLlmModel",
+            type="String",
+            default="",
+            description="Model name auto-fix asks for",
+        )
+        llm_api_key = CfnParameter(
+            self,
+            "AutoFixLlmApiKey",
             type="String",
             no_echo=True,
             default="",
-            description="GitHub token auto-fix uses for every project without its own",
+            description="API key for the auto-fix model endpoint",
         )
-        shared = secretsmanager.Secret(
+        llm_secret = secretsmanager.Secret(
             self,
-            "AutoFixSharedSecret",
-            secret_name=config.autofix_shared_secret_name,
-            description="builderwars auto-fix: the GitHub token shared by every project",
-            secret_object_value={"github_token": SecretValue.cfn_parameter(github_token)},
+            "AutoFixLlmSecret",
+            secret_name=config.autofix_llm_secret_name,
+            description="builderwars auto-fix: the API key of the app-wide model endpoint",
+            secret_object_value={"llm_api_key": SecretValue.cfn_parameter(llm_api_key)},
             removal_policy=config.removal_policy,
         )
-        shared.grant_read(autofix_fn)
-        autofix_fn.add_environment("AUTOFIX_SHARED_SECRET_ARN", shared.secret_arn)
-        autofix_fn.add_to_role_policy(
-            iam.PolicyStatement(
-                actions=["secretsmanager:GetSecretValue"],
-                resources=[autofix_secret_arns(config)],
-            )
-        )
+        llm_secret.grant_read(autofix_fn)
+        autofix_fn.add_environment("AUTOFIX_LLM_BASE_URL", llm_base_url.value_as_string)
+        autofix_fn.add_environment("AUTOFIX_LLM_MODEL", llm_model.value_as_string)
+        autofix_fn.add_environment("AUTOFIX_LLM_SECRET_ARN", llm_secret.secret_arn)
         autofix_fn.add_event_source(
             sources.SqsEventSource(
                 autofix_queue,

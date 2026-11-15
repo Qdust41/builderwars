@@ -392,21 +392,20 @@ class DeviceSetupOut(BaseModel):
 
 
 class AutoFixSettingsIn(BaseModel):
-    """Link an OpenAI-compatible endpoint and a GitHub repository to the project.
+    """Link a GitHub repository to the project. The model is app-wide (deploy-time settings).
 
-    ``llm_api_key`` / ``github_token``: leave out to keep what is stored, ``""`` to clear,
-    or a value to replace. They are write-only: responses only say whether each is set.
+    ``github_token``: leave out to keep the stored token, ``""`` to clear it, or a value to
+    replace it. It is write-only: responses only say whether one is set.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    llm_base_url: str = Field(
-        min_length=8,
-        max_length=500,
-        description="Everything before /chat/completions, e.g. https://api.openai.com/v1",
-    )
-    llm_model: str = Field(min_length=1, max_length=200)
     github_repo: str = Field(min_length=3, max_length=140, description="owner/name")
+    github_token: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Fine-grained token for this repo: Contents + Pull requests, read and write",
+    )
     base_branch: str | None = Field(
         default=None, max_length=200, description="Defaults to the repository's default branch"
     )
@@ -422,42 +421,26 @@ class AutoFixSettingsIn(BaseModel):
         max_length=4000,
         description="Notes for the model, e.g. where the board code lives",
     )
-    llm_api_key: str | None = Field(default=None, max_length=4000)
-    github_token: str | None = Field(
-        default=None,
-        max_length=1000,
-        description="Only to override the app-wide token for this project",
-    )
 
 
 class AutoFixSettingsOut(_Out):
     project_id: str
     enabled: bool
-    llm_base_url: str
-    llm_model: str
     github_repo: str
+    has_github_token: bool
+    ready: bool = Field(description="Enabled and has a GitHub token")
     base_branch: str | None
     auto_trigger: bool
     min_level: AutoFixLevel
     max_runs_per_day: int
     dedupe_hours: int
     instructions: str | None
-    has_llm_api_key: bool
-    has_github_token: bool = Field(description="This project has its own GitHub token")
-    uses_shared_github_token: bool = Field(
-        description="Runs use the app-wide token (AUTOFIX_GITHUB_TOKEN, set at deploy time)"
-    )
     updated_by: str
     updated_at: datetime
 
     @classmethod
     def of(cls, settings: AutoFixSettings) -> AutoFixSettingsOut:
-        return cls.model_validate(
-            {
-                **{k: getattr(settings, k) for k in AutoFixSettings.__dataclass_fields__},
-                "uses_shared_github_token": not settings.has_github_token,
-            }
-        )
+        return cls.model_validate(settings)  # github_token is not a field here: never returned
 
 
 class AutoFixRunCreate(BaseModel):

@@ -11,21 +11,17 @@ Completions API as the one wire protocol and requires that AI **proposes, never 
 applies** changes.
 
 ## Decision
-- **Per project, opt in.** An owner/admin links an OpenAI-compatible endpoint (base URL, model,
-  optional API key) and a GitHub repository (`owner/name`, optional base branch) with
-  `PUT /projects/{id}/autofix`.
-- **One GitHub token for the whole app** (owner, 2026-11-15: "just one is preferred"). It is
-  the `AUTOFIX_GITHUB_TOKEN` GitHub Actions repository secret; the deploy passes it as the
-  NoEcho `AutoFixGithubToken` parameter of the Workers stack, which stores it in the secret
-  `builderwars/<env>/autofix-shared` (only the auto-fix worker can read it; it is outside the
-  API's write prefix). A deploy without it keeps the stored value. A project may still set its
-  own token, which then wins. Members can read the settings (never the keys),
-  list runs and ask for a fix.
-- **Per-project keys live in Secrets Manager** (the LLM API key, and a project's own GitHub token
-  if it has one), one secret per configured project named
-  `builderwars/<env>/autofix/<project_id>`. The API can write them (create/put/delete under that
-  prefix only) and the auto-fix worker can read them; the database only stores whether each is
-  set. Cost: about $0.40 a month per configured project.
+- **The model is app-wide** (owner, 2026-11-15). One OpenAI-compatible endpoint for every
+  project, set in GitHub Actions: variables `AUTOFIX_LLM_BASE_URL` and `AUTOFIX_LLM_MODEL`, and
+  the secret `AUTOFIX_LLM_API_KEY`. The deploy passes them as parameters of the Workers stack
+  (the key as NoEcho), which sets the base URL and model on the auto-fix Lambda and stores the
+  key in the secret `builderwars/<env>/autofix-llm`, readable only by that Lambda. A deploy that
+  leaves one out keeps the previous value.
+- **The GitHub side is per project, opt in.** An owner/admin links a repository (`owner/name`,
+  a token, optional base branch) with `PUT /projects/{id}/autofix`. For the MVP the token is
+  stored in the project's `autofix_settings` row (owner, 2026-11-15: "for the sake of the MVP
+  just store them in some table"); the API accepts it but never returns it. Members can read
+  the settings (never the token), list runs and ask for a fix.
 - **Trigger.** Every newly ingested `error`/`critical` log line or `error` event (MQTT worker or
   CLI upload) goes to `AutoFixTrigger`. It starts a run only when the project's settings are
   enabled with `auto_trigger` on and the level is at or above `min_level`, and it never fails
@@ -46,13 +42,15 @@ applies** changes.
   background thread of the API instead of a Lambda.
 
 ## Consequences
-- Device logs (redacted) and repository files are sent to whichever endpoint the project
-  configured. Choosing a provider is the project admin's call.
+- Device logs (redacted) and repository files from every project are sent to the one endpoint
+  the deployer configured. Choosing a provider is the deployer's call.
+- GitHub tokens sit in plain text in the database, so anyone who can read the database (or a
+  backup) can use them. Acceptable for the MVP with few, trusted users; before real users,
+  move them to a secrets store or replace them with a GitHub App.
 - Logs come from boards and can contain text written to steer the model. The prompt marks them
   as data, the worker accepts only file edits within the rules above, and a human reviews every
   PR, so the worst case is a bad PR, not an action.
 - The daily cap is checked then written in two steps, so two errors landing in the same instant
   can exceed it by one. Acceptable at this scale.
-- The shared token must be allowed on every repository a project links (a fine-grained token
-  scoped to those repositories, or to all of the owner's). A GitHub App (one install,
-  short-lived tokens) would replace it if this grows; the `CodeHost` port keeps that change inside `ai_platform.autofix`.
+- A GitHub App (one install, short-lived tokens) would replace per-project tokens if this
+  grows; the `CodeHost` port keeps that change inside `ai_platform.autofix`.

@@ -2,7 +2,8 @@
 
 Steps for a run (ADR 0012):
 
-1. Load the run, the project's settings and keys. Stop if auto-fix was turned off meanwhile.
+1. Load the run, the project's settings (repository + token) and the app-wide model. Stop if
+   auto-fix was turned off meanwhile.
 2. Collect the error and the device's recent logs, with secrets redacted.
 3. List the repository's files at the base branch and ask the model which ones it needs.
 4. Send those files with the logs; the model answers with full new contents of the files it
@@ -30,10 +31,9 @@ from ai_platform.context import redact
 from ai_platform.http import HttpError
 from application.ports import (
     AutoFixRunRepository,
-    AutoFixSecrets,
-    AutoFixSecretStore,
     AutoFixSettingsRepository,
     DeviceLogEntry,
+    LlmConfig,
     TelemetryRepository,
 )
 from domain.autofix import AutoFixRun, AutoFixRunStatus, AutoFixSettings
@@ -69,7 +69,7 @@ class CodeHost(Protocol):
     ) -> PullRequest: ...
 
 
-ClientFactory = Callable[[AutoFixSettings, AutoFixSecrets], tuple[ChatModel, CodeHost]]
+ClientFactory = Callable[[AutoFixSettings, LlmConfig], tuple[ChatModel, CodeHost]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,18 +295,15 @@ class AutoFixWorker:
         *,
         runs: AutoFixRunRepository,
         settings: AutoFixSettingsRepository,
-        secrets: AutoFixSecretStore,
         telemetry: TelemetryRepository,
         clients: ClientFactory,
+        llm: Callable[[], LlmConfig | None],
         limits: Limits | None = None,
-        shared: Callable[[], AutoFixSecrets] | None = None,
     ) -> None:
-        """``shared``: the app-wide credentials (the GitHub token set at deploy time), used
-        where a project has none of its own."""
+        """``llm``: the app-wide model (deploy-time settings), or ``None`` when not set."""
         self._runs = runs
         self._settings = settings
-        self._secrets = secrets
-        self._shared = shared
+        self._llm = llm
         self._telemetry = telemetry
         self._clients = clients
         self._limits = limits or Limits()
@@ -323,16 +320,28 @@ class AutoFixWorker:
             return run  # redelivery: never open a second pull request for one run
 
         settings = self._settings.get(run.project_id)
-        if settings is None or not settings.enabled:
+        if settings is None or not settings.ready:
             return self._finish(
-                run, AutoFixRunStatus.FAILED, summary="auto-fix was turned off for this project"
+                run,
+                AutoFixRunStatus.FAILED,
+                summary="auto-fix is turned off or has no GitHub token for this project",
+            )
+        llm = self._llm()
+        if llm is None:
+            return self._finish(
+                run,
+                AutoFixRunStatus.FAILED,
+                summary=(
+                    "no model is configured: set the AUTOFIX_LLM_BASE_URL and AUTOFIX_LLM_MODEL "
+                    "Actions variables (and the AUTOFIX_LLM_API_KEY secret) and redeploy"
+                ),
             )
         run = run.transition(
-            AutoFixRunStatus.RUNNING, model=settings.llm_model, github_repo=settings.github_repo
+            AutoFixRunStatus.RUNNING, model=llm.model, github_repo=settings.github_repo
         )
         self._runs.save(run)
         try:
-            chat, repo = self._clients(settings, self._credentials(run.project_id))
+            chat, repo = self._clients(settings, llm)
             return self._fix(run, settings, chat, repo)
         except (HttpError, AnswerError) as exc:
             return self._finish(run, AutoFixRunStatus.FAILED, summary=str(exc)[:1000])
@@ -341,16 +350,6 @@ class AutoFixWorker:
             return self._finish(
                 run, AutoFixRunStatus.FAILED, summary=f"internal error ({type(exc).__name__})"
             )
-
-    def _credentials(self, project_id: str) -> AutoFixSecrets:
-        own = self._secrets.get(project_id)
-        if (own.github_token and own.llm_api_key) or self._shared is None:
-            return own
-        shared = self._shared()
-        return AutoFixSecrets(
-            llm_api_key=own.llm_api_key or shared.llm_api_key,
-            github_token=own.github_token or shared.github_token,
-        )
 
     def _fix(
         self, run: AutoFixRun, settings: AutoFixSettings, chat: ChatModel, repo: CodeHost
@@ -492,7 +491,7 @@ class AutoFixWorker:
             f"<details><summary>Recent device logs</summary>\n\n```\n{logs}\n```\n\n</details>\n\n"
             f"---\n"
             f"Opened automatically by builderwars auto-fix from {started} "
-            f"(run `{run.id}`, model `{settings.llm_model}`). The change was written by an LLM "
+            f"(run `{run.id}`, model `{run.model}`). The change was written by an LLM "
             f"and has not been run or tested: review it before merging.\n"
         )
 

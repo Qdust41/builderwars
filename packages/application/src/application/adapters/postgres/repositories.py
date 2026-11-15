@@ -780,9 +780,8 @@ class PostgresTelemetryRepository(_Repo):
 def _autofix_settings(row: Row) -> AutoFixSettings:
     return AutoFixSettings(
         project_id=row["project_id"],
-        llm_base_url=row["llm_base_url"],
-        llm_model=row["llm_model"],
         github_repo=row["github_repo"],
+        github_token=row["github_token"],
         updated_by=row["updated_by"],
         enabled=row["enabled"],
         auto_trigger=row["auto_trigger"],
@@ -791,8 +790,6 @@ def _autofix_settings(row: Row) -> AutoFixSettings:
         max_runs_per_day=row["max_runs_per_day"],
         dedupe_hours=row["dedupe_hours"],
         instructions=row["instructions"],
-        has_llm_api_key=row["has_llm_api_key"],
-        has_github_token=row["has_github_token"],
         updated_at=row["updated_at"],
     )
 
@@ -804,24 +801,21 @@ class PostgresAutoFixSettingsRepository(_Repo):
 
     def save(self, settings: AutoFixSettings) -> None:
         self._exec(
-            "INSERT INTO autofix_settings (project_id, llm_base_url, llm_model, github_repo,"
+            "INSERT INTO autofix_settings (project_id, github_repo, github_token,"
             " base_branch, enabled, auto_trigger, min_level, max_runs_per_day, dedupe_hours,"
-            " instructions, has_llm_api_key, has_github_token, updated_by, updated_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " instructions, updated_by, updated_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT (project_id) DO UPDATE SET"
-            " llm_base_url = EXCLUDED.llm_base_url, llm_model = EXCLUDED.llm_model,"
-            " github_repo = EXCLUDED.github_repo, base_branch = EXCLUDED.base_branch,"
+            " github_repo = EXCLUDED.github_repo, github_token = EXCLUDED.github_token,"
+            " base_branch = EXCLUDED.base_branch,"
             " enabled = EXCLUDED.enabled, auto_trigger = EXCLUDED.auto_trigger,"
             " min_level = EXCLUDED.min_level, max_runs_per_day = EXCLUDED.max_runs_per_day,"
             " dedupe_hours = EXCLUDED.dedupe_hours, instructions = EXCLUDED.instructions,"
-            " has_llm_api_key = EXCLUDED.has_llm_api_key,"
-            " has_github_token = EXCLUDED.has_github_token,"
             " updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at",
             (
                 settings.project_id,
-                settings.llm_base_url,
-                settings.llm_model,
                 settings.github_repo,
+                settings.github_token,
                 settings.base_branch,
                 settings.enabled,
                 settings.auto_trigger,
@@ -829,8 +823,6 @@ class PostgresAutoFixSettingsRepository(_Repo):
                 settings.max_runs_per_day,
                 settings.dedupe_hours,
                 settings.instructions,
-                settings.has_llm_api_key,
-                settings.has_github_token,
                 settings.updated_by,
                 settings.updated_at,
             ),

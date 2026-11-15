@@ -12,14 +12,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from aws_cdk import Aws, CfnOutput, Duration, Stack
+from aws_cdk import CfnOutput, Duration, Stack
 from aws_cdk import aws_apigatewayv2 as apigw
 from aws_cdk import aws_apigatewayv2_authorizers as authorizers
 from aws_cdk import aws_apigatewayv2_integrations as integrations
 from aws_cdk import aws_appsync as appsync
 from aws_cdk import aws_cloudwatch as cw
 from aws_cdk import aws_cognito as cognito
-from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
@@ -32,14 +31,6 @@ from stacks.packaging import python_app_code
 
 # Each container holds up to this many database connections (API settings default is 5).
 DATABASE_POOL_MAX_SIZE = "2"
-
-
-def autofix_secret_arns(config: EnvConfig) -> str:
-    # Secret ARNs end in a random 6-character suffix, hence the trailing wildcard.
-    return (
-        f"arn:{Aws.PARTITION}:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:"
-        f"{config.autofix_secret_prefix}*"
-    )
 
 
 class ApiStack(Stack):
@@ -88,7 +79,6 @@ class ApiStack(Stack):
                 "ARTIFACTS_BUCKET": artifacts_bucket.bucket_name,
                 "EVENTS_HTTP_DNS": events_api.http_dns,
                 "AUTOFIX_QUEUE_URL": autofix_queue.queue_url,
-                "AUTOFIX_SECRET_PREFIX": config.autofix_secret_prefix,
             },
         )
         if database_secret is not None:
@@ -103,21 +93,8 @@ class ApiStack(Stack):
         # Adding members by email looks accounts up in the pool; read-only, this pool only.
         user_pool.grant(fn, "cognito-idp:ListUsers")
         events_api.grant_publish(fn)
-        # Auto-fix (ADR 0012): start runs, and write (never read back to users) each project's
-        # LLM key + GitHub token, only under this environment's auto-fix prefix.
+        # Auto-fix (ADR 0012): start runs. Per-project GitHub settings live in the database.
         autofix_queue.grant_send_messages(fn)
-        fn.add_to_role_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "secretsmanager:CreateSecret",
-                    "secretsmanager:PutSecretValue",
-                    "secretsmanager:GetSecretValue",
-                    "secretsmanager:DeleteSecret",
-                    "secretsmanager:TagResource",
-                ],
-                resources=[autofix_secret_arns(config)],
-            )
-        )
 
         jwt = authorizers.HttpJwtAuthorizer(
             "CognitoJwt",

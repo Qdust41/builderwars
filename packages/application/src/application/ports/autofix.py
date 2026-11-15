@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -36,22 +36,13 @@ class AutoFixRunRepository(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class AutoFixSecrets:
-    """The two credentials a run needs. ``None`` = not set."""
+class LlmConfig:
+    """The app-wide model: one OpenAI-compatible endpoint for every project (set at deploy time
+    from GitHub Actions variables and the ``AUTOFIX_LLM_API_KEY`` secret)."""
 
-    llm_api_key: str | None = None
-    github_token: str | None = None
-
-
-class AutoFixSecretStore(Protocol):
-    """Per-project credentials (Secrets Manager in AWS). Values are never returned by the API."""
-
-    def get(self, project_id: str) -> AutoFixSecrets: ...
-    def put(self, project_id: str, secrets: AutoFixSecrets) -> None:
-        """Replace both values (callers merge first)."""
-        ...
-
-    def delete(self, project_id: str) -> None: ...
+    base_url: str
+    model: str
+    api_key: str | None = field(default=None, repr=False)
 
 
 class AutoFixQueue(Protocol):

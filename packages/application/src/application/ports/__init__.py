@@ -8,9 +8,8 @@ IoT Core and AppSync Events.
 from application.ports.autofix import (
     AutoFixQueue,
     AutoFixRunRepository,
-    AutoFixSecrets,
-    AutoFixSecretStore,
     AutoFixSettingsRepository,
+    LlmConfig,
 )
 from application.ports.messaging import (
     CommandQueue,
@@ -42,8 +41,6 @@ from application.ports.repositories import (
 __all__ = [
     "AutoFixQueue",
     "AutoFixRunRepository",
-    "AutoFixSecretStore",
-    "AutoFixSecrets",
     "AutoFixSettingsRepository",
     "CommandQueue",
     "DeviceCommandPublisher",
@@ -54,6 +51,7 @@ __all__ = [
     "DeviceSetupRepository",
     "JobQueue",
     "JobRepository",
+    "LlmConfig",
     "LogPosition",
     "MembershipRepository",
     "ProcessedMessageStore",
