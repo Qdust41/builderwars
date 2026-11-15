@@ -1,22 +1,34 @@
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
 from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Query, status
 
-from api.dependencies import CommandServiceDep, DeviceServiceDep, TelemetryServiceDep, UserDep
+from api.dependencies import (
+    CommandServiceDep,
+    DeviceServiceDep,
+    DeviceUploadServiceDep,
+    TelemetryServiceDep,
+    UserDep,
+)
 from api.schemas import (
     CommandCreate,
     CommandOut,
     DeviceChannelOut,
     DeviceCreate,
     DeviceLogEntryOut,
+    DeviceMessageResultOut,
+    DeviceMessagesUpload,
+    DeviceMessagesUploadOut,
     DeviceOut,
     DeviceStatusOut,
     TelemetrySampleOut,
     TelemetryValue,
 )
 from application.realtime import DEVICE_EVENT_TYPES, device_channel
+from application.services import IngestOutcome, UploadedMessage
 from application.services.telemetry import MAX_LOG_ENTRIES, MAX_TELEMETRY_SAMPLES
 
 router = APIRouter(tags=["devices"])
@@ -138,4 +150,45 @@ def get_device_channel(
         device_id=device.id,
         channel=device_channel(device.project_id, device.id),
         event_types=list(DEVICE_EVENT_TYPES),
+    )
+
+
+@router.post("/devices/{device_id}/messages", response_model=DeviceMessagesUploadOut)
+def upload_device_messages(
+    device_id: str,
+    body: DeviceMessagesUpload,
+    user: UserDep,
+    service: DeviceUploadServiceDep,
+) -> DeviceMessagesUploadOut:
+    """Record a board's messages uploaded by a signed-in member (the ``builderwars`` CLI).
+
+    Each message is ``{topic, payload}`` exactly as the board would publish it over MQTT, and
+    must name this device. Messages go through the same validation and de-duplication as the
+    MQTT path, so uploading the same messages again is harmless, and viewers of the device get
+    its telemetry and logs live. One rejected message does not fail the others: check
+    ``results`` (same order as ``messages``).
+    """
+    results = service.upload(
+        user_id=user.user_id,
+        device_id=device_id,
+        messages=[
+            UploadedMessage(topic=m.topic, body=json.dumps(m.payload).encode())
+            for m in body.messages
+        ],
+        received_at=datetime.now(UTC),
+    )
+    out = [
+        DeviceMessageResultOut(
+            outcome=r.outcome,
+            message_id=r.message_id,
+            reason=r.reason.value if r.reason else None,
+            detail=r.detail,
+        )
+        for r in results
+    ]
+    return DeviceMessagesUploadOut(
+        processed=sum(r.outcome is IngestOutcome.PROCESSED for r in results),
+        duplicate=sum(r.outcome is IngestOutcome.DUPLICATE for r in results),
+        rejected=sum(r.outcome is IngestOutcome.REJECTED for r in results),
+        results=out,
     )

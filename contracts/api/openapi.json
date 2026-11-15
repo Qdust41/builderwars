@@ -1,6 +1,62 @@
 {
   "components": {
     "schemas": {
+      "ClientConfigOut": {
+        "description": "Public sign-in settings for command-line clients (no secrets: ids only).",
+        "properties": {
+          "auth_mode": {
+            "enum": [
+              "cognito",
+              "dev-header"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "cognito_app_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cognito App Client Id"
+          },
+          "cognito_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cognito Region"
+          },
+          "cognito_user_pool_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cognito User Pool Id"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "auth_mode"
+        ],
+        "title": "ClientConfigOut",
+        "type": "object"
+      },
       "CommandCreate": {
         "description": "Same naming rules as the protocol's ``CommandPayload``; the host's allowlist decides.",
         "properties": {
@@ -283,6 +339,100 @@
         "title": "DeviceLogEntryOut",
         "type": "object"
       },
+      "DeviceMessageResultOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/IngestOutcome"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "DeviceMessageResultOut",
+        "type": "object"
+      },
+      "DeviceMessagesUpload": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/UploadedDeviceMessage"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "DeviceMessagesUpload",
+        "type": "object"
+      },
+      "DeviceMessagesUploadOut": {
+        "properties": {
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "integer"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceMessageResultOut"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "processed",
+          "duplicate",
+          "rejected",
+          "results"
+        ],
+        "title": "DeviceMessagesUploadOut",
+        "type": "object"
+      },
       "DeviceOut": {
         "properties": {
           "connection_status": {
@@ -426,6 +576,15 @@
         ],
         "title": "HealthOut",
         "type": "object"
+      },
+      "IngestOutcome": {
+        "enum": [
+          "processed",
+          "duplicate",
+          "rejected"
+        ],
+        "title": "IngestOutcome",
+        "type": "string"
       },
       "JobCreate": {
         "properties": {
@@ -863,6 +1022,28 @@
         "title": "TelemetrySampleOut",
         "type": "object"
       },
+      "UploadedDeviceMessage": {
+        "description": "One protocol message as the board would publish it: the MQTT topic and the envelope.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "topic": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "payload"
+        ],
+        "title": "UploadedDeviceMessage",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -911,6 +1092,28 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/client-config": {
+      "get": {
+        "description": "How a command-line client signs in (public, like ``/health``; ids only, no secrets).\n\nThe ``builderwars`` CLI reads this so ``builderwars login`` needs only the API address.",
+        "operationId": "client_config_client_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Client Config",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/commands/{command_id}": {
       "get": {
         "operationId": "get_command_commands__command_id__get",
@@ -1220,6 +1423,91 @@
           }
         },
         "summary": "Get Device Logs",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/messages": {
+      "post": {
+        "description": "Record a board's messages uploaded by a signed-in member (the ``builderwars`` CLI).\n\nEach message is ``{topic, payload}`` exactly as the board would publish it over MQTT, and\nmust name this device. Messages go through the same validation and de-duplication as the\nMQTT path, so uploading the same messages again is harmless, and viewers of the device get\nits telemetry and logs live. One rejected message does not fail the others: check\n``results`` (same order as ``messages``).",
+        "operationId": "upload_device_messages_devices__device_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-dev-user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-User"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceMessagesUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMessagesUploadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Device Messages",
         "tags": [
           "devices"
         ]

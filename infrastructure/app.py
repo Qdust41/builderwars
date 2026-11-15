@@ -69,6 +69,7 @@ def build(app: cdk.App, config: EnvConfig) -> dict[str, cdk.Stack]:
         device_data_bucket=storage.device_data_bucket,
         artifacts_bucket=storage.artifacts_bucket,
         iot_data_endpoint=iot.data_endpoint,
+        events_api=realtime.events_api,
         database_secret=database_secret,
         env=env,
     )

@@ -4,7 +4,9 @@
 
 With ``DEVICE_TRANSPORT=stdout`` (default) messages are printed as JSON lines. With
 ``DEVICE_TRANSPORT=local-api`` they go to a local API (``LOCAL_API_URL``), which also delivers
-commands back, so the web dashboard shows live telemetry without AWS.
+commands back, so the web dashboard shows live telemetry without AWS. With
+``DEVICE_TRANSPORT=cloud`` they go to the Builderwars API as the user signed in with
+``builderwars login`` (``board_runtime.cloud``), and the dashboard shows them live.
 """
 
 from __future__ import annotations
@@ -21,7 +23,13 @@ from typing import Any
 
 from board_runtime.batching import TelemetryBatcher
 from board_runtime.commands import CommandDispatcher
-from board_runtime.config import ConfigError, DeviceConfig, SensorKind, TransportKind
+from board_runtime.config import (
+    ConfigError,
+    DeviceConfig,
+    SensorKind,
+    TransportKind,
+    default_state_dir,
+)
 from board_runtime.connectivity import (
     BoundedMemoryBuffer,
     LocalApiTransport,
@@ -204,6 +212,14 @@ def build_transport(config: DeviceConfig) -> Transport:
         return MqttTransport(config)
     if config.transport is TransportKind.LOCAL_API:
         return LocalApiTransport(config.local_api_url, config.device_id)
+    if config.transport is TransportKind.CLOUD:
+        from board_runtime.cloud import AccountError, CloudApiTransport, CloudSession
+
+        try:
+            session = CloudSession.load(config.state_dir or default_state_dir())
+        except AccountError as exc:
+            raise TransportError(f"{exc} ({exc.hint})" if exc.hint else str(exc)) from exc
+        return CloudApiTransport(session, config.device_id)
     return StdoutTransport()
 
 

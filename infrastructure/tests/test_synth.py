@@ -97,9 +97,16 @@ def test_api_routes_require_jwt_except_health(stacks: dict[str, Template]) -> No
     api.has_resource_properties(
         "AWS::ApiGatewayV2::Route", {"RouteKey": "ANY /{proxy+}", "AuthorizationType": "JWT"}
     )
-    api.has_resource_properties(
-        "AWS::ApiGatewayV2::Route", {"RouteKey": "GET /health", "AuthorizationType": "NONE"}
-    )
+    for public in ("GET /health", "GET /client-config"):
+        api.has_resource_properties(
+            "AWS::ApiGatewayV2::Route", {"RouteKey": public, "AuthorizationType": "NONE"}
+        )
+    routes = api.find_resources("AWS::ApiGatewayV2::Route")
+    assert sorted(r["Properties"]["RouteKey"] for r in routes.values()) == [
+        "ANY /{proxy+}",
+        "GET /client-config",
+        "GET /health",
+    ]
     api.has_resource_properties(
         "AWS::Lambda::Function",
         {"Environment": {"Variables": Match.object_like({"AUTH_MODE": "cognito"})}},
@@ -169,9 +176,13 @@ def test_workers_get_their_aws_settings(stacks: dict[str, Template]) -> None:
     assert "DEVICE_DATA_BUCKET" in ingest
     commands = workers["workers.main.command_dispatch_lambda_handler"]["Environment"]["Variables"]
     assert "IOT_DATA_ENDPOINT" in commands
+    # Both publish device events for the live dashboard.
+    assert "EVENTS_HTTP_DNS" in ingest
+    assert "EVENTS_HTTP_DNS" in commands
     policies = json.dumps(stacks["workers"].find_resources("AWS::IAM::Policy"))
     assert "/raw/*" in policies
     assert "/rejected/*" in policies
+    assert "appsync:EventPublish" in policies
 
 
 def test_iot_data_endpoint_is_looked_up_not_hardcoded(stacks: dict[str, Template]) -> None:
@@ -253,7 +264,14 @@ def test_user_pool_is_email_password_sign_up_without_mfa(stacks: dict[str, Templ
     )
     identity.has_resource_properties(
         "AWS::Cognito::UserPoolClient",
-        {"GenerateSecret": False, "EnableTokenRevocation": True},
+        {
+            "GenerateSecret": False,
+            "EnableTokenRevocation": True,
+            # The web app uses SRP; the builderwars CLI signs in with USER_PASSWORD_AUTH.
+            "ExplicitAuthFlows": Match.array_with(
+                ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_USER_SRP_AUTH"]
+            ),
+        },
     )
 
 

@@ -8,6 +8,10 @@
     builderwars sim --count 40          # simulated board, messages to stdout
     builderwars show                    # list stored log CSVs (alias: logs)
     builderwars to-sql sim-001          # asks [Y/n], writes sim-001.sql next to the CSV
+    builderwars login                   # sign in to your Builderwars account
+    builderwars devices                 # your registered devices and their ids
+    builderwars run --cloud --device-id dev_...   # stream a board live to the dashboard
+    builderwars upload run.jsonl --device-id dev_...  # upload saved telemetry/logs
 
 The device runtime and simulator append every log message they send to the cloud to a local
 CSV under ``~/.builderwars/logs/<device-id>.csv`` (override with ``BUILDERWARS_LOG_CSV``);
@@ -461,6 +465,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     if port:
         env["DEVICE_PORT"] = port
     device_id = args.device_id or env.get("DEVICE_ID")
+    if getattr(args, "cloud", False):
+        env["DEVICE_TRANSPORT"] = TransportKind.CLOUD.value
+    if not device_id and (env.get("DEVICE_TRANSPORT") or "").strip().lower() == TransportKind.CLOUD:
+        _error(
+            "--cloud needs the registered device id",
+            "pass --device-id dev_... (`builderwars devices` lists yours)",
+        )
+        return EXIT_USAGE
     if not device_id and (env.get("DEVICE_TRANSPORT") or "").strip().lower() == TransportKind.MQTT:
         # AWS IoT only accepts a certificate as its own thing, so a made-up id can't connect.
         _error(
@@ -480,6 +492,26 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     from board_runtime.main import run_loop
 
+    destination = {
+        TransportKind.MQTT: "AWS IoT",
+        TransportKind.LOCAL_API: config.local_api_url,
+        TransportKind.STDOUT: "stdout",
+    }.get(config.transport, "")
+    if config.transport is TransportKind.CLOUD:
+        from urllib.parse import quote
+
+        from board_runtime.cloud import AccountError
+
+        try:  # fail now, not after the board is connected, if the id or sign-in is wrong
+            session = _session(config.state_dir or args.state_dir)
+            device = session.request("GET", f"/devices/{quote(config.device_id, safe='')}")
+        except AccountError as exc:
+            return _account_error(exc)
+        destination = (
+            f"Builderwars ({device['display_name']}, as {session.account.email}); "
+            "the web dashboard shows them live"
+        )
+
     sensors = None
     if config.sensors is SensorKind.FREEWILI:
         sensors = FreeWiliSensors(port=config.serial_port)
@@ -496,8 +528,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     else:
         print("using simulated sensors (pass a port to use a real board)", file=sys.stderr)
     print(
-        f"device id {config.device_id}; messages go to "
-        f"{'AWS IoT' if config.transport is TransportKind.MQTT else 'stdout'}; Ctrl+C to stop",
+        f"device id {config.device_id}; messages go to {destination}; Ctrl+C to stop",
         file=sys.stderr,
     )
     run_loop(config, samples=args.samples, sensors=sensors)
@@ -523,8 +554,183 @@ def cmd_sim(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# -- account and cloud upload ----------------------------------------------------------------
+def _account_error(exc: Exception) -> int:
+    _error(str(exc), getattr(exc, "hint", None))
+    return EXIT_FAILED
+
+
+def cmd_login(args: argparse.Namespace) -> int:
+    import getpass
+
+    from board_runtime.cloud import AccountError, login
+
+    api_url = args.api or os.environ.get("BUILDERWARS_API_URL") or _saved_api_url(args.state_dir)
+    email = args.email or input("Email: ").strip()
+    if not email:
+        _error("an email is required")
+        return EXIT_USAGE
+
+    def new_password() -> str:
+        print("This account has a temporary password; choose a new one.", file=sys.stderr)
+        first = getpass.getpass("New password: ")
+        if first != getpass.getpass("New password again: "):
+            raise AccountError("the new passwords do not match")
+        return first
+
+    try:
+        account = login(
+            api_url=api_url,
+            email=email,
+            password=lambda: getpass.getpass("Password: "),
+            new_password=new_password,
+            state_dir=args.state_dir,
+        )
+    except AccountError as exc:
+        return _account_error(exc)
+    mode = " (local dev API)" if account.auth_mode == "dev-header" else ""
+    print(f"Signed in as {account.email} to {account.api_url}{mode}.")
+    print("Next: `builderwars devices` to find your device id, then")
+    print("      `builderwars run --cloud --device-id dev_...` to stream a board live.")
+    return EXIT_OK
+
+
+def _saved_api_url(state_dir: Path) -> str:
+    from board_runtime.cloud import DEFAULT_API_URL, Account, AccountError
+
+    try:
+        return Account.load(state_dir).api_url
+    except AccountError:
+        return DEFAULT_API_URL
+
+
+def cmd_logout(args: argparse.Namespace) -> int:
+    from board_runtime.cloud import Account
+
+    if Account.forget(args.state_dir):
+        print("Signed out; the saved sign-in was deleted.")
+    else:
+        print("Not signed in.")
+    return EXIT_OK
+
+
+def _session(state_dir: Path) -> Any:
+    from board_runtime.cloud import CloudSession
+
+    return CloudSession.load(state_dir)
+
+
+def cmd_whoami(args: argparse.Namespace) -> int:
+    from board_runtime.cloud import AccountError
+
+    try:
+        session = _session(args.state_dir)
+        projects = session.request("GET", "/projects") or []
+    except AccountError as exc:
+        return _account_error(exc)
+    account = session.account
+    print(f"{account.email} on {account.api_url} ({len(projects)} project(s))")
+    return EXIT_OK
+
+
+def cmd_devices(args: argparse.Namespace) -> int:
+    from urllib.parse import quote
+
+    from board_runtime.cloud import AccountError
+
+    try:
+        session = _session(args.state_dir)
+        projects = session.request("GET", "/projects") or []
+        rows = []
+        for project in projects:
+            path = f"/projects/{quote(project['id'], safe='')}/devices"
+            for device in session.request("GET", path) or []:
+                rows.append((device["id"], device["display_name"], project["name"]))
+    except AccountError as exc:
+        return _account_error(exc)
+    if not rows:
+        print("No devices yet. Register one in the web app (a project's Devices list).")
+        return EXIT_OK
+    width = max(len(r[0]) for r in rows) + 2
+    name_width = max(len(r[1]) for r in rows) + 2
+    print(f"{'DEVICE ID':<{width}}{'NAME':<{name_width}}PROJECT")
+    for device_id, name, project in rows:
+        print(f"{device_id:<{width}}{name:<{name_width}}{project}")
+    return EXIT_OK
+
+
+UPLOAD_CHUNK = 200  # the API's per-request limit
+
+
+def cmd_upload(args: argparse.Namespace) -> int:
+    from board_runtime.cloud import AccountError, CloudApiTransport, read_messages
+
+    path = Path(args.file).expanduser()
+    if not path.is_file():
+        candidate = _logs_dir(args.state_dir) / f"{path.name}.csv"
+        if not candidate.is_file():
+            _error(f"file not found: {args.file}", "pass a .jsonl from `run`/`sim` or a log CSV")
+            return EXIT_USAGE
+        path = candidate
+    try:
+        read = read_messages(path, args.device_id)
+    except (OSError, ValueError) as exc:
+        _error(str(exc))
+        return EXIT_USAGE
+    for reason in read.skipped[:10]:
+        print(f"skipped {reason}", file=sys.stderr)
+    if len(read.skipped) > 10:
+        print(f"... and {len(read.skipped) - 10} more skipped", file=sys.stderr)
+    if not read.messages:
+        print(f"Nothing to upload from {path}.")
+        return EXIT_FAILED if read.skipped else EXIT_OK
+
+    totals = {"processed": 0, "duplicate": 0, "rejected": 0}
+    rejected: list[str] = []
+    try:
+        transport = CloudApiTransport(_session(args.state_dir), args.device_id)
+        for start in range(0, len(read.messages), UPLOAD_CHUNK):
+            result = transport.upload(read.messages[start : start + UPLOAD_CHUNK])
+            for key in totals:
+                totals[key] += int(result.get(key, 0))
+            rejected += [
+                str(item.get("detail") or item.get("reason"))
+                for item in result.get("results", [])
+                if item.get("outcome") == "rejected"
+            ]
+            print(
+                f"\ruploaded {min(start + UPLOAD_CHUNK, len(read.messages))}/{len(read.messages)}",
+                end="",
+                file=sys.stderr,
+            )
+        print(file=sys.stderr)
+    except AccountError as exc:
+        print(file=sys.stderr)
+        return _account_error(exc)
+    print(
+        f"{path.name} -> {args.device_id}: {totals['processed']} new, "
+        f"{totals['duplicate']} already uploaded, {totals['rejected']} rejected"
+    )
+    for detail in rejected[:5]:
+        print(f"  rejected: {detail}", file=sys.stderr)
+    return EXIT_FAILED if totals["rejected"] or read.skipped else EXIT_OK
+
+
 # -- entry point ---------------------------------------------------------------------------
-COMMANDS = ("test", "ports", "run", "sim", "show", "logs", "to-sql")
+COMMANDS = (
+    "test",
+    "ports",
+    "run",
+    "sim",
+    "show",
+    "logs",
+    "to-sql",
+    "login",
+    "logout",
+    "whoami",
+    "devices",
+    "upload",
+)
 _GLOBAL_OPTIONS_WITH_VALUE = ("--state-dir",)
 
 
@@ -611,6 +817,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--device-id", help="device id (default: $DEVICE_ID or dev-local)")
     p_run.add_argument("-n", "--samples", type=int, default=None, help="stop after N samples")
     p_run.add_argument("-i", "--interval", type=float, default=None, help="seconds per sample")
+    p_run.add_argument(
+        "--cloud",
+        action="store_true",
+        help="send to Builderwars as the signed-in user (`builderwars login`); live dashboard",
+    )
     p_run.set_defaults(func=cmd_run)
 
     p_sim = sub.add_parser(
@@ -635,6 +846,51 @@ def build_parser() -> argparse.ArgumentParser:
     p_sql.add_argument("-o", "--output", help="output .sql path (default: <csv>.sql next to it)")
     p_sql.add_argument("--yes", action="store_true", help="skip the [Y/n] prompt")
     p_sql.set_defaults(func=cmd_to_sql)
+
+    p_login = sub.add_parser(
+        "login",
+        parents=[common],
+        help="sign in to your Builderwars account (same email + password as the web app)",
+        description=(
+            "Sign in so the CLI can upload your board's telemetry and logs. The password goes "
+            "to the sign-in service only and is never saved; <state-dir>/account.json keeps a "
+            "refresh token (30 days) until `builderwars logout`."
+        ),
+    )
+    p_login.add_argument(
+        "--api",
+        help="API address (default: $BUILDERWARS_API_URL, the last one used, or "
+        "https://builderwars.jimweaver.com/api; http://localhost:8000 for a local API)",
+    )
+    p_login.add_argument("--email", help="account email (asked for when omitted)")
+    p_login.set_defaults(func=cmd_login)
+
+    p_logout = sub.add_parser("logout", parents=[common], help="forget the saved sign-in")
+    p_logout.set_defaults(func=cmd_logout)
+
+    p_whoami = sub.add_parser("whoami", parents=[common], help="show who you are signed in as")
+    p_whoami.set_defaults(func=cmd_whoami)
+
+    p_devices = sub.add_parser(
+        "devices", parents=[common], help="list the devices in your projects, with their ids"
+    )
+    p_devices.set_defaults(func=cmd_devices)
+
+    p_upload = sub.add_parser(
+        "upload",
+        parents=[common],
+        help="upload saved telemetry/logs (.jsonl from run/sim, or a log CSV) to a device",
+        description=(
+            "Upload a file of board messages to a registered device: JSON lines from "
+            "`builderwars run`/`sim`, or a log CSV from <state-dir>/logs. Re-uploading is "
+            "harmless (messages already stored are counted, not duplicated)."
+        ),
+    )
+    p_upload.add_argument("file", help="file path, or a device id whose log CSV to upload")
+    p_upload.add_argument(
+        "--device-id", required=True, help="registered device id, e.g. dev_... (see `devices`)"
+    )
+    p_upload.set_defaults(func=cmd_upload)
     return parser
 
 

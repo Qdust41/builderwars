@@ -183,3 +183,24 @@ def test_database_url_is_read_from_the_rds_secret(
     assert settings.database_url.get_secret_value() == (
         "postgresql://u:p@db.example:5432/builderwars?sslmode=require"
     )
+
+
+def test_workers_publish_device_events_only_when_appsync_is_configured() -> None:
+    from aws_adapters import AppSyncEventsPublisher
+    from workers import aws_runtime
+    from workers.settings import WorkerSettings
+
+    assert aws_runtime.device_events(WorkerSettings(app_env="test")) is None
+    events = aws_runtime.device_events(
+        WorkerSettings(
+            app_env="test",
+            events_http_dns="abc.appsync-api.us-east-1.amazonaws.com",
+            aws_region="us-east-1",
+        )
+    )
+    assert events is not None
+    assert isinstance(events._publisher, AppSyncEventsPublisher)
+    with pytest.raises(UnsafeConfigurationError, match="AWS_REGION"):
+        aws_runtime.device_events(
+            WorkerSettings(app_env="test", events_http_dns="abc.example", aws_region=None)
+        )

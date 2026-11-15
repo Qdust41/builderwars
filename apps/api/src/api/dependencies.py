@@ -43,6 +43,7 @@ from application.services import (
     DeviceEventPublisher,
     DeviceMessageIngestService,
     DeviceService,
+    DeviceUploadService,
     JobService,
     ProjectService,
     SessionService,
@@ -90,6 +91,7 @@ class Container:
     jobs: JobService
     commands: CommandService
     telemetry: TelemetryQueryService
+    uploads: DeviceUploadService
     local: LocalDevBridge | None = None
     pool: ConnectionPool | None = None  # closed on app shutdown
 
@@ -277,6 +279,18 @@ def build_container(
         jobs=JobService(repos.jobs, repos.devices, messaging.job_queue, authorizer),
         commands=CommandService(repos.commands, repos.devices, messaging.command_queue, authorizer),
         telemetry=TelemetryQueryService(repos.devices, repos.telemetry, authorizer),
+        # Board data uploaded by signed-in members (builderwars CLI); fans out live through
+        # the same realtime publisher as everything else (AppSync Events in AWS).
+        uploads=DeviceUploadService(
+            devices=repos.devices,
+            authorizer=authorizer,
+            processed=repos.processed,
+            raw_store=repos.raw_messages,
+            telemetry=repos.telemetry,
+            sequences=repos.sequences,
+            commands=repos.commands,
+            realtime=messaging.realtime,
+        ),
         local=local,
         pool=pool,
     )
@@ -359,9 +373,14 @@ def get_telemetry_service(container: ContainerDep) -> TelemetryQueryService:
     return container.telemetry
 
 
+def get_device_upload_service(container: ContainerDep) -> DeviceUploadService:
+    return container.uploads
+
+
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 DeviceServiceDep = Annotated[DeviceService, Depends(get_device_service)]
 SessionServiceDep = Annotated[SessionService, Depends(get_session_service)]
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 CommandServiceDep = Annotated[CommandService, Depends(get_command_service)]
 TelemetryServiceDep = Annotated[TelemetryQueryService, Depends(get_telemetry_service)]
+DeviceUploadServiceDep = Annotated[DeviceUploadService, Depends(get_device_upload_service)]

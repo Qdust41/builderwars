@@ -20,6 +20,34 @@ it names the group that owns it (`uucp` on Arch, `dialout` on Debian/Ubuntu) and
 `usermod` command. Exit codes: 0 pass, 1 board check failed, 2 usage/setup error.
 `--debug` (anywhere on the line) shows full tracebacks. `builderwars-logs` is the same program.
 
+## Sending to Builderwars: sign in, then stream or upload
+
+Boards have no AWS IoT certificates for now. Instead you sign in to the CLI with your own
+Builderwars account (the web app's email + password), and the CLI sends the board's telemetry
+and logs to the API as you. Anyone viewing the device in the web app sees them live (ADR 0009).
+
+```bash
+builderwars login                     # email + password; prod API by default
+builderwars devices                   # your registered devices and their ids
+builderwars run --cloud --device-id dev_... /dev/ttyACM0   # stream the board live (Ctrl+C)
+builderwars run --cloud --device-id dev_...                # same with simulated sensors
+builderwars upload dev-local --device-id dev_...           # upload a saved log CSV
+builderwars run -n 60 > run.jsonl; builderwars upload run.jsonl --device-id dev_...
+builderwars whoami / builderwars logout
+```
+
+- You need the **member** role (or higher) on the device's project; viewers can't upload.
+- The password goes to Cognito only and is never saved. `<state-dir>/account.json` (mode 0600)
+  keeps a refresh token, good for 30 days; then `builderwars login` again.
+- `--api https://...` (or `BUILDERWARS_API_URL`) points at another deployment;
+  `--api http://localhost:8000` uses a local API, where login only asks for a dev user name.
+- Uploads are idempotent: messages already stored (e.g. logs that went up live and are also in
+  the CSV) are counted as "already uploaded", not stored twice. Files recorded under another id
+  (`dev-local`, `sim-001`) are re-addressed to the device you upload to.
+- If the network or the API is down, `run --cloud` keeps sampling and buffers messages in memory
+  (the last 1000), then sends them when it can.
+- Not yet: commands from the dashboard (ping, uptime) don't reach a board in this mode.
+
 ## Local development (no board, no AWS)
 
 ```bash

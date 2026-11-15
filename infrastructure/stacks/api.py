@@ -2,7 +2,9 @@
 
 The function runs from a bundled asset (stacks/packaging.py). With a database (prod) it uses
 PostgreSQL through the RDS secret; it runs outside any VPC and reaches RDS over TLS (ADR 0007).
-It enqueues jobs and commands on SQS, publishes session events to AppSync Events, and verifies
+It enqueues jobs and commands on SQS, records board data that signed-in users upload through the
+builderwars CLI (``POST /devices/{id}/messages``), publishes session and device events to
+AppSync Events, and verifies
 Cognito JWTs itself as well as through the gateway's authorizer (ADR 0005).
 """
 
@@ -81,8 +83,8 @@ class ApiStack(Stack):
             fn.add_environment("DATABASE_SECRET_ARN", database_secret.secret_arn)
             fn.add_environment("DATABASE_POOL_MAX_SIZE", DATABASE_POOL_MAX_SIZE)
             database_secret.grant_read(fn)
-        # Least privilege: enqueue jobs/commands, read artifacts, publish session events. The API
-        # never publishes to IoT directly; the command dispatcher worker does.
+        # Least privilege: enqueue jobs/commands, read artifacts, publish session/device events.
+        # The API never publishes to IoT directly; the command dispatcher worker does.
         jobs_queue.grant_send_messages(fn)
         commands_queue.grant_send_messages(fn)
         artifacts_bucket.grant_read(fn)
@@ -107,12 +109,14 @@ class ApiStack(Stack):
         http_api.add_routes(
             path="/{proxy+}", methods=[apigw.HttpMethod.ANY], integration=integration
         )
-        http_api.add_routes(
-            path="/health",
-            methods=[apigw.HttpMethod.GET],
-            integration=integration,
-            authorizer=apigw.HttpNoneAuthorizer(),
-        )
+        # Public: liveness, and the sign-in ids the builderwars CLI reads before it logs in.
+        for public_path in ("/health", "/client-config"):
+            http_api.add_routes(
+                path=public_path,
+                methods=[apigw.HttpMethod.GET],
+                integration=integration,
+                authorizer=apigw.HttpNoneAuthorizer(),
+            )
 
         cw.Alarm(
             self,

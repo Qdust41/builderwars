@@ -18,6 +18,8 @@ class TransportKind(StrEnum):
     STDOUT = "stdout"  # local development: print JSON lines
     MQTT = "mqtt"  # AWS IoT Core over MQTT/TLS (awsiotsdk, optional extra "mqtt")
     LOCAL_API = "local-api"  # local development: talk to a local API's /local routes
+    # The Builderwars API as the user signed in with `builderwars login` (no IoT certificate).
+    CLOUD = "cloud"
 
 
 class SensorKind(StrEnum):
