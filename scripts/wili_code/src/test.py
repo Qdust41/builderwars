@@ -1,4 +1,3 @@
-
 # # """Toggle GPIO 25 on a FreeWili."""
 # import onewili
 
@@ -10,13 +9,12 @@
 #     dev.close()
 
 
-
-
-import onewili
 import csv
 import time
 from datetime import datetime
 from pathlib import Path
+
+import onewili
 
 ADDRESS = 0x68
 DATA_REGISTER = 0x3B
@@ -34,23 +32,20 @@ print("Disable slave mode:", result)
 result = i2c.i2c_write(ADDRESS, 0x6B, bytes([0x00]))
 print("Wake MPU6050:", result)
 
+
 # Read WHO_AM_I using the firmware command directly.
 # Address and register are hexadecimal strings.
 def read_register(register, length):
     return i2c._call(
-        "r",
-        [f"{ADDRESS:02X}", f"{register:02X}", str(length)],
-        ["bytes"],
-        timeout=3.0
+        "r", [f"{ADDRESS:02X}", f"{register:02X}", str(length)], ["bytes"], timeout=3.0
     )
+
 
 identity = read_register(0x75, 1)
 print("WHO_AM_I result:", identity)
 
 if not identity:
-    raise RuntimeError(
-        "I2C read failed. Check the error above before starting CSV logging."
-    )
+    raise RuntimeError("I2C read failed. Check the error above before starting CSV logging.")
 
 print("WHO_AM_I bytes:", identity.ok_value.hex())
 
@@ -61,11 +56,20 @@ count = 0
 
 with OUTPUT.open("w", newline="") as f:
     writer = csv.writer(f)
-    writer.writerow([
-        "timestamp", "elapsed_s", "raw_hex",
-        "accel_x", "accel_y", "accel_z",
-        "temperature", "gyro_x", "gyro_y", "gyro_z"
-    ])
+    writer.writerow(
+        [
+            "timestamp",
+            "elapsed_s",
+            "raw_hex",
+            "accel_x",
+            "accel_y",
+            "accel_z",
+            "temperature",
+            "gyro_x",
+            "gyro_y",
+            "gyro_z",
+        ]
+    )
 
     try:
         while True:
@@ -78,37 +82,30 @@ with OUTPUT.open("w", newline="") as f:
 
                 if len(raw) == 14:
                     values = [
-                        int.from_bytes(
-                            raw[i:i+2],
-                            byteorder="big",
-                            signed=True
-                        )
+                        int.from_bytes(raw[i : i + 2], byteorder="big", signed=True)
                         for i in range(0, 14, 2)
                     ]
 
-                    writer.writerow([
-                        datetime.now().isoformat(),
-                        round(time.monotonic() - start, 4),
-                        raw.hex(),
-                        *values
-                    ])
+                    writer.writerow(
+                        [
+                            datetime.now().isoformat(),
+                            round(time.monotonic() - start, 4),
+                            raw.hex(),
+                            *values,
+                        ]
+                    )
 
                     f.flush()
                     count += 1
 
                     if count % 10 == 0:
-                        print(
-                            f"Samples: {count} | "
-                            f"Raw: {raw.hex()}"
-                        )
+                        print(f"Samples: {count} | Raw: {raw.hex()}")
                 else:
                     print("Unexpected response length:", len(raw))
             else:
                 print("Read error:", result)
 
-            remaining = SAMPLE_INTERVAL - (
-                time.monotonic() - loop_start
-            )
+            remaining = SAMPLE_INTERVAL - (time.monotonic() - loop_start)
             if remaining > 0:
                 time.sleep(remaining)
 
@@ -116,5 +113,3 @@ with OUTPUT.open("w", newline="") as f:
         print("\nLogging stopped.")
 
 print(f"Saved {count} samples to {OUTPUT.resolve()}")
-
-

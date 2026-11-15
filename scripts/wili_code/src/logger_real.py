@@ -1,9 +1,9 @@
-
-import onewili
 import csv
 import time
 from datetime import datetime
 from pathlib import Path
+
+import onewili
 
 # Configuration
 I2C_ADDRESS = 0x68
@@ -23,11 +23,7 @@ slave_result = i2c.i2c_slave_enable(0)
 print("Disable I2C slave mode:", slave_result)
 
 # Wake MPU6050
-wake_result = i2c.i2c_write(
-    I2C_ADDRESS,
-    0x6B,
-    bytes([0x00])
-)
+wake_result = i2c.i2c_write(I2C_ADDRESS, 0x6B, bytes([0x00]))
 print("Wake MPU6050:", wake_result)
 
 
@@ -42,14 +38,7 @@ def get_value(result):
 def read_imu():
     """Read 14 consecutive bytes from the MPU6050."""
     result = i2c._call(
-        "r",
-        [
-            f"{I2C_ADDRESS:02X}",
-            f"{IMU_REGISTER:02X}",
-            str(IMU_LENGTH)
-        ],
-        ["bytes"],
-        timeout=3.0
+        "r", [f"{I2C_ADDRESS:02X}", f"{IMU_REGISTER:02X}", str(IMU_LENGTH)], ["bytes"], timeout=3.0
     )
 
     return get_value(result), str(result)
@@ -76,9 +65,7 @@ headers += [
     "imu_error",
 ]
 
-headers += [
-    "imu_byte_" + str(i) for i in range(IMU_LENGTH)
-]
+headers += ["imu_byte_" + str(i) for i in range(IMU_LENGTH)]
 
 headers += [
     "accel_x_raw",
@@ -112,10 +99,7 @@ with OUTPUT.open("w", newline="") as file:
 
             if gpio_raw is not None:
                 gpio_raw = int(gpio_raw)
-                gpio_bits = [
-                    (gpio_raw >> bit) & 1
-                    for bit in range(32)
-                ]
+                gpio_bits = [(gpio_raw >> bit) & 1 for bit in range(32)]
                 gpio_error = ""
             else:
                 gpio_bits = [""] * 32
@@ -133,19 +117,14 @@ with OUTPUT.open("w", newline="") as file:
                 # Decode raw signed 16-bit values when available
                 if len(imu_data) == IMU_LENGTH:
                     imu_values = [
-                        int.from_bytes(
-                            imu_data[i:i+2],
-                            byteorder="big",
-                            signed=True
-                        )
+                        int.from_bytes(imu_data[i : i + 2], byteorder="big", signed=True)
                         for i in range(0, IMU_LENGTH, 2)
                     ]
                 else:
                     imu_values = [""] * 7
 
                 imu_error = (
-                    "" if len(imu_data) == IMU_LENGTH
-                    else f"Unexpected length: {len(imu_data)}"
+                    "" if len(imu_data) == IMU_LENGTH else f"Unexpected length: {len(imu_data)}"
                 )
 
                 # Pad short responses for consistent CSV columns
@@ -159,17 +138,19 @@ with OUTPUT.open("w", newline="") as file:
                 imu_error = imu_result
 
             # Write one combined sample
-            writer.writerow([
-                timestamp,
-                round(elapsed, 6),
-                gpio_raw if gpio_raw is not None else "",
-                gpio_error,
-                *gpio_bits,
-                imu_hex,
-                imu_error,
-                *imu_bytes,
-                *imu_values,
-            ])
+            writer.writerow(
+                [
+                    timestamp,
+                    round(elapsed, 6),
+                    gpio_raw if gpio_raw is not None else "",
+                    gpio_error,
+                    *gpio_bits,
+                    imu_hex,
+                    imu_error,
+                    *imu_bytes,
+                    *imu_values,
+                ]
+            )
 
             file.flush()
             sample_count += 1
@@ -183,9 +164,7 @@ with OUTPUT.open("w", newline="") as file:
                 )
 
             # Maintain approximate sampling interval
-            remaining = SAMPLE_INTERVAL - (
-                time.monotonic() - loop_start
-            )
+            remaining = SAMPLE_INTERVAL - (time.monotonic() - loop_start)
 
             if remaining > 0:
                 time.sleep(remaining)

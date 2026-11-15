@@ -23,6 +23,7 @@ CSV columns:
     payload      the event's text payload
     ok           1/0 success flag from the frame
 """
+
 import argparse
 import csv
 import queue
@@ -31,7 +32,7 @@ from datetime import datetime
 
 import onewili
 
-TRIGGER_IMMEDIATE = 0   # logger.trigger_mode: start as soon as start() runs (assumed value)
+TRIGGER_IMMEDIATE = 0  # logger.trigger_mode: start as soon as start() runs (assumed value)
 FIELDS = ["host_time", "device_ts_ns", "seq", "event", "payload", "ok"]
 
 
@@ -68,23 +69,27 @@ def record_events(events, writer, seconds, poll=0.1):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("-d", "--duration", type=float, default=5.0, help="seconds to record")
     ap.add_argument("-o", "--output", default="capture.csv", help="CSV file to write")
-    ap.add_argument("--no-logger", action="store_true", help="don't arm dev.logger, only record events")
+    ap.add_argument(
+        "--no-logger", action="store_true", help="don't arm dev.logger, only record events"
+    )
     args = ap.parse_args()
 
-    dev = onewili.connect()   # finds the FreeWili over USB with pyfwfinder
-    events = dev._transport.events   # queue of every [*event ...] frame from the device
+    dev = onewili.connect()  # finds the FreeWili over USB with pyfwfinder
+    events = dev._transport.events  # queue of every [*event ...] frame from the device
     try:
         lg = dev.logger
         if not args.no_logger:
-            lg.stop()   # clear any capture left over from an earlier run
+            lg.stop()  # clear any capture left over from an earlier run
             lg.active_instance(0)
             lg.events("all")
             lg.trigger_mode(TRIGGER_IMMEDIATE)
             lg.pre_trigger_ms(0)
-            lg.post_trigger_ms(0)   # 0 = run until stop()
+            lg.post_trigger_ms(0)  # 0 = run until stop()
 
         # Drop stale frames so the CSV only has this run.
         while not events.empty():
@@ -106,12 +111,14 @@ def main():
 
             if not args.no_logger:
                 lg.stop()
-                count += record_events(events, writer, 1.0)   # catch the 'complete' event
+                count += record_events(events, writer, 1.0)  # catch the 'complete' event
 
         print(f"Saved {count} events to {args.output}")
         if count == 0:
-            print("No events arrived. Trigger something on the device (button press, "
-                  "CAN/UART/I2C traffic) while recording, or check the USB connection.")
+            print(
+                "No events arrived. Trigger something on the device (button press, "
+                "CAN/UART/I2C traffic) while recording, or check the USB connection."
+            )
     finally:
         dev.close()
 

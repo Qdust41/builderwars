@@ -145,18 +145,30 @@
 
 
 # def main():
-#     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+#     ap = argparse.ArgumentParser(
+#         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+#     )
 #     ap.add_argument("mode", nargs="?", choices=["read", "slave"], help="what to log")
 #     ap.add_argument("--scan", action="store_true", help="probe all addresses (i2c_poll) and exit")
 #     ap.add_argument("-a", "--address", type=int_auto, help="7-bit I2C address, e.g. 0x48")
-#     ap.add_argument("-r", "--register", type=int_auto, default=0, help="register to read (read mode)")
+#     ap.add_argument(
+#         "-r", "--register", type=int_auto, default=0, help="register to read (read mode)"
+#     )
 #     ap.add_argument("-n", "--length", type=int, default=1, help="bytes per read (read mode)")
-#     ap.add_argument("-i", "--interval", type=float, default=0.5, help="seconds between reads (read mode)")
+#     ap.add_argument(
+#         "-i", "--interval", type=float, default=0.5, help="seconds between reads (read mode)"
+#     )
 #     ap.add_argument("-d", "--duration", type=float, default=10.0, help="seconds to log")
 #     ap.add_argument("-o", "--output", default="i2c_log.csv", help="CSV file to write")
-#     ap.add_argument("--freq", type=int, help="I2C clock in Hz (leave unset to keep the device setting)")
-#     ap.add_argument("--pullups", type=int, choices=[0, 1], help="enable (1) / disable (0) bus pull-ups")
-#     ap.add_argument("--skip-power", action="store_true", help="don't try to switch on power zone 6")
+#     ap.add_argument(
+#         "--freq", type=int, help="I2C clock in Hz (leave unset to keep the device setting)"
+#     )
+#     ap.add_argument(
+#         "--pullups", type=int, choices=[0, 1], help="enable (1) / disable (0) bus pull-ups"
+#     )
+#     ap.add_argument(
+#         "--skip-power", action="store_true", help="don't try to switch on power zone 6"
+#     )
 #     args = ap.parse_args()
 
 #     if not args.scan and (args.mode is None or args.address is None):
@@ -179,8 +191,11 @@
 #             writer.writeheader()
 
 #             if args.mode == "read":
-#                 print(f"Reading {args.length} byte(s) from 0x{args.address:02X} reg 0x{args.register:02X} "
-#                       f"every {args.interval:g}s for {args.duration:g}s ...")
+#                 print(
+#                     f"Reading {args.length} byte(s) from 0x{args.address:02X} "
+#                     f"reg 0x{args.register:02X} every {args.interval:g}s "
+#                     f"for {args.duration:g}s ..."
+#                 )
 #                 ok, errors = log_reads(i2c, writer, args.address, args.register,
 #                                        args.length, args.interval, args.duration)
 #                 print(f"Saved {ok + errors} rows ({ok} ok, {errors} failed) to {args.output}")
@@ -188,7 +203,10 @@
 #                 unwrap(i2c.i2c_slave_enable(args.address), "slave enable")
 #                 try:
 #                     dev._transport.events.queue.clear()   # drop stale events
-#                     print(f"Slave at 0x{args.address:02X} on SDA16/SCL17, listening for {args.duration:g}s ...")
+#                     print(
+#                         f"Slave at 0x{args.address:02X} on SDA16/SCL17, "
+#                         f"listening for {args.duration:g}s ..."
+#                     )
 #                     n = log_slave(dev._transport.events, writer, args.address, args.duration)
 #                 finally:
 #                     i2c.i2c_slave_enable(0)   # 0 disables slave mode

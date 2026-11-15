@@ -1,10 +1,9 @@
-
-
-import onewili
 import csv
 import time
 from datetime import datetime
 from pathlib import Path
+
+import onewili
 
 # Configuration
 PIN = 25
@@ -59,27 +58,19 @@ def main():
         sample_count = 0
 
         with OUTPUT.open("w", newline="") as f:
-
             writer = csv.writer(f)
 
-            writer.writerow([
-                "timestamp",
-                "elapsed_s",
-                "commanded_state",
-                "read_state",
-                "toggle_count",
-                "match"
-            ])
+            writer.writerow(
+                ["timestamp", "elapsed_s", "commanded_state", "read_state", "toggle_count", "match"]
+            )
 
             print("Recording...\n")
 
             while time.monotonic() - start < DURATION:
-
                 now = time.monotonic()
 
                 # Toggle at configured interval
                 if now >= next_toggle:
-
                     commanded_state = 1 - commanded_state
 
                     set_pin(dev, PIN, commanded_state)
@@ -89,24 +80,23 @@ def main():
 
                 # Poll GPIO
                 if now >= next_sample:
-
                     read_state = read_pin(dev, PIN)
 
                     elapsed = time.monotonic() - start
-                    timestamp = datetime.now().isoformat(
-                        timespec="milliseconds"
-                    )
+                    timestamp = datetime.now().isoformat(timespec="milliseconds")
 
                     match = commanded_state == read_state
 
-                    writer.writerow([
-                        timestamp,
-                        f"{elapsed:.6f}",
-                        commanded_state,
-                        read_state,
-                        toggle_count,
-                        match
-                    ])
+                    writer.writerow(
+                        [
+                            timestamp,
+                            f"{elapsed:.6f}",
+                            commanded_state,
+                            read_state,
+                            toggle_count,
+                            match,
+                        ]
+                    )
 
                     f.flush()
 

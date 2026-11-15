@@ -1,9 +1,9 @@
-
-import onewili
 import csv
 import time
 from datetime import datetime
 from pathlib import Path
+
+import onewili
 
 # ---------------- CONFIGURATION ----------------
 
@@ -12,12 +12,11 @@ SAMPLE_INTERVAL = 0.05  # 20 Hz
 
 GPIO_COUNT = 32
 
-OUTPUT = Path(
-    f"gpio_all_{datetime.now():%Y%m%d_%H%M%S}.csv"
-)
+OUTPUT = Path(f"gpio_all_{datetime.now():%Y%m%d_%H%M%S}.csv")
 
 
 # ---------------- API HELPERS ----------------
+
 
 def unwrap(result):
     if isinstance(result, onewili.Ok):
@@ -36,13 +35,11 @@ def read_all_gpio(dev):
 
 def decode_gpio(raw):
     """Decode bitfield into individual GPIO values."""
-    return {
-        f"GPIO{i}": (raw >> i) & 1
-        for i in range(GPIO_COUNT)
-    }
+    return {f"GPIO{i}": (raw >> i) & 1 for i in range(GPIO_COUNT)}
 
 
 # ---------------- MAIN ----------------
+
 
 def main():
 
@@ -63,26 +60,25 @@ def main():
         sample_count = 0
 
         with OUTPUT.open("w", newline="") as f:
-
             writer = csv.writer(f)
 
             # CSV header
-            writer.writerow([
-                "timestamp",
-                "elapsed_seconds",
-                "raw_hex",
-                "raw_decimal",
-                *[f"GPIO{i}" for i in range(GPIO_COUNT)]
-            ])
+            writer.writerow(
+                [
+                    "timestamp",
+                    "elapsed_seconds",
+                    "raw_hex",
+                    "raw_decimal",
+                    *[f"GPIO{i}" for i in range(GPIO_COUNT)],
+                ]
+            )
 
             print("\nStarting acquisition...\n")
 
             while time.monotonic() - start < DURATION:
-
                 now = time.monotonic()
 
                 if now >= next_sample:
-
                     # Read entire GPIO bitfield
                     raw = read_all_gpio(dev)
 
@@ -94,27 +90,17 @@ def main():
 
                     elapsed = time.monotonic() - start
 
-                    timestamp = datetime.now().isoformat(
-                        timespec="milliseconds"
-                    )
+                    timestamp = datetime.now().isoformat(timespec="milliseconds")
 
                     # Write CSV row
-                    writer.writerow([
-                        timestamp,
-                        f"{elapsed:.6f}",
-                        f"0x{raw:08X}",
-                        raw,
-                        *pins.values()
-                    ])
+                    writer.writerow(
+                        [timestamp, f"{elapsed:.6f}", f"0x{raw:08X}", raw, *pins.values()]
+                    )
 
                     f.flush()
 
                     # Console output
-                    print(
-                        f"[{elapsed:8.3f}s] "
-                        f"RAW: 0x{raw:08X} | "
-                        f"GPIO25: {pins['GPIO25']}"
-                    )
+                    print(f"[{elapsed:8.3f}s] RAW: 0x{raw:08X} | GPIO25: {pins['GPIO25']}")
 
                     sample_count += 1
                     next_sample += SAMPLE_INTERVAL
@@ -126,7 +112,6 @@ def main():
         print(f"CSV: {OUTPUT.resolve()}")
 
     finally:
-
         if dev is not None:
             dev.close()
             print("Disconnected.")
