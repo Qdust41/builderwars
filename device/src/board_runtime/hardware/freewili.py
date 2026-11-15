@@ -1,102 +1,115 @@
-"""FREE-WILi board I/O over USB serial (decision #1).
+##!/usr/bin/env python3
+"""Make a short CSV capture with the FREE-WILi OG onboard Logger.
 
-Wraps the vendor's ``freewili`` Python package (PyPI, MIT, Python 3.10+). Install it on the
-host with ``pip install freewili==0.0.51``; it is deliberately not a locked extra (it pins
-typing-extensions exactly). This is the only module that touches USB/serial.
+The CSV is written to the OG SD card under /logs. This does not read I2C
+or create synthetic measurements.
 
-NOTE: the decisions doc names ``onewili``; that package is not on PyPI. The published vendor
-library is ``freewili`` (github.com/freewili/freewili-python), which provides the same
-``pyfwfinder`` discovery + serial ``FreeWili`` device API, so it is used here. Swap the import
-if ``onewili`` turns out to be required.
-
-What is read is a PLACEHOLDER until spec 02 decides which sensors matter: the main CPU's GPIO
-levels and the display CPU's buttons. Not yet run against real hardware.
+Usage:
+    python logger_wili.py
+    python logger_wili.py --duration 20
 """
 
-from __future__ import annotations
-
-import logging
-from typing import Any, Protocol
-
-from board_runtime.hardware.sensors import BoardUnavailableError
-from device_protocol.schemas import MetricValue
-
-log = logging.getLogger(__name__)
+import argparse
+import sys
+import time
 
 
-class _Result(Protocol):
-    """Shape of ``result.Result`` as returned by the freewili package."""
+def check_result(onewili, result, operation):
+    if isinstance(result, onewili.Err):
+        raise RuntimeError(f"{operation} failed: {result.message}")
+    if isinstance(result, onewili.Ok):
+        return result.value
+    if result is None:
+        return None
+    raise RuntimeError(
+        f"{operation} returned unexpected result "
+        f"{type(result).__name__}: {result!r}"
+    )
 
-    def is_err(self) -> bool: ...
-    def unwrap(self) -> Any: ...
-    def unwrap_err(self) -> Any: ...
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="Capture device events to CSV using the onboard logger."
+    )
+    parser.add_argument("--duration", type=float, default=10.0,
+                        help="capture duration in seconds (default: 10)")
+    parser.add_argument("--instance", type=int, default=0, choices=range(4),
+                        help="logger instance 0-3 (default: 0)")
+    args = parser.parse_args()
 
-class FreeWiliSensors:
-    """``SensorReader`` backed by a FREE-WILi attached to this host.
+    if args.duration <= 0:
+        parser.error("--duration must be greater than zero")
 
-    ``device`` lets tests inject a fake; normally the first attached board is discovered.
-    Reconnects lazily: if a read fails the device is dropped and re-discovered next time.
-    """
+    dev = None
+    started = False
 
-    def __init__(self, device: Any | None = None) -> None:
-        self._device = device
-        self._injected = device is not None
+    try:
+        print("[1/7] Importing OneWili...", flush=True)
+        import onewili
 
-    def _module(self) -> Any:
-        try:
-            import freewili
-            from freewili.types import FreeWiliProcessorType
-        except ImportError as exc:  # pragma: no cover - host-only dependency
-            raise RuntimeError(
-                "install the vendor package on the host: pip install freewili==0.0.51"
-            ) from exc
-        return freewili, FreeWiliProcessorType
+        print("[2/7] Connecting to FREE-WILi over USB...", flush=True)
+        dev = onewili.connect()
+        print("      Connected.", flush=True)
 
-    def _processor(self, name: str) -> Any:
-        if self._injected:
-            return name
-        _, processor_type = self._module()
-        return getattr(processor_type, name)
+        logger = dev.logger
 
-    def _connect(self) -> Any:
-        if self._device is not None:
-            return self._device
-        freewili, _ = self._module()
-        found: _Result = freewili.FreeWili.find_first()
-        if found.is_err():
-            raise BoardUnavailableError(f"no FREE-WILi found: {found.unwrap_err()}")
-        device = found.unwrap()
-        opened: _Result = device.open()
-        if opened.is_err():
-            raise BoardUnavailableError(f"could not open FREE-WILi: {opened.unwrap_err()}")
-        self._device = device
-        return device
+        print(f"[3/7] Selecting logger instance {args.instance}...", flush=True)
+        check_result(onewili, logger.active_instance(args.instance),
+                     "Select logger instance")
 
-    def read(self) -> dict[str, MetricValue]:
-        device = self._connect()
-        try:
-            io: _Result = device.get_io(self._processor("Main"))
-            buttons: _Result = device.read_all_buttons(self._processor("Display"))
-        except Exception as exc:  # serial errors surface as exceptions on unplug
-            self.close()
-            raise BoardUnavailableError(f"FREE-WILi read failed: {exc}") from exc
-        if io.is_err() or buttons.is_err():
-            self.close()
-            raise BoardUnavailableError("FREE-WILi returned an error reading I/O")
+        print("[4/7] Configuring CSV, immediate trigger, and all capturable events...",
+              flush=True)
+        # Current logger setting values: CSV=0; Immediate trigger=0.
+        check_result(onewili, logger.file_format(0), "Set CSV file format")
+        check_result(onewili, logger.trigger_mode(0), "Set immediate trigger")
+        check_result(onewili, logger.pre_trigger_ms(0), "Set pre-trigger window")
+        check_result(onewili, logger.post_trigger_ms(0), "Set post-trigger window")
+        check_result(onewili, logger.events("all"), "Select all capturable events")
 
-        readings: dict[str, MetricValue] = {
-            f"io_{index}": int(level) for index, level in enumerate(io.unwrap())
-        }
-        for color, pressed in buttons.unwrap().items():
-            name = getattr(color, "name", str(color)).lower()
-            readings[f"button_{name}"] = bool(pressed)
-        return readings
+        print("[5/7] Starting onboard logger...", flush=True)
+        check_result(onewili, logger.start(), "Start logger")
+        started = True
 
-    def close(self) -> None:
-        if self._device is not None and not self._injected:
+        print(f"      Capturing for {args.duration:g} seconds. "
+              "CSV is being written to the OG SD card.", flush=True)
+        time.sleep(args.duration)
+
+        print("[6/7] Stopping logger and finalizing CSV...", flush=True)
+        check_result(onewili, logger.stop(), "Stop logger")
+        started = False
+
+        print("[7/7] Requesting logger status...", flush=True)
+        check_result(onewili, logger.status(), "Read logger status")
+
+        print("\nCapture command sequence completed.", flush=True)
+        print(f"Look on the OG SD card under /logs. The first unnamed capture "
+              f"for instance {args.instance} is normally "
+              f"log{args.instance}_0000.csv; subsequent captures increment "
+              "the number.", flush=True)
+        print("Note: selecting 'all' does not enable periodic event sources. "
+              "If no device events are being emitted, the CSV may contain "
+              "only its header.", flush=True)
+        return 0
+
+    except Exception as exc:
+        print(f"\nERROR: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        print("Copy the exact error output if the script fails.",
+              file=sys.stderr, flush=True)
+        return 1
+
+    finally:
+        if dev is not None:
+            if started:
+                try:
+                    print("Attempting to stop logger after error...", flush=True)
+                    dev.logger.stop()
+                except Exception as stop_exc:
+                    print(f"Stop also failed: {stop_exc}", file=sys.stderr, flush=True)
             try:
-                self._device.close()
-            except Exception:  # pragma: no cover - best effort on a dead port
-                log.debug("ignoring error while closing FREE-WILi", exc_info=True)
-            self._device = None
+                dev.close()
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
