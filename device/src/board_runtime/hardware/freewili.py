@@ -14,11 +14,20 @@ levels and the display CPU's buttons.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from board_runtime.hardware.ports import PortProblem, check_port, open_error_hint, same_port
+from board_runtime.hardware.ports import (
+    PortProblem,
+    check_port,
+    is_busy_error,
+    open_error_hint,
+    same_port,
+)
 from board_runtime.hardware.sensors import BoardUnavailableError
 from device_protocol.schemas import MetricValue
 
@@ -167,12 +176,20 @@ class FreeWiliSensors:
     """
 
     def __init__(
-        self, device: Any | None = None, *, port: str | None = None, open_timeout_s: float = 6.0
+        self,
+        device: Any | None = None,
+        *,
+        port: str | None = None,
+        open_timeout_s: float = 6.0,
+        busy_wait_s: float = 8.0,
     ) -> None:
         self._device = device
         self._injected = device is not None
         self.port = port
         self.open_timeout_s = float(open_timeout_s)
+        # A port held by another process (Errno 11/16) is retried this long: ModemManager
+        # probing a freshly plugged board, or a run that was just taken over, let go quickly.
+        self.busy_wait_s = float(busy_wait_s)
         self.info: BoardInfo | None = None
         self._buttons_ok = True
 
@@ -197,17 +214,29 @@ class FreeWiliSensors:
         freewili, _ = import_freewili()
         if self.port is not None:
             self._check(self.port)
-        info, board = select_board(self.port, freewili)
-        for port in info.ports:  # the board opens both ttys; both need permissions
-            self._check(port)
-        opened: _Result = board.open(True, self.open_timeout_s)
-        if opened.is_err():
+        deadline = time.monotonic() + self.busy_wait_s
+        waiting_said = False
+        while True:
+            info, board = select_board(self.port, freewili)
+            for port in info.ports:  # the board opens both ttys; both need permissions
+                self._check(port)
+            opened, printed = _open_quietly(board, self.open_timeout_s)
+            if not opened.is_err():
+                break
             error = str(opened.unwrap_err())
+            if printed and printed not in error:  # freewili prints the real cause
+                error = f"{error} ({printed})"
             close_quietly(board)
-            raise BoardUnavailableError(
-                f"could not open {info.describe()}: {error}",
-                open_error_hint(self.port or info.main_port, error),
-            )
+            if is_busy_error(error) and time.monotonic() < deadline:
+                if not waiting_said:
+                    log.warning(
+                        "the FREE-WILi's port is busy (%s); retrying for a few seconds", error
+                    )
+                    waiting_said = True
+                time.sleep(1.0)
+                continue  # a fresh board object: freewili keeps a failed port in error
+            hint = open_error_hint(self.port or info.main_port, error)
+            raise BoardUnavailableError(f"could not open {info.describe()}: {error}", hint)
         self.info = info
         self._device = board
         return board
@@ -264,6 +293,16 @@ class FreeWiliSensors:
         if self._device is not None and not self._injected:
             close_quietly(self._device)
             self._device = None
+
+
+def _open_quietly(board: Any, timeout_s: float) -> tuple[Any, str]:
+    """``board.open`` with what the freewili library prints (it ``print``s serial errors such
+    as "[Errno 11] Could not exclusively lock port ...") captured, so the CLI can explain it
+    once instead of showing raw library output."""
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        opened = board.open(True, timeout_s)
+    return opened, " ".join(buffer.getvalue().split())
 
 
 def close_quietly(board: Any) -> None:

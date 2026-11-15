@@ -145,7 +145,9 @@ builderwars run --cloud --device-id dev_... --take-over    # stop another run ho
 builderwars run --cloud --device-id dev_... -n 60 -i 0.5   # stop after 60 samples, 2 per second
 ```
 
-- **One run at a time:** a `run --cloud` locks the device's board when it starts, and the device
+- **One run at a time:** a `run --cloud` locks the device's board when it starts (before it
+  opens the FREE-WILi, so a second run is told who has the board rather than failing on a busy
+  serial port), and the device
   page shows who holds it and on which laptop. Another `run` for the same device is refused
   ("this board is in use by ...") until the first stops (Ctrl+C, closing the terminal or `kill`
   all release it), or goes 75 s without sending. `--take-over` takes the board anyway; the old
@@ -165,12 +167,18 @@ builderwars run --cloud --device-id dev_... -n 60 -i 0.5   # stop after 60 sampl
   made-up values for the defined sensors instead, handy while the board is out of action. It
   also makes up the faults a real bench has, about 5% of the time: a sensor that stops
   answering for a few samples, a glitchy value, the FREE-WILi dropping off USB (the device goes
-  degraded), and error logs from the board, all marked "(simulated)". `--sim-errors RATE` (0..1)
+  degraded), and error logs from the board, all marked "(simulated)" and sent to the device's
+logs like real ones (the first line says simulated faults are on). `--sim-errors RATE` (0..1)
   changes how often; 0 turns them off. The laptop card on the device page shows when a run is
   simulated.
 - The UART baud rate and the SPI mode/clock are set on the FREE-WILi itself; the `freewili`
   library can't change them from the laptop.
-- `--cloud` needs the registered device id (`--device-id` or `DEVICE_ID`).
+- `--cloud` needs the registered device id (`--device-id` or `DEVICE_ID`). In a terminal,
+  `--device-id` on its own also means `--cloud` once you are signed in (redirecting stdout to
+  a file keeps the JSON-lines output).
+- "Could not exclusively lock port" means another process has the FREE-WILi's port open. The
+  CLI retries for a few seconds (ModemManager probes freshly plugged boards on Linux), then
+  says which process holds it, e.g. another `builderwars` on the same laptop.
 - Telemetry is batched (every 5 s or 32 samples) and logs, status and heartbeats are sent as
   they happen. If the network or the API is down, it keeps sampling and buffers the last 1000
   messages in memory, then sends them when it can.

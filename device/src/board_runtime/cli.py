@@ -494,6 +494,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     device_id = args.device_id or env.get("DEVICE_ID")
     if getattr(args, "cloud", False):
         env["DEVICE_TRANSPORT"] = TransportKind.CLOUD.value
+    elif _implied_cloud(args, env):
+        env["DEVICE_TRANSPORT"] = TransportKind.CLOUD.value
+        print(
+            "sending to Builderwars (--device-id given and you are signed in; redirect stdout "
+            "or set DEVICE_TRANSPORT=stdout to get JSON lines instead)",
+            file=sys.stderr,
+        )
     cloud = (env.get("DEVICE_TRANSPORT") or "").strip().lower() == TransportKind.CLOUD
     if simulate:
         env["DEVICE_SENSORS"] = SensorKind.SIMULATED.value
@@ -560,16 +567,49 @@ def cmd_run(args: argparse.Namespace) -> int:
         def refresh() -> list[Any]:
             return fetch_sensors(session, config.device_id).sensors
 
+    # Lock the board for this run BEFORE opening the FREE-WILi: a second run is then told
+    # who has the board instead of failing on the serial port the first run holds.
+    run_id: str | None = None
+    take_over = bool(getattr(args, "take_over", False))
+    if session is not None:
+        from board_runtime.cloud import BoardInUseError, host_report, new_run_id, report_connection
+
+        run_id = new_run_id()
+        early_source = (
+            "simulated"
+            if config.sensors is not SensorKind.FREEWILI
+            else ("freewili" if specs else "freewili-gpio")
+        )
+        try:
+            report_connection(
+                session,
+                config.device_id,
+                host_report(cli_version=_cli_version(), sensor_source=early_source),
+                None,
+                run_id=run_id,
+                take_over=take_over,
+            )
+        except BoardInUseError as exc:
+            _error(str(exc), exc.hint)
+            return EXIT_FAILED
+        config = dataclasses.replace(config, run_id=run_id)
+        print(
+            "this run has locked the board; other runs are refused until it stops", file=sys.stderr
+        )
+
     sensors: Any = None
     board_info: BoardInfo | None = None
     if config.sensors is SensorKind.FREEWILI:
-        board = FreeWiliSensors(port=config.serial_port)
+        # After --take-over the old run may hold the port for a few more seconds.
+        board = FreeWiliSensors(port=config.serial_port, busy_wait_s=20.0 if take_over else 8.0)
         try:
             board.connect()  # fail fast here instead of looping in "degraded"
         except FreeWiliNotInstalledError as exc:
+            _release(session, config.device_id, run_id)
             _error("the 'freewili' Python package is not installed", exc.hint)
             return EXIT_USAGE
         except BoardUnavailableError as exc:
+            _release(session, config.device_id, run_id)
             hint = exc.hint or ""
             if cloud:
                 hint += "\nno board at hand? `--simulate` sends made-up values instead"
@@ -624,34 +664,19 @@ def cmd_run(args: argparse.Namespace) -> int:
         if args.interval is None and fastest < config.sample_interval_s:
             config = dataclasses.replace(config, sample_interval_s=fastest)
 
-    run_id: str | None = None
-    if session is not None:
-        from board_runtime.cloud import (
-            BoardInUseError,
-            bridge_report,
-            host_report,
-            new_run_id,
-            report_connection,
-        )
+    if session is not None and run_id is not None:  # now say which FREE-WILi it opened
+        from board_runtime.cloud import bridge_report, host_report, report_connection
 
-        run_id = new_run_id()
-        try:  # lock the board for this run: one `builderwars run` at a time per device
+        try:
             report_connection(
                 session,
                 config.device_id,
                 host_report(cli_version=_cli_version(), sensor_source=source),
                 bridge_report(board_info, library_version=_freewili_version()),
                 run_id=run_id,
-                take_over=bool(getattr(args, "take_over", False)),
             )
-        except BoardInUseError as exc:
-            _close_quietly(sensors)
-            _error(str(exc), exc.hint)
-            return EXIT_FAILED
-        config = dataclasses.replace(config, run_id=run_id)
-        print(
-            "this run has locked the board; other runs are refused until it stops", file=sys.stderr
-        )
+        except Exception as exc:  # the lock is already ours; this is only the page's card
+            logging.getLogger(__name__).debug("could not update the setup report: %s", exc)
     print(
         f"device id {config.device_id}; messages go to {destination}; Ctrl+C to stop",
         file=sys.stderr,
@@ -660,10 +685,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     try:
         stop_reason = run_loop(config, samples=args.samples, sensors=sensors)
     finally:
-        if session is not None and run_id is not None:
-            from board_runtime.cloud import release_run
-
-            release_run(session, config.device_id, run_id)
+        _release(session, config.device_id, run_id)
         _close_quietly(sensors)
     if stop_reason:
         _error(stop_reason, "someone ran `builderwars run --take-over` for this device")
@@ -709,6 +731,28 @@ def _rate(text: str) -> float:
     if not 0.0 <= value <= 1.0:
         raise argparse.ArgumentTypeError("use a rate between 0 and 1, e.g. 0.05")
     return value
+
+
+def _implied_cloud(args: argparse.Namespace, env: dict[str, str]) -> bool:
+    """``run --device-id dev_...`` in a terminal, signed in, means the dashboard: without this,
+    a run (or ``--simulate``) without ``--cloud`` printed JSON lines and nothing reached the
+    cloud. Piping stdout, or an explicit DEVICE_TRANSPORT, keeps the JSON-lines output."""
+    if not args.device_id or env.get("DEVICE_TRANSPORT") or not sys.stdout.isatty():
+        return False
+    from board_runtime.cloud import Account
+
+    try:
+        Account.load(Path(env.get("BUILDERWARS_STATE_DIR") or args.state_dir))
+    except Exception:  # not signed in: keep the old behaviour
+        return False
+    return True
+
+
+def _release(session: Any, device_id: str, run_id: str | None) -> None:
+    if session is not None and run_id is not None:
+        from board_runtime.cloud import release_run
+
+        release_run(session, device_id, run_id)
 
 
 def _close_quietly(sensors: Any) -> None:

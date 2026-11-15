@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import stat
 import sys
 from dataclasses import dataclass
@@ -139,17 +140,89 @@ def check_port(port: str) -> None:
         raise PortProblem(f"permission denied opening {port}", permission_hint(port, st))
 
 
+_BUSY = ("busy", "errno 16", "errno 11", "exclusively lock", "resource temporarily unavailable")
+
+
+def is_busy_error(error: str) -> bool:
+    """The port exists but another process has it open (pyserial's exclusive lock)."""
+    text = error.lower()
+    return any(marker in text for marker in _BUSY)
+
+
+def port_in_error(error: str) -> str | None:
+    """The tty an error message names, e.g. "... lock port /dev/ttyACM2: ..." -> /dev/ttyACM2."""
+    match = re.search(r"(/dev/[\w./-]+?)(?=[:\s,)]|$)", error)
+    return match.group(1) if match else None
+
+
+def holders(port: str) -> list[tuple[int, str]]:
+    """Processes that have ``port`` open, as ``(pid, command line)`` (Linux, best effort:
+    only processes this user may inspect are seen)."""
+    if not sys.platform.startswith("linux") or not _is_posix_device_path(port):
+        return []
+    target = os.path.realpath(port)
+    found: list[tuple[int, str]] = []
+    for fd_dir in glob.glob("/proc/[0-9]*/fd"):
+        pid = int(fd_dir.split("/")[2])
+        if pid == os.getpid():
+            continue
+        try:
+            fds = os.listdir(fd_dir)
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                if os.readlink(f"{fd_dir}/{fd}") == target:
+                    break
+            except OSError:
+                continue
+        else:
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                cmd = fh.read().replace(b"\0", b" ").decode(errors="replace").strip()
+        except OSError:
+            cmd = "?"
+        found.append((pid, cmd[:160] or "?"))
+    return found
+
+
+def busy_hint(port: str | None) -> str:
+    """Who has the port, and how to free it."""
+    lines: list[str] = []
+    who = holders(port) if port else []
+    if who:
+        lines.append(f"{port} is open in:")
+        lines += [f"  pid {pid}: {cmd}" for pid, cmd in who]
+        if any("builderwars" in cmd or "board_runtime" in cmd for _, cmd in who):
+            lines.append(
+                "that is another builderwars on this laptop: stop it (Ctrl+C there, or "
+                f"`kill {who[0][0]}`), then retry"
+            )
+        else:
+            lines.append(f"close that program (or `kill {who[0][0]}`), then retry")
+    else:
+        lines.append(
+            "another program has the port open: another `builderwars run`/`test`/`sensors "
+            "--read`, screen, minicom or the FREE-WILi desktop app"
+            + (f" (`fuser -v {port}` shows which)" if port else "")
+        )
+        if sys.platform.startswith("linux"):
+            lines.append(
+                "right after plugging in, ModemManager probes /dev/ttyACM* for a few seconds; "
+                "if it keeps happening: sudo systemctl stop ModemManager"
+            )
+    return "\n".join(lines)
+
+
 def open_error_hint(port: str | None, error: str) -> str:
     """Best-guess fix for an error string returned when opening a serial port."""
     text = error.lower()
+    port = port_in_error(error) or port
     if "permission" in text or "errno 13" in text:
         return permission_hint(port) if port else "check the serial port permissions"
-    if "busy" in text or "errno 16" in text:
-        who = f"`fuser -v {port}` shows who has it" if port else "close other serial programs"
-        return (
-            "another program has the port open (screen, minicom, a FREE-WILi app, another "
-            f"builderwars run); {who}"
-        )
+    if is_busy_error(error):
+        return busy_hint(port)
     if "no such file" in text or "errno 2" in text:
         return "the port disappeared while opening; the board was probably unplugged or reset"
     return (
